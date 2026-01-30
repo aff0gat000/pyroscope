@@ -63,21 +63,37 @@ find_free_port() {
 # Resolve a single port: use default if free, otherwise find next free
 # ---------------------------------------------------------------------------
 CONFLICTS=0
+ASSIGNED_PORTS=""
+
+port_already_assigned() {
+  local port="$1"
+  echo "$ASSIGNED_PORTS" | grep -qw "$port" 2>/dev/null
+}
 
 resolve_port() {
   local label="$1"
   local env_key="$2"
   local default="$3"
 
-  if port_free "$default"; then
+  if port_free "$default" && ! port_already_assigned "$default"; then
     printf "    %-25s :%s  available\n" "$label" "$default"
     echo "${env_key}=${default}" >> "$ENV_FILE"
+    ASSIGNED_PORTS="$ASSIGNED_PORTS $default"
   else
-    local free
-    free=$(find_free_port $((default + 1))) || true
+    local port=$((default + 1))
+    local max=$((default + 100))
+    local free=""
+    while [ "$port" -lt "$max" ]; do
+      if port_free "$port" && ! port_already_assigned "$port"; then
+        free="$port"
+        break
+      fi
+      port=$((port + 1))
+    done
     if [ -n "$free" ]; then
       printf "    %-25s :%s  in use -> remapped to :%s\n" "$label" "$default" "$free"
       echo "${env_key}=${free}" >> "$ENV_FILE"
+      ASSIGNED_PORTS="$ASSIGNED_PORTS $free"
       CONFLICTS=$((CONFLICTS + 1))
     else
       echo "    ERROR: Could not find a free port near $default for $label"

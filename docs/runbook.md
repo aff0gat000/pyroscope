@@ -598,6 +598,75 @@ jq '.profiles[] | select(.service == "bank-payment-service") | .cpu_top5' after.
 
 ---
 
+## Measuring Profiling Overhead
+
+Run the benchmark to verify the Pyroscope agent does not materially impact service performance. The script tests every service endpoint twice — with and without the agent — and compares latency and throughput.
+
+### Running the benchmark
+
+```bash
+# Default: 200 requests per endpoint, 50 warmup
+bash scripts/run.sh benchmark
+
+# More statistical significance
+bash scripts/run.sh benchmark 500 100
+```
+
+### What it measures
+
+The benchmark runs three phases:
+
+1. **With agent** — starts all services normally (Pyroscope `-javaagent` attached via `JAVA_TOOL_OPTIONS`), warms up each endpoint, then measures avg/p50/p95/p99 latency and requests/sec.
+2. **Without agent** — restarts all services using `docker-compose.no-pyroscope.yml` (clears `JAVA_TOOL_OPTIONS`), repeats the same measurements.
+3. **Comparison** — prints overhead percentage per service and saves CSV results to `benchmark-results/`.
+
+### Reading results
+
+The comparison table shows per-service overhead:
+
+```
+SERVICE                   WITH (avg)   WITHOUT (avg) OVERHEAD
+-------                   ----------   ------------- --------
+api-gateway               12.3ms       11.8ms        4.2%
+order-service             8.1ms        7.9ms         2.5%
+payment-service           15.4ms       14.9ms        3.3%
+```
+
+After the run, CSV files are saved to `benchmark-results/` with timestamp prefixes for historical comparison.
+
+### Expected overhead
+
+The Pyroscope JFR agent is designed for production use. Expected ranges with the current configuration:
+
+| Profile Type | Agent Flag | Overhead |
+|---|---|---|
+| CPU (`cpu`) | default sampling | 1-3% |
+| Allocation (`alloc`) | `-Dpyroscope.profiler.alloc=512k` | 2-5% |
+| Lock (`lock`) | `-Dpyroscope.profiler.lock=10ms` | 1-3% |
+| Wall clock (`wall`) | default sampling | 1-2% |
+| All combined (current config) | all of the above | 3-8% |
+
+### Tuning if overhead is too high
+
+If a service shows >10% overhead:
+
+- **Raise the allocation threshold**: change `-Dpyroscope.profiler.alloc=512k` to `1m` or `2m` in `docker-compose.yml`. Higher threshold = fewer allocation samples = less overhead.
+- **Raise the lock threshold**: change `-Dpyroscope.profiler.lock=10ms` to `50ms`. Captures fewer lock events.
+- **Disable a profile type**: remove the event from `-Dpyroscope.profiler.event=cpu,alloc,lock,wall`. For example, drop `wall` if wall-clock profiling isn't needed.
+- **Re-run the benchmark** after each change to confirm the reduction.
+
+### Production validation checklist
+
+Before enabling profiling on a production workload:
+
+1. Run `bash scripts/run.sh benchmark 500 100` on identical hardware.
+2. Confirm all services show <10% latency overhead.
+3. Check p99 specifically — profiling should not introduce tail latency spikes.
+4. Monitor JVM heap usage (`jvm_memory_used_bytes` in Prometheus) with and without the agent — the agent itself adds ~20-40 MB heap.
+5. Run under sustained load (not just short bursts) to catch GC pressure from the agent's profile buffers.
+
+---
+
 ## Maintenance
 
 ### Updating Images
