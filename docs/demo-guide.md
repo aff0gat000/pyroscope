@@ -219,7 +219,7 @@ bash scripts/run.sh teardown
 | No flame graph data | Load generator needs ~30s to produce profiles. Wait for the "Ready!" banner. |
 | "No data" in Grafana panels | Check time range (top right). Set to "Last 1 hour". |
 | Application selector empty | Pyroscope needs data first. Wait for the "Ready!" banner or run load manually. |
-| Explore Profiles says "plugin not installed" | Clear Grafana volume: `bash scripts/run.sh teardown && docker volume rm pyroscope_grafana-data && bash scripts/run.sh` |
+| Explore Profiles says "plugin not installed" | Re-run the pipeline (it auto-cleans the Grafana volume): `bash scripts/run.sh teardown && bash scripts/run.sh` |
 | Dashboard not found | Grafana provisions on startup. Restart: `docker compose restart grafana` |
 | Build fails | Check Docker has enough memory (8GB+ recommended for 7 services). Run `docker compose build --no-cache`. |
 

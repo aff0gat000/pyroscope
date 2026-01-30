@@ -462,7 +462,6 @@ may be caching old state:
 
 ```bash
 bash scripts/run.sh teardown
-docker volume rm pyroscope_grafana-data 2>/dev/null || true
 bash scripts/run.sh
 ```
 
@@ -510,7 +509,6 @@ curl -sf -u admin:admin 'http://localhost:3000/api/plugins/grafana-pyroscope-app
 If you updated dashboard JSON but Grafana still shows old versions:
 ```bash
 bash scripts/run.sh teardown
-docker volume rm pyroscope_grafana-data 2>/dev/null; true
 bash scripts/run.sh
 ```
 

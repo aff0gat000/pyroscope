@@ -145,7 +145,6 @@ see `config/grafana/provisioning/plugins/plugins.yml`).
 If you see "plugin not installed", clear the Grafana volume and redeploy:
 ```bash
 bash scripts/run.sh teardown
-docker volume rm pyroscope_grafana-data 2>/dev/null || true
 bash scripts/run.sh
 ```
 

@@ -528,7 +528,6 @@ docker compose exec bank-api-gateway env | grep JAVA_TOOL_OPTIONS
 The Pyroscope app plugin must be both installed and enabled. Clear cached state:
 ```bash
 bash scripts/run.sh teardown
-docker volume rm pyroscope_grafana-data 2>/dev/null || true
 bash scripts/run.sh
 ```
 
