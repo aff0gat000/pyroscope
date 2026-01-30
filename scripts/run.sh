@@ -32,7 +32,7 @@ while [ $# -gt 0 ]; do
       shift
       LOAD_DURATION="${1:?--load-duration requires a value}"
       ;;
-    deploy|load|validate|teardown|benchmark|top|all)
+    deploy|load|validate|teardown|benchmark|top|health|all)
       COMMAND="$1"
       ;;
     *)
@@ -139,6 +139,13 @@ stage_top() {
   bash "$SCRIPT_DIR/top-functions.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 }
 
+stage_health() {
+  echo ""
+  echo "===== JVM Health Check ====="
+  echo ""
+  bash "$SCRIPT_DIR/jvm-health.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+}
+
 # ---------------------------------------------------------------------------
 # Execute
 # ---------------------------------------------------------------------------
@@ -178,9 +185,12 @@ case "$COMMAND" in
   top)
     stage_top
     ;;
+  health)
+    stage_health
+    ;;
   *)
     echo "Unknown command: $COMMAND"
-    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|all] [--load-duration N]"
+    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|all] [--load-duration N]"
     exit 1
     ;;
 esac

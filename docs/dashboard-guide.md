@@ -193,6 +193,31 @@ all dimensions — CPU, memory, GC, threads, HTTP, and flame graphs.
 
 ---
 
+## CLI: Identify Problematic JVMs
+
+To quickly flag which of the 7 services are showing concerning behavior:
+
+```bash
+bash scripts/jvm-health.sh          # human-readable output
+bash scripts/jvm-health.sh --json   # JSON for automation
+bash scripts/run.sh health          # via unified runner
+```
+
+Checks each service against thresholds:
+
+| Metric | Warning | Critical |
+|--------|---------|----------|
+| CPU usage (rate) | >= 50% | >= 80% |
+| Heap utilization | >= 70% | >= 85% |
+| GC time rate | >= 0.03 s/s | >= 0.10 s/s |
+| Live threads | >= 50 | >= 100 |
+
+Services are ranked by severity (CRITICAL first). For each flagged service,
+the output suggests `top-functions.sh` and Pyroscope queries to investigate
+root cause.
+
+---
+
 ## CLI: Top Functions by CPU / Memory / Mutex
 
 For quick answers to **"what classes/functions are consuming the most CPU, memory,
