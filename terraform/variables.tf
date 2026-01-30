@@ -19,7 +19,7 @@ variable "prometheus_image" {
 variable "grafana_image" {
   description = "Grafana container image"
   type        = string
-  default     = "grafana/grafana:11.1.0"
+  default     = "grafana/grafana:11.5.2"
 }
 
 variable "grafana_admin_user" {

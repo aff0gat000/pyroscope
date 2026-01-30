@@ -36,7 +36,7 @@ services:
   # Grafana – dashboards & visualisation
   # ---------------------------------------------------------------------------
   grafana:
-    image: grafana/grafana:11.4.0
+    image: grafana/grafana:11.5.2
     container_name: grafana
     ports:
       - "${GRAFANA_PORT:-3000}:3000"
@@ -44,7 +44,6 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
       - GF_INSTALL_PLUGINS=grafana-pyroscope-app
-      - GF_PLUGINS_ALLOW_LOADING_UNSIGNED_PLUGINS=grafana-pyroscope-app
     volumes:
       - grafana-data:/var/lib/grafana
       - ./config/grafana/provisioning:/etc/grafana/provisioning
