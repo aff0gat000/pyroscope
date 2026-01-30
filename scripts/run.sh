@@ -20,6 +20,19 @@ set -euo pipefail
 # to keep dashboards populated. Use "teardown" or Ctrl-C to stop.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+
+# Load port assignments from .env if it exists (deploy.sh generates this).
+# Provides defaults so the script works before the first deploy.
+load_env() {
+  if [ -f "$PROJECT_DIR/.env" ]; then
+    set -a
+    # shellcheck source=/dev/null
+    . "$PROJECT_DIR/.env"
+    set +a
+  fi
+}
+load_env
 
 # ---------------------------------------------------------------------------
 # Parse arguments
@@ -184,14 +197,14 @@ wait_for_data() {
     if [ $pyroscope_ok -eq 0 ]; then
       if curl -sf -X POST -H 'Content-Type: application/json' \
            -d '{"name":"service_name"}' \
-           "http://localhost:4040/querier.v1.QuerierService/LabelValues" 2>/dev/null \
+           "http://localhost:${PYROSCOPE_PORT:-4040}/querier.v1.QuerierService/LabelValues" 2>/dev/null \
            | grep -q "bank-" 2>/dev/null; then
         pyroscope_ok=1
       fi
     fi
 
     if [ $prometheus_ok -eq 0 ]; then
-      if curl -sf "http://localhost:9090/api/v1/query?query=jvm_memory_used_bytes" 2>/dev/null \
+      if curl -sf "http://localhost:${PROMETHEUS_PORT:-9090}/api/v1/query?query=jvm_memory_used_bytes" 2>/dev/null \
            | grep -q '"result"' 2>/dev/null; then
         prometheus_ok=1
       fi
@@ -211,11 +224,13 @@ wait_for_data() {
 }
 
 print_ready_banner() {
+  local gport="${GRAFANA_PORT:-3000}"
+  local pport="${PYROSCOPE_PORT:-4040}"
   echo ""
   echo "  ✔ Ready! Data is flowing to all dashboards."
   echo ""
-  echo "    Grafana:    http://localhost:3000  (admin/admin)"
-  echo "    Pyroscope:  http://localhost:4040"
+  echo "    Grafana:    http://localhost:${gport}  (admin/admin)"
+  echo "    Pyroscope:  http://localhost:${pport}"
   echo ""
   echo "    Quick commands:"
   echo "      bash scripts/run.sh health    # check JVM health"
@@ -331,6 +346,7 @@ case "$COMMAND" in
 
     if [ "$VERBOSE" -eq 1 ]; then
       stage_deploy          "1/3"
+      load_env
       stage_load_background "2/3"
       stage_validate        "3/3"
       echo ""
@@ -349,6 +365,9 @@ case "$COMMAND" in
       echo ""
       run_stage "1/4" "Deploying" "deploy" \
         bash "$SCRIPT_DIR/deploy.sh"
+
+      # Reload .env now that deploy.sh has written actual port assignments.
+      load_env
 
       run_load_stage_quiet "2/4"
 

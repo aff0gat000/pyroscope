@@ -1,10 +1,10 @@
 # Pipeline Documentation
 
-How the Pyroscope bank demo pipeline works — stages, data flow, and configuration.
+Stages, data flow, and configuration for the Pyroscope bank demo pipeline.
 
 ## Overview
 
-The pipeline has four stages. Each must complete before the next begins.
+Four stages, executed sequentially:
 
 ```mermaid
 graph LR
@@ -27,15 +27,15 @@ Optional stages: `benchmark` (overhead measurement), `teardown` (cleanup), `atta
 
 ## Running the Pipeline
 
-Two equivalent methods are provided. Both produce the same result — choose based on what you have installed.
+Two equivalent methods. Both produce the same result.
 
-### Shell scripts (recommended — requires only bash + curl)
+### Shell scripts (recommended -- requires only bash + curl)
 
 ```bash
-# Full pipeline: deploy → load → validate → data check (quiet mode with spinners)
+# Full pipeline: deploy -> load -> validate -> data check (quiet mode with spinners)
 bash scripts/run.sh
 
-# Full pipeline with all output inline (verbose / debugging)
+# Full pipeline, verbose output
 bash scripts/run.sh --verbose
 
 # Full pipeline, save stage logs to disk
@@ -54,11 +54,11 @@ bash scripts/run.sh benchmark           # profiling overhead test
 bash scripts/run.sh teardown            # stop + clean up
 ```
 
-**Quiet mode (default):** The full pipeline shows a single-line spinner per stage with elapsed time. On completion, a "Ready" banner prints with Grafana/Pyroscope URLs. Sub-script output goes to `/dev/null` by default. Use `--log-dir DIR` to save logs to disk, or `--verbose` for the old inline output.
+**Quiet mode (default):** Shows a single-line spinner per stage with elapsed time. On completion, a "Ready" banner prints with Grafana/Pyroscope URLs. Sub-script output goes to `/dev/null`. Use `--log-dir DIR` to save logs, or `--verbose` for inline output.
 
-**Individual commands** (`deploy`, `load`, `validate`, `top`, `health`) always run in verbose mode.
+**Individual commands** (`deploy`, `load`, `validate`, `top`, `health`) always run verbose.
 
-You can also call the underlying scripts directly:
+Call the underlying scripts directly if preferred:
 
 ```bash
 bash scripts/deploy.sh
@@ -69,7 +69,7 @@ bash scripts/teardown.sh
 
 ### Ansible (requires ansible + community.docker collection)
 
-Use this path if you need remote host deployment or already use Ansible for automation.
+Use this path for remote host deployment or existing Ansible workflows.
 
 ```bash
 # One-time setup
@@ -91,13 +91,13 @@ ansible-playbook -i inventory.yml pipeline.yml --tags load -e duration=60
 ansible-playbook -i inventory.yml teardown.yml
 ```
 
-To target a remote host, edit `ansible/inventory.yml` and replace `localhost` with your target hostname.
+To target a remote host, edit `ansible/inventory.yml` and replace `localhost` with the target hostname.
 
 ## Stage 1: Deploy
 
-**What:** Builds the Docker image, checks port availability (auto-remaps conflicts), starts all 10 containers (3 infrastructure + 7 bank services), and waits for each to report healthy.
+Builds the Docker image, checks port availability (auto-remaps conflicts), starts all 10 containers (3 infrastructure + 7 bank services), and waits for each to report healthy.
 
-**Why:** The observability stack (Pyroscope, Prometheus, Grafana) must be running before services start, because services push JFR profiles and expose `/metrics` on startup. If Pyroscope is not ready, early profiles are lost.
+The observability stack (Pyroscope, Prometheus, Grafana) must be running before services start. Services push JFR profiles and expose `/metrics` on startup; if Pyroscope is not ready, early profiles are lost.
 
 **Data flow:**
 
@@ -113,15 +113,15 @@ graph TD
     ENV -.->|"read by"| VS[validate.sh]
 ```
 
-**The `.env` contract:** `deploy.sh` writes port assignments to `.env` at the project root. All downstream scripts source this file to discover actual ports. If ports were remapped due to conflicts, the `.env` values reflect the remapped ports — not the defaults.
+**The `.env` contract:** `deploy.sh` writes port assignments to `.env` at the project root. All downstream scripts source this file to discover actual ports. If ports were remapped due to conflicts, `.env` reflects the remapped ports, not the defaults.
 
 **Port resolution:** Default ports are `4040`, `9090`, `3000`, `18080-18086`. If any port is occupied, `deploy.sh` scans upward (up to +100) for the next free port and records the result in `.env`.
 
 ## Stage 2: Generate Load
 
-**What:** Sends continuous HTTP requests to all 7 bank services for a configurable duration (default 120s in the pipeline runner, 300s standalone).
+Sends continuous HTTP requests to all 7 bank services for a configurable duration (default 120s via the pipeline runner, 300s standalone).
 
-**Why:** Pyroscope needs active JFR data to build flame graphs. Without traffic, profiles are empty. Prometheus also needs request metrics to populate dashboards and potentially trigger alert rules.
+Pyroscope needs active JFR data to build flame graphs. Prometheus needs request metrics to populate dashboards. Without traffic, both are empty.
 
 **Weighted distribution:**
 
@@ -131,9 +131,9 @@ graph TD
 | 30% (medium) | `/cpu`, `/alloc`, `/db/select` | Moderate CPU/memory |
 | 10% (heavy) | `/batch/process`, `/downstream/fanout` | High CPU, long latency |
 
-This distribution ensures flame graphs show a realistic mix — not just hot-path saturation.
+The distribution produces a realistic flame graph mix rather than pure hot-path saturation.
 
-**Profile type coverage:** Each service's endpoints are designed to exercise different JFR event types:
+**Profile type coverage:** Each service's endpoints exercise different JFR event types:
 
 ```mermaid
 graph LR
@@ -152,9 +152,7 @@ graph LR
 
 ## Stage 3: Validate
 
-**What:** Runs 36 automated checks across 11 categories to verify the entire stack is operational.
-
-**Why:** After deploy + load, you need confidence that all services responded, dashboards are provisioned, and Pyroscope received profiles. A single failing service can silently invalidate a demo.
+Runs 36 automated checks across 11 categories to verify the entire stack is operational.
 
 **11 check categories:**
 
@@ -174,8 +172,8 @@ graph LR
 
 **PASS/WARN/FAIL semantics:**
 - **PASS:** endpoint returned HTTP 200 within the timeout
-- **WARN:** expected data not yet available (e.g., Pyroscope profiles need more load time) — not a failure
-- **FAIL:** endpoint unreachable or returned an error — indicates a broken service
+- **WARN:** expected data not yet available (e.g., Pyroscope profiles need more load time) -- not a failure
+- **FAIL:** endpoint unreachable or returned an error -- broken service
 
 ## Optional Stages
 
@@ -186,7 +184,7 @@ bash scripts/run.sh benchmark
 bash scripts/benchmark.sh 500 100    # 500 requests, 100 warmup
 ```
 
-Measures profiling overhead by running each service endpoint twice — once with the Pyroscope agent, once without — and comparing average latency, p50/p95/p99, and throughput. Results are saved to `benchmark-results/`.
+Measures profiling overhead by running each service endpoint twice -- once with the Pyroscope agent, once without -- and comparing average latency, p50/p95/p99, and throughput. Results are saved to `benchmark-results/`.
 
 ### Teardown
 
@@ -195,7 +193,7 @@ bash scripts/run.sh teardown
 bash scripts/teardown.sh
 ```
 
-Stops and removes all containers, networks, and volumes. Run this to free resources after a demo.
+Stops and removes all containers, networks, and volumes.
 
 ### Attach to JVM
 
@@ -209,7 +207,7 @@ Attaches the Pyroscope agent to an already-running JVM process outside Docker.
 
 ### `.env` variables
 
-All ports are auto-generated by `deploy.sh`. You can also create `.env` manually before deploying to force specific ports.
+All ports are auto-generated by `deploy.sh`. Create `.env` manually before deploying to force specific ports.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -226,12 +224,10 @@ All ports are auto-generated by `deploy.sh`. You can also create `.env` manually
 
 ### How stages share state
 
-Stages communicate through two mechanisms:
+1. **`.env` file** -- `deploy.sh` writes port assignments; all other scripts read them
+2. **Running containers** -- `generate-load.sh` and `validate.sh` assume containers are already running (started by deploy)
 
-1. **`.env` file** — `deploy.sh` writes port assignments; all other scripts read them
-2. **Running containers** — `generate-load.sh` and `validate.sh` assume containers are already running (started by deploy)
-
-There is no database, message queue, or other shared state between stages.
+No database, message queue, or other shared state exists between stages.
 
 ## Data Flow Diagram
 

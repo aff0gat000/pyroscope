@@ -1,15 +1,16 @@
 # Sample Queries for UI Debugging
 
-Copy-paste these into the respective UIs to verify data is flowing.
+Copy-paste these into the respective UIs to verify data is flowing. All ports below assume defaults; check `.env` for actual values if ports were remapped.
 
 ---
 
-## Pyroscope UI (http://localhost:4040)
+## Pyroscope UI
+
+Open `http://localhost:${PYROSCOPE_PORT}` (default 4040).
 
 ### Application selector
 
-After deploying and generating load, these application names should appear
-in the Pyroscope UI dropdown:
+After deploying and generating load, these application names appear in the Pyroscope UI dropdown:
 
 - `bank-api-gateway` (API Gateway on :8080)
 - `bank-order-service` (Order Service on :8081)
@@ -25,11 +26,11 @@ Select an application, then use these profile types:
 
 | Profile Type | What it shows |
 |---|---|
-| `process_cpu:cpu:nanoseconds:cpu:nanoseconds` | CPU flame graph — hot methods |
-| `memory:alloc_in_new_tlab_bytes:bytes:space:bytes` | Allocation flame graph — where memory is allocated |
-| `memory:alloc_in_new_tlab_objects:count:space:bytes` | Allocation object count — how many objects allocated |
-| `mutex:contentions:count:mutex:count` | Mutex contention — synchronized blocks under contention |
-| `mutex:delay:nanoseconds:mutex:count` | Mutex delay — time spent waiting on mutexes |
+| `process_cpu:cpu:nanoseconds:cpu:nanoseconds` | CPU flame graph -- hot methods |
+| `memory:alloc_in_new_tlab_bytes:bytes:space:bytes` | Allocation flame graph -- where memory is allocated |
+| `memory:alloc_in_new_tlab_objects:count:space:bytes` | Allocation object count -- how many objects allocated |
+| `mutex:contentions:count:mutex:count` | Mutex contention -- synchronized blocks under contention |
+| `mutex:delay:nanoseconds:mutex:count` | Mutex delay -- time spent waiting on mutexes |
 
 ### Label selectors (paste in "Label Selector" field)
 
@@ -67,25 +68,27 @@ Select an application, then use these profile types:
 
 ### Compare two services
 
-1. Open Pyroscope UI → Comparison view
+1. Open Pyroscope UI, Comparison view
 2. Left panel: `{service_name="bank-api-gateway"}`
 3. Right panel: `{service_name="bank-order-service"}`
 4. Profile type: `process_cpu:cpu:nanoseconds:cpu:nanoseconds`
 5. Red = more CPU in right service, green = less
 
-Other useful comparisons:
-- `bank-payment-service` vs `bank-fraud-service` — payment processing vs fraud detection CPU patterns
-- `bank-account-service` vs `bank-loan-service` — account lookups vs loan calculations
-- `bank-api-gateway` vs `bank-notification-service` — routing overhead vs dispatch overhead
+Other comparisons:
+- `bank-payment-service` vs `bank-fraud-service` -- payment processing vs fraud detection CPU patterns
+- `bank-account-service` vs `bank-loan-service` -- account lookups vs loan calculations
+- `bank-api-gateway` vs `bank-notification-service` -- routing overhead vs dispatch overhead
 
 ---
 
 ## Pyroscope HTTP API (curl)
 
+Use the Pyroscope port from `.env` (`PYROSCOPE_PORT`, default 4040).
+
 ### List all application names
 
 ```bash
-curl -s 'http://localhost:4040/querier.v1.QuerierService/LabelValues' \
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/querier.v1.QuerierService/LabelValues" \
   -X POST -H 'Content-Type: application/json' \
   -d '{"name":"service_name"}'
 ```
@@ -93,66 +96,67 @@ curl -s 'http://localhost:4040/querier.v1.QuerierService/LabelValues' \
 ### List all profile types
 
 ```bash
-curl -s 'http://localhost:4040/pyroscope/label-values?label=__name__' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/label-values?label=__name__" | python3 -m json.tool
 ```
 
-### Render CPU profile as JSON (last hour) — per service
+### Render CPU profile as JSON (last hour) -- per service
 
 ```bash
 # API Gateway
-curl -s 'http://localhost:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-api-gateway%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-api-gateway%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 
 # Order Service
-curl -s 'http://localhost:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-order-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-order-service%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 
 # Payment Service
-curl -s 'http://localhost:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-payment-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-payment-service%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 
 # Fraud Service
-curl -s 'http://localhost:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-fraud-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-fraud-service%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 
 # Account Service
-curl -s 'http://localhost:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-account-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-account-service%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 
 # Loan Service
-curl -s 'http://localhost:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-loan-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-loan-service%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 
 # Notification Service
-curl -s 'http://localhost:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-notification-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-notification-service%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 ```
 
 ### Render memory allocation profile
 
 ```bash
-curl -s 'http://localhost:4040/pyroscope/render?query=memory:alloc_in_new_tlab_bytes:bytes:space:bytes%7Bservice_name%3D%22bank-api-gateway%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=memory:alloc_in_new_tlab_bytes:bytes:space:bytes%7Bservice_name%3D%22bank-api-gateway%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 ```
 
 ### Render mutex contention profile
 
 ```bash
-curl -s 'http://localhost:4040/pyroscope/render?query=mutex:contentions:count:mutex:count%7Bservice_name%3D%22bank-order-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s "http://localhost:${PYROSCOPE_PORT:-4040}/pyroscope/render?query=mutex:contentions:count:mutex:count%7Bservice_name%3D%22bank-order-service%22%7D&from=now-1h&until=now&format=json" | python3 -m json.tool
 ```
 
 ---
 
-## Grafana Explore Profiles (http://localhost:3000/a/grafana-pyroscope-app/explore)
+## Grafana Explore Profiles
 
-The **Explore Profiles** view provides a dedicated UI for browsing and comparing
-profiles without building dashboard panels. It requires the `grafana-pyroscope-app`
-plugin to be installed and enabled (handled automatically by provisioning —
-see `config/grafana/provisioning/plugins/plugins.yml`).
+Open `http://localhost:${GRAFANA_PORT}/a/grafana-pyroscope-app/explore` (default port 3000).
 
-If you see "plugin not installed", clear the Grafana volume and redeploy:
+The Explore Profiles view provides a dedicated UI for browsing and comparing profiles without building dashboard panels. It requires the `grafana-pyroscope-app` plugin (provisioned automatically via `config/grafana/provisioning/plugins/plugins.yml`).
+
+If the plugin shows as not installed, clear the Grafana volume and redeploy:
 ```bash
 bash scripts/run.sh teardown
 bash scripts/run.sh
 ```
 
-## Grafana Explore (http://localhost:3000/explore)
+## Grafana Explore
+
+Open `http://localhost:${GRAFANA_PORT}/explore` (default port 3000).
 
 ### Pyroscope datasource queries
 
-1. Go to Explore → select "Pyroscope" datasource
+1. Go to Explore, select "Pyroscope" datasource
 2. Use these queries:
 
 **CPU profile for API Gateway:**
@@ -183,7 +187,7 @@ bash scripts/run.sh
 - Profile type: `memory:alloc_in_new_tlab_bytes:bytes:space:bytes`
 - Label selector: `{service_name="bank-notification-service"}`
 
-**Mutex contention (Order Service — has synchronized blocks):**
+**Mutex contention (Order Service -- has synchronized blocks):**
 - Profile type: `mutex:contentions:count:mutex:count`
 - Label selector: `{service_name="bank-order-service"}`
 
@@ -238,13 +242,15 @@ jvm_memory_pool_used_bytes{job="jvm"} / jvm_memory_pool_max_bytes{job="jvm"} > 0
 
 ---
 
-## Grafana Dashboard (http://localhost:3000/d/pyroscope-java-overview)
+## Grafana Dashboard
+
+Open `http://localhost:${GRAFANA_PORT}/d/pyroscope-java-overview` (default port 3000).
 
 The provisioned dashboard has template variables at the top:
 
-1. **application** — select any of the 7 services: `bank-api-gateway`, `bank-order-service`, `bank-payment-service`, `bank-fraud-service`, `bank-account-service`, `bank-loan-service`, `bank-notification-service`
-2. **profile_type** — switch between CPU, memory, mutex profiles
-3. **comparison_range** — 15m, 30m, 1h, 3h, 6h for diff views
+1. **application** -- select any of the 7 services: `bank-api-gateway`, `bank-order-service`, `bank-payment-service`, `bank-fraud-service`, `bank-account-service`, `bank-loan-service`, `bank-notification-service`
+2. **profile_type** -- switch between CPU, memory, mutex profiles
+3. **comparison_range** -- 15m, 30m, 1h, 3h, 6h for diff views
 
 If panels show "No data":
 - Verify load has been running for at least 30 seconds
@@ -255,8 +261,7 @@ If panels show "No data":
 
 ## Top Functions CLI (scripts/top-functions.sh)
 
-Quickly find which classes and methods consume the most CPU, memory, or cause
-lock contention — without opening a browser:
+Find which classes and methods consume the most CPU, memory, or cause lock contention -- without opening a browser:
 
 ```bash
 # All services, all profiles
@@ -279,40 +284,42 @@ bash scripts/run.sh top cpu
 
 ## Quick Smoke Test (all curl)
 
-Run these after `deploy.sh` + ~30s of `generate-load.sh`:
+Run these after `deploy.sh` + ~30s of `generate-load.sh`. Source `.env` first to pick up actual ports:
 
 ```bash
+source .env
+
 # 1. All 7 services responding
-for port in 18080 18081 18082 18083 18084 18085 18086; do
+for port in ${API_GATEWAY_PORT:-18080} ${ORDER_SERVICE_PORT:-18081} ${PAYMENT_SERVICE_PORT:-18082} ${FRAUD_SERVICE_PORT:-18083} ${ACCOUNT_SERVICE_PORT:-18084} ${LOAN_SERVICE_PORT:-18085} ${NOTIFICATION_SERVICE_PORT:-18086}; do
   curl -sf "http://localhost:$port/health" && echo " :$port OK" || echo " :$port FAIL"
 done
 
 # 2. Pyroscope receiving profiles from all services
-curl -sf 'http://localhost:4040/querier.v1.QuerierService/LabelValues' \
+curl -sf "http://localhost:${PYROSCOPE_PORT:-4040}/querier.v1.QuerierService/LabelValues" \
   -X POST -H 'Content-Type: application/json' \
   -d '{"name":"service_name"}'
 
 # 3. Prometheus scraping JVM metrics
-curl -sf 'http://localhost:9090/api/v1/query?query=up{job="jvm"}' | python3 -c "
+curl -sf "http://localhost:${PROMETHEUS_PORT:-9090}/api/v1/query?query=up{job=\"jvm\"}" | python3 -c "
 import json,sys
 for r in json.load(sys.stdin)['data']['result']:
     print(f\"  {r['metric']['instance']}: {'UP' if r['value'][1]=='1' else 'DOWN'}\")"
 
 # 4. Prometheus scraping Vert.x metrics
-curl -sf 'http://localhost:9090/api/v1/query?query=up{job="vertx-apps"}' | python3 -c "
+curl -sf "http://localhost:${PROMETHEUS_PORT:-9090}/api/v1/query?query=up{job=\"vertx-apps\"}" | python3 -c "
 import json,sys
 for r in json.load(sys.stdin)['data']['result']:
     print(f\"  {r['metric']['instance']}: {'UP' if r['value'][1]=='1' else 'DOWN'}\")"
 
 # 5. Grafana datasources provisioned
-curl -sf -u admin:admin 'http://localhost:3000/api/datasources' | python3 -c "
+curl -sf -u admin:admin "http://localhost:${GRAFANA_PORT:-3000}/api/datasources" | python3 -c "
 import json,sys
 for ds in json.load(sys.stdin):
     print(f\"  {ds['name']} (uid={ds['uid']}, type={ds['type']})\")"
 
 # 6. All 4 dashboards exist
 for uid in pyroscope-java-overview jvm-metrics-deep-dive http-performance service-comparison; do
-  title=$(curl -sf -u admin:admin "http://localhost:3000/api/dashboards/uid/$uid" | python3 -c "import json,sys; print(json.load(sys.stdin)['dashboard']['title'])" 2>/dev/null)
+  title=$(curl -sf -u admin:admin "http://localhost:${GRAFANA_PORT:-3000}/api/dashboards/uid/$uid" | python3 -c "import json,sys; print(json.load(sys.stdin)['dashboard']['title'])" 2>/dev/null)
   echo "  $uid: ${title:-MISSING}"
 done
 ```
