@@ -240,6 +240,30 @@ If panels show "No data":
 
 ---
 
+## Top Functions CLI (scripts/top-functions.sh)
+
+Quickly find which classes and methods consume the most CPU, memory, or cause
+lock contention — without opening a browser:
+
+```bash
+# All services, all profiles
+bash scripts/top-functions.sh
+
+# CPU only, one service
+bash scripts/top-functions.sh cpu bank-api-gateway
+
+# Memory allocation, top 20
+bash scripts/top-functions.sh memory --top 20
+
+# Mutex contention, last 30 minutes
+bash scripts/top-functions.sh mutex --range 30m
+
+# Via unified runner
+bash scripts/run.sh top cpu
+```
+
+---
+
 ## Quick Smoke Test (all curl)
 
 Run these after `deploy.sh` + ~30s of `generate-load.sh`:

@@ -193,6 +193,50 @@ all dimensions — CPU, memory, GC, threads, HTTP, and flame graphs.
 
 ---
 
+## CLI: Top Functions by CPU / Memory / Mutex
+
+For quick answers to **"what classes/functions are consuming the most CPU, memory,
+or causing lock contention?"** without opening a browser:
+
+```bash
+bash scripts/top-functions.sh              # all services, all profile types
+bash scripts/top-functions.sh cpu          # CPU only
+bash scripts/top-functions.sh memory       # memory allocation only
+bash scripts/top-functions.sh mutex        # mutex contention only
+bash scripts/top-functions.sh cpu bank-api-gateway   # CPU for one service
+bash scripts/top-functions.sh --top 20     # show top 20 (default 15)
+bash scripts/top-functions.sh --range 30m  # last 30 minutes (default 1h)
+
+# Or via the unified runner:
+bash scripts/run.sh top                    # all profiles, all services
+bash scripts/run.sh top cpu               # CPU only
+```
+
+Example output:
+
+```
+================================================================
+  CPU — Top 15 functions (last 1h)
+================================================================
+
+--- bank-api-gateway ---
+    1.  42.3%         1.85s  com.example.MainVerticle.fibonacci
+    2.  12.1%         0.53s  com.example.MainVerticle.lambda$start$3
+    3.   8.7%         0.38s  java.math.BigDecimal.multiply
+  ...
+
+--- bank-payment-service ---
+    1.  31.5%         1.22s  com.example.PaymentVerticle.signTransaction
+    2.  18.2%         0.71s  java.security.MessageDigest.digest
+  ...
+```
+
+This queries the Pyroscope HTTP API and parses flamebearer JSON to extract
+self-time per function. It requires a running Pyroscope instance with profile
+data (run `bash scripts/generate-load.sh` first).
+
+---
+
 ## Production Debugging Workflows
 
 ### Workflow 1: High CPU Usage
@@ -222,7 +266,8 @@ graph TD
    - **Narrow bars** = negligible CPU
    - Click a bar to zoom in and see its call chain
 4. If most CPU is in GC, switch to the Memory Allocation flame graph
-5. Common findings:
+5. **CLI alternative:** `bash scripts/top-functions.sh cpu bank-api-gateway`
+6. Common findings:
    - `fibonacci()` consuming CPU → expected for CPU benchmark endpoints
    - `BigDecimal` operations → expected for payment/loan services
    - `Pattern.compile()` in a loop → bug, compile once and reuse
@@ -243,6 +288,7 @@ graph TD
    - Wide bars = methods allocating the most bytes
    - This shows *allocation rate*, not retention — but high allocators are
      the first suspects for leaks
+   - **CLI alternative:** `bash scripts/top-functions.sh memory`
 4. Check Memory Pool Utilization (bottom of JVM dashboard):
    - **Old Gen > 80%** = long-lived objects accumulating
    - **Metaspace rising** = classloader leak (dynamic class generation)

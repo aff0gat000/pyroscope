@@ -32,7 +32,7 @@ while [ $# -gt 0 ]; do
       shift
       LOAD_DURATION="${1:?--load-duration requires a value}"
       ;;
-    deploy|load|validate|teardown|benchmark|all)
+    deploy|load|validate|teardown|benchmark|top|all)
       COMMAND="$1"
       ;;
     *)
@@ -123,6 +123,13 @@ stage_benchmark() {
   bash "$SCRIPT_DIR/benchmark.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
 }
 
+stage_top() {
+  echo ""
+  echo "===== Top Functions (CPU / Memory / Mutex) ====="
+  echo ""
+  bash "$SCRIPT_DIR/top-functions.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+}
+
 # ---------------------------------------------------------------------------
 # Execute
 # ---------------------------------------------------------------------------
@@ -156,9 +163,12 @@ case "$COMMAND" in
   benchmark)
     stage_benchmark
     ;;
+  top)
+    stage_top
+    ;;
   *)
     echo "Unknown command: $COMMAND"
-    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|all] [--load-duration N]"
+    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|all] [--load-duration N]"
     exit 1
     ;;
 esac

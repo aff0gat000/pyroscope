@@ -234,13 +234,14 @@ done
 2. Open **Pyroscope Overview** dashboard
    - Select the affected application (e.g., `bank-fraud-service`, `bank-order-service`)
    - CPU flame graph shows the hot methods
-3. Look for:
+3. **CLI alternative:** `bash scripts/top-functions.sh cpu` to list top functions by CPU self-time across all services
+4. Look for:
    - Wide bars = methods consuming the most CPU
    - Deep recursive stacks (e.g., fraud detection algorithms)
    - Regex compilation inside loops
    - Serialization hotspots (JSON/XML building)
    - Loan amortization calculations in `bank-loan-service`
-4. Use **comparison view** to diff against a known-good baseline
+5. Use **comparison view** to diff against a known-good baseline
 5. Cross-reference with **JVM Metrics** dashboard:
    - Is GC contributing to CPU? Check GC pause rate.
    - Is thread count abnormal?
@@ -264,7 +265,8 @@ done
 2. **Pyroscope Overview** → Memory Allocation flame graph
    - Select the affected service (e.g., `bank-account-service`, `bank-payment-service`)
    - Which methods allocate the most?
-3. Look for:
+3. **CLI alternative:** `bash scripts/top-functions.sh memory` to list top allocating functions
+4. Look for:
    - `byte[]` allocations in request handlers
    - Unbounded `ArrayList` or `HashMap` growth
    - String concatenation in loops (use `StringBuilder`)
@@ -289,7 +291,8 @@ done
    - Are threads piling up on any service?
 2. **Pyroscope Overview** → Lock Contention flame graph
    - Which `synchronized` blocks are contended?
-3. Check specific services:
+3. **CLI alternative:** `bash scripts/top-functions.sh mutex` to list top contended locks
+4. Check specific services:
    - `bank-order-service` uses synchronized `processOrders()` — intentional for demo
    - `bank-payment-service` may show contention on shared payment state
    - `bank-account-service` may show contention on balance updates

@@ -166,6 +166,8 @@ bash scripts/run.sh load 60             # 60s of load
 bash scripts/run.sh validate            # validate only
 bash scripts/run.sh teardown            # clean up
 bash scripts/run.sh benchmark           # profiling overhead test
+bash scripts/run.sh top                 # top functions by CPU/memory/mutex
+bash scripts/run.sh top cpu             # CPU hotspots only
 bash scripts/run.sh --load-duration 60  # full pipeline with custom load duration
 ```
 
@@ -283,6 +285,7 @@ pyroscope/
 │       └── handlers/               # 6 additional workload handlers
 ├── scripts/
 │   ├── run.sh                      # Unified pipeline runner (recommended)
+│   ├── top-functions.sh            # Top CPU/memory/mutex functions (Pyroscope API)
 │   ├── deploy.sh                   # Build + start + health checks
 │   ├── generate-load.sh            # Traffic to all 7 services
 │   ├── validate.sh                 # End-to-end automated check
