@@ -6,17 +6,21 @@ set -euo pipefail
 
 DURATION_SECONDS="${1:-300}"
 
-API_GW="http://localhost:8080"
-ORDER="http://localhost:8081"
-PAYMENT="http://localhost:8082"
-FRAUD="http://localhost:8083"
-ACCOUNT="http://localhost:8084"
-LOAN="http://localhost:8085"
-NOTIFY="http://localhost:8086"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+ENV_FILE="$(dirname "$SCRIPT_DIR")/.env"
+[ -f "$ENV_FILE" ] && { set -a; source "$ENV_FILE"; set +a; }
+
+API_GW="http://localhost:${API_GATEWAY_PORT:-8080}"
+ORDER="http://localhost:${ORDER_SERVICE_PORT:-8081}"
+PAYMENT="http://localhost:${PAYMENT_SERVICE_PORT:-8082}"
+FRAUD="http://localhost:${FRAUD_SERVICE_PORT:-8083}"
+ACCOUNT="http://localhost:${ACCOUNT_SERVICE_PORT:-8084}"
+LOAN="http://localhost:${LOAN_SERVICE_PORT:-8085}"
+NOTIFY="http://localhost:${NOTIFICATION_SERVICE_PORT:-8086}"
 
 echo "==> Bank Enterprise Load Generator (${DURATION_SECONDS}s)"
-echo "    API Gateway :8080 | Order :8081 | Payment :8082 | Fraud :8083"
-echo "    Account :8084 | Loan :8085 | Notification :8086"
+echo "    API Gateway :${API_GATEWAY_PORT:-8080} | Order :${ORDER_SERVICE_PORT:-8081} | Payment :${PAYMENT_SERVICE_PORT:-8082} | Fraud :${FRAUD_SERVICE_PORT:-8083}"
+echo "    Account :${ACCOUNT_SERVICE_PORT:-8084} | Loan :${LOAN_SERVICE_PORT:-8085} | Notification :${NOTIFICATION_SERVICE_PORT:-8086}"
 echo "    Press Ctrl-C to stop early."
 echo ""
 

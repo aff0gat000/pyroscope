@@ -18,5 +18,8 @@ terraform/terraform.tfvars
 # Ansible
 ansible/*.retry
 
+# Auto-generated port config
+.env
+
 # IDE / tool config
 .claude/
