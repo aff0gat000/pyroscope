@@ -32,16 +32,33 @@ the Pyroscope continuous profiling stack.
 ### Option A: Bash Scripts (Recommended for first run)
 
 ```bash
-# 1. Deploy
+# Full pipeline — quiet mode with spinner progress + "Ready" banner
+bash scripts/run.sh
+
+# Full pipeline — verbose (all sub-script output inline)
+bash scripts/run.sh --verbose
+
+# Full pipeline — save logs to disk for later review
+bash scripts/run.sh --log-dir /tmp/pyroscope-logs
+
+# Custom load duration (default 120s)
+bash scripts/run.sh --load-duration 60
+
+# Individual stages (always verbose)
+bash scripts/run.sh deploy
+bash scripts/run.sh load 120
+bash scripts/run.sh validate
+
+# Tear down when done
+bash scripts/run.sh teardown
+```
+
+Or call sub-scripts directly:
+
+```bash
 bash scripts/deploy.sh
-
-# 2. Generate load (runs 5 minutes by default)
 bash scripts/generate-load.sh
-
-# 3. Validate
 bash scripts/validate.sh
-
-# 4. Tear down when done
 bash scripts/teardown.sh
 ```
 
@@ -504,6 +521,20 @@ docker compose exec bank-api-gateway curl -sf http://pyroscope:4040/ready
 
 # 4. Check JAVA_TOOL_OPTIONS is set
 docker compose exec bank-api-gateway env | grep JAVA_TOOL_OPTIONS
+```
+
+### Explore Profiles shows "plugin not installed"
+
+The Pyroscope app plugin must be both installed and enabled. Clear cached state:
+```bash
+bash scripts/run.sh teardown
+docker volume rm pyroscope_grafana-data 2>/dev/null || true
+bash scripts/run.sh
+```
+
+Verify plugin is active:
+```bash
+curl -sf -u admin:admin 'http://localhost:3000/api/plugins/grafana-pyroscope-app/settings' | python3 -m json.tool
 ```
 
 ### Grafana shows "No data"

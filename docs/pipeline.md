@@ -4,15 +4,16 @@ How the Pyroscope bank demo pipeline works — stages, data flow, and configurat
 
 ## Overview
 
-The pipeline has three core stages. Each must complete before the next begins.
+The pipeline has four stages. Each must complete before the next begins.
 
 ```mermaid
 graph LR
-    D["1. Deploy"] --> L["2. Generate Load"] --> V["3. Validate"]
+    D["1. Deploy"] --> L["2. Generate Load"] --> V["3. Validate"] --> W["4. Data Ready"]
 
     style D fill:#22c55e,color:#fff
     style L fill:#f59e0b,color:#000
     style V fill:#3b82f6,color:#fff
+    style W fill:#8b5cf6,color:#fff
 ```
 
 | Stage | Script | What it does |
@@ -20,6 +21,7 @@ graph LR
 | **Deploy** | `scripts/deploy.sh` | Builds images, resolves ports, starts 10 containers, waits for health |
 | **Generate Load** | `scripts/generate-load.sh` | Sends weighted HTTP traffic to all 7 services |
 | **Validate** | `scripts/validate.sh` | Checks infrastructure, services, dashboards, endpoints (36 checks) |
+| **Data Ready** | (built into `run.sh`) | Polls Pyroscope and Prometheus until profile and metric data are confirmed |
 
 Optional stages: `benchmark` (overhead measurement), `teardown` (cleanup), `attach-to-existing-jvm` (external JVM profiling).
 
@@ -30,10 +32,16 @@ Two equivalent methods are provided. Both produce the same result — choose bas
 ### Shell scripts (recommended — requires only bash + curl)
 
 ```bash
-# Full pipeline: deploy → 2 min load → validate
+# Full pipeline: deploy → load → validate → data check (quiet mode with spinners)
 bash scripts/run.sh
 
-# Individual stages
+# Full pipeline with all output inline (verbose / debugging)
+bash scripts/run.sh --verbose
+
+# Full pipeline, save stage logs to disk
+bash scripts/run.sh --log-dir /tmp/pyroscope-logs
+
+# Individual stages (always verbose)
 bash scripts/run.sh deploy
 bash scripts/run.sh load 120
 bash scripts/run.sh validate
@@ -45,6 +53,10 @@ bash scripts/run.sh --load-duration 60
 bash scripts/run.sh benchmark           # profiling overhead test
 bash scripts/run.sh teardown            # stop + clean up
 ```
+
+**Quiet mode (default):** The full pipeline shows a single-line spinner per stage with elapsed time. On completion, a "Ready" banner prints with Grafana/Pyroscope URLs. Sub-script output goes to `/dev/null` by default. Use `--log-dir DIR` to save logs to disk, or `--verbose` for the old inline output.
+
+**Individual commands** (`deploy`, `load`, `validate`, `top`, `health`) always run in verbose mode.
 
 You can also call the underlying scripts directly:
 

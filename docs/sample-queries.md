@@ -135,6 +135,20 @@ curl -s 'http://localhost:4040/pyroscope/render?query=mutex:contentions:count:mu
 
 ---
 
+## Grafana Explore Profiles (http://localhost:3000/a/grafana-pyroscope-app/explore)
+
+The **Explore Profiles** view provides a dedicated UI for browsing and comparing
+profiles without building dashboard panels. It requires the `grafana-pyroscope-app`
+plugin to be installed and enabled (handled automatically by provisioning —
+see `config/grafana/provisioning/plugins/plugins.yml`).
+
+If you see "plugin not installed", clear the Grafana volume and redeploy:
+```bash
+bash scripts/run.sh teardown
+docker volume rm pyroscope_grafana-data 2>/dev/null || true
+bash scripts/run.sh
+```
+
 ## Grafana Explore (http://localhost:3000/explore)
 
 ### Pyroscope datasource queries

@@ -15,16 +15,18 @@ recorded walkthroughs, or self-guided exploration.
 # Clean slate
 bash scripts/teardown.sh 2>/dev/null || true
 
-# Build and start everything
-bash scripts/deploy.sh
+# Full pipeline — deploys, generates load, validates, and waits for data.
+# Shows compact spinner progress. Prints a "Ready!" banner with URLs when done.
+bash scripts/run.sh
 
-# Start load generation in background
-bash scripts/generate-load.sh http://localhost:8080 http://localhost:8081 http://localhost:8082 http://localhost:8083 http://localhost:8084 http://localhost:8085 http://localhost:8086 600 &
-LOAD_PID=$!
+# Or with verbose output for debugging setup issues:
+bash scripts/run.sh --verbose
 
-# Wait 60 seconds for profiles to accumulate
-sleep 60
+# Or to save full logs for later review:
+bash scripts/run.sh --log-dir /tmp/demo-logs
 ```
+
+Once you see the "Ready!" banner, Grafana and Pyroscope are populated and ready to demo. Load generation continues in the background — press Ctrl-C to stop.
 
 ---
 
@@ -204,11 +206,8 @@ for interactive exploration of all endpoints across all 7 services.
 ## Post-Demo Cleanup
 
 ```bash
-# Stop load generator
-kill $LOAD_PID 2>/dev/null || true
-
-# Tear down
-bash scripts/teardown.sh
+# If run.sh is still running, press Ctrl-C first, then:
+bash scripts/run.sh teardown
 ```
 
 ---
@@ -217,9 +216,10 @@ bash scripts/teardown.sh
 
 | Problem | Fix |
 |---------|-----|
-| No flame graph data | Load generator needs ~30s to produce profiles. Wait and refresh. |
+| No flame graph data | Load generator needs ~30s to produce profiles. Wait for the "Ready!" banner. |
 | "No data" in Grafana panels | Check time range (top right). Set to "Last 1 hour". |
-| Application selector empty | Pyroscope needs data first. Run load generator. |
+| Application selector empty | Pyroscope needs data first. Wait for the "Ready!" banner or run load manually. |
+| Explore Profiles says "plugin not installed" | Clear Grafana volume: `bash scripts/run.sh teardown && docker volume rm pyroscope_grafana-data && bash scripts/run.sh` |
 | Dashboard not found | Grafana provisions on startup. Restart: `docker compose restart grafana` |
 | Build fails | Check Docker has enough memory (8GB+ recommended for 7 services). Run `docker compose build --no-cache`. |
 

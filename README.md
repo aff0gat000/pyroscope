@@ -6,10 +6,12 @@ A bank enterprise microservices demo with **7 Vert.x services** profiled by the 
 
 ```bash
 git clone <this-repo> && cd pyroscope
-bash scripts/run.sh                # deploy + load + validate — single command
-# Open http://localhost:3000 (admin/admin) → dashboards are pre-loaded
-# Open http://localhost:4040 → select any bank-* service → flame graphs
-bash scripts/teardown.sh           # clean up
+bash scripts/run.sh                # deploy + load + validate + data check (quiet mode)
+# Wait for the "Ready!" banner, then:
+#   Grafana:   http://localhost:3000 (admin/admin) → dashboards are pre-loaded
+#   Pyroscope: http://localhost:4040 → select any bank-* service → flame graphs
+# Ctrl-C to stop load, then:
+bash scripts/run.sh teardown       # clean up
 ```
 
 ## Architecture
@@ -160,8 +162,11 @@ Each service has deliberately different CPU, memory, and lock characteristics so
 ### Option 0: Single command (recommended)
 
 ```bash
-bash scripts/run.sh                     # full pipeline: deploy → load (120s) → validate
-bash scripts/run.sh deploy              # deploy only
+bash scripts/run.sh                     # full pipeline: deploy → load → validate → data check
+                                        # quiet mode with spinner progress + "Ready" banner
+bash scripts/run.sh --verbose           # full pipeline with all output inline (old behavior)
+bash scripts/run.sh --log-dir /tmp/logs # quiet mode + save full logs to disk
+bash scripts/run.sh deploy              # deploy only (always verbose)
 bash scripts/run.sh load 60             # 60s of load
 bash scripts/run.sh validate            # validate only
 bash scripts/run.sh teardown            # clean up
@@ -172,6 +177,8 @@ bash scripts/run.sh health              # flag problematic JVMs
 bash scripts/run.sh health --json       # JSON output for automation
 bash scripts/run.sh --load-duration 60  # full pipeline with custom load duration
 ```
+
+The default full pipeline runs in **quiet mode**: each stage shows a single-line spinner with elapsed time, and on completion prints a "Ready" banner with Grafana/Pyroscope URLs. Use `--verbose` for full inline output or `--log-dir DIR` to persist stage logs to disk.
 
 See [docs/pipeline.md](docs/pipeline.md) for details on each stage.
 
@@ -286,7 +293,7 @@ pyroscope/
 │       ├── NotificationVerticle.java    # Messaging, templates, retries
 │       └── handlers/               # 6 additional workload handlers
 ├── scripts/
-│   ├── run.sh                      # Unified pipeline runner (recommended)
+│   ├── run.sh                      # Unified pipeline runner (quiet mode + ready banner)
 │   ├── top-functions.sh            # Top CPU/memory/mutex functions (Pyroscope API)
 │   ├── jvm-health.sh              # Identify problematic JVMs (Prometheus thresholds)
 │   ├── deploy.sh                   # Build + start + health checks

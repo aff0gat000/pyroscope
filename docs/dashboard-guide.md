@@ -360,6 +360,7 @@ graph TD
 5. Compare:
    - **Service Comparison** — side-by-side CPU, memory, latency
    - **Pyroscope Java Overview** — use Comparison view to diff flame graphs
+   - **Explore → Profiles** — ad-hoc flame graph queries (requires Pyroscope app plugin)
    - **HTTP Performance** — latency and throughput changes
    - **JVM Metrics Deep Dive** — GC improvements, thread count changes
 
@@ -447,6 +448,30 @@ jvm_threads_deadlocked{job="jvm"}
 ---
 
 ## Troubleshooting: Dashboard Shows "No Data"
+
+### Explore Profiles shows "plugin not installed"
+
+The Pyroscope app plugin (`grafana-pyroscope-app`) must be both **installed** and
+**enabled**. This project handles both automatically:
+
+- **Installation:** `GF_INSTALL_PLUGINS=grafana-pyroscope-app` in `docker-compose.yml`
+- **Activation:** `config/grafana/provisioning/plugins/plugins.yml` enables the app on startup
+
+If you still see "plugin not installed" after a fresh deploy, the Grafana volume
+may be caching old state:
+
+```bash
+bash scripts/run.sh teardown
+docker volume rm pyroscope_grafana-data 2>/dev/null || true
+bash scripts/run.sh
+```
+
+To verify the plugin is active:
+
+```bash
+curl -sf -u admin:admin 'http://localhost:3000/api/plugins/grafana-pyroscope-app/settings' | python3 -m json.tool
+# "enabled": true
+```
 
 ### Pyroscope panels (flame graphs) show nothing
 
