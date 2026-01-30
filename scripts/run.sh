@@ -58,8 +58,10 @@ cleanup() {
   if [ -n "$LOAD_PID" ] && kill -0 "$LOAD_PID" 2>/dev/null; then
     echo ""
     echo "Stopping background load generator (PID $LOAD_PID)..."
-    # Kill the entire process group so child processes (curl, bash) also die
-    kill -- -"$LOAD_PID" 2>/dev/null || kill "$LOAD_PID" 2>/dev/null || true
+    # Kill the process and its children (portable: works on macOS + Linux)
+    kill "$LOAD_PID" 2>/dev/null || true
+    # Also kill any child processes (pkill by parent PID)
+    pkill -P "$LOAD_PID" 2>/dev/null || true
     wait "$LOAD_PID" 2>/dev/null || true
   fi
   if [ "$INTERRUPTED" -eq 1 ]; then
@@ -93,16 +95,15 @@ stage_load_background() {
   echo ""
   # Run initial timed load, then keep generating indefinitely so dashboards stay populated.
   # The trap handler kills this on exit/teardown.
-  # setsid creates a new process group so "kill -- -PID" kills all children.
-  setsid bash -c "
-    bash \"$SCRIPT_DIR/generate-load.sh\" \"$LOAD_DURATION\"
-    echo ''
-    echo '===== Initial load complete. Restarting continuous load (Ctrl-C or teardown to stop) ====='
-    echo ''
+  (
+    bash "$SCRIPT_DIR/generate-load.sh" "$LOAD_DURATION"
+    echo ""
+    echo "===== Initial load complete. Restarting continuous load (Ctrl-C or teardown to stop) ====="
+    echo ""
     while true; do
-      bash \"$SCRIPT_DIR/generate-load.sh\" 300 2>/dev/null || true
+      bash "$SCRIPT_DIR/generate-load.sh" 300 2>/dev/null || true
     done
-  " &
+  ) &
   LOAD_PID=$!
   echo "Load generator running in background (PID $LOAD_PID)"
   # Wait for initial load to build up enough data for validation
