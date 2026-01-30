@@ -16,7 +16,7 @@
         "name": "instance",
         "type": "query",
         "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
-        "query": "label_values(jvm_memory_bytes_used{job=\"jvm\"}, instance)",
+        "query": "label_values(jvm_memory_used_bytes{job=\"jvm\"}, instance)",
         "refresh": 2,
         "includeAll": true,
         "multi": true,
@@ -118,11 +118,11 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "jvm_memory_bytes_used{job=\"jvm\", area=\"heap\", instance=~\"$instance\"}",
+          "expr": "jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=~\"$instance\"}",
           "legendFormat": "{{instance}} used"
         },
         {
-          "expr": "jvm_memory_bytes_max{job=\"jvm\", area=\"heap\", instance=~\"$instance\"}",
+          "expr": "jvm_memory_max_bytes{job=\"jvm\", area=\"heap\", instance=~\"$instance\"}",
           "legendFormat": "{{instance}} max"
         }
       ],
@@ -141,7 +141,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
       "targets": [
         {
-          "expr": "jvm_memory_bytes_used{job=\"jvm\", area=\"nonheap\", instance=~\"$instance\"}",
+          "expr": "jvm_memory_used_bytes{job=\"jvm\", area=\"nonheap\", instance=~\"$instance\"}",
           "legendFormat": "{{instance}} used"
         }
       ],
@@ -260,7 +260,7 @@
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 32 },
       "targets": [
         {
-          "expr": "jvm_memory_pool_bytes_used{job=\"jvm\", instance=~\"$instance\"} / jvm_memory_pool_bytes_max{job=\"jvm\", instance=~\"$instance\"} > 0",
+          "expr": "jvm_memory_pool_used_bytes{job=\"jvm\", instance=~\"$instance\"} / jvm_memory_pool_max_bytes{job=\"jvm\", instance=~\"$instance\"} > 0",
           "legendFormat": "{{instance}} — {{pool}}"
         }
       ],

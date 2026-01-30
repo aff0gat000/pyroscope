@@ -37,11 +37,11 @@
       "gridPos": { "h": 8, "w": 24, "x": 0, "y": 8 },
       "targets": [
         {
-          "expr": "sum by (instance) (jvm_memory_bytes_used{job=\"jvm\", area=\"heap\", instance=\"api-gateway:9404\"})",
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"api-gateway:9404\"})",
           "legendFormat": "API Gateway heap"
         },
         {
-          "expr": "sum by (instance) (jvm_memory_bytes_used{job=\"jvm\", area=\"heap\", instance=\"order-service:9404\"})",
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"order-service:9404\"})",
           "legendFormat": "Order Service heap"
         }
       ],

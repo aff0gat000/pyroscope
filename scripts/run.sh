@@ -7,11 +7,15 @@ set -euo pipefail
 # Usage:
 #   bash scripts/run.sh                  # full pipeline (deploy + load + validate)
 #   bash scripts/run.sh deploy           # deploy only
-#   bash scripts/run.sh load 60          # 60s of load
+#   bash scripts/run.sh load 60          # 60s of load (foreground)
 #   bash scripts/run.sh validate         # validate only
 #   bash scripts/run.sh teardown         # clean up
 #   bash scripts/run.sh benchmark        # profiling overhead test
 #   bash scripts/run.sh --load-duration 60   # full pipeline with custom load duration
+#
+# In the full pipeline ("all"), load generation runs in the background so the
+# pipeline is not blocked. After validation completes, load continues running
+# to keep dashboards populated. Use "teardown" or Ctrl-C to stop.
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
@@ -46,6 +50,20 @@ if [ "$COMMAND" = "load" ] && [ ${#EXTRA_ARGS[@]} -gt 0 ]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Cleanup handler — kill background load on exit
+# ---------------------------------------------------------------------------
+LOAD_PID=""
+cleanup() {
+  if [ -n "$LOAD_PID" ] && kill -0 "$LOAD_PID" 2>/dev/null; then
+    echo ""
+    echo "Stopping background load generator (PID $LOAD_PID)..."
+    kill "$LOAD_PID" 2>/dev/null || true
+    wait "$LOAD_PID" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
+# ---------------------------------------------------------------------------
 # Stage runners
 # ---------------------------------------------------------------------------
 stage_deploy() {
@@ -55,11 +73,33 @@ stage_deploy() {
   bash "$SCRIPT_DIR/deploy.sh"
 }
 
-stage_load() {
+stage_load_foreground() {
   echo ""
   echo "===== [$1] Generating load (${LOAD_DURATION}s) ====="
   echo ""
   bash "$SCRIPT_DIR/generate-load.sh" "$LOAD_DURATION"
+}
+
+stage_load_background() {
+  echo ""
+  echo "===== [$1] Starting background load (${LOAD_DURATION}s initial, then continuous) ====="
+  echo ""
+  # Run initial timed load, then keep generating indefinitely so dashboards stay populated.
+  # The trap handler kills this on exit/teardown.
+  (
+    bash "$SCRIPT_DIR/generate-load.sh" "$LOAD_DURATION"
+    echo ""
+    echo "===== Initial load complete. Restarting continuous load (Ctrl-C or teardown to stop) ====="
+    echo ""
+    while true; do
+      bash "$SCRIPT_DIR/generate-load.sh" 300 2>/dev/null || true
+    done
+  ) &
+  LOAD_PID=$!
+  echo "Load generator running in background (PID $LOAD_PID)"
+  # Wait for initial load to build up enough data for validation
+  echo "Waiting ${LOAD_DURATION}s for initial load to complete..."
+  sleep "$LOAD_DURATION"
 }
 
 stage_validate() {
@@ -88,17 +128,24 @@ stage_benchmark() {
 # ---------------------------------------------------------------------------
 case "$COMMAND" in
   all)
-    stage_deploy  "1/3"
-    stage_load    "2/3"
-    stage_validate "3/3"
+    stage_deploy          "1/3"
+    stage_load_background "2/3"
+    stage_validate        "3/3"
     echo ""
     echo "===== Pipeline complete ====="
+    echo ""
+    echo "Load generation continues in the background (PID $LOAD_PID)."
+    echo "Dashboards will keep receiving data."
+    echo "Run 'bash scripts/run.sh teardown' or press Ctrl-C to stop."
+    echo ""
+    # Keep the script alive so the background load continues
+    wait "$LOAD_PID" 2>/dev/null || true
     ;;
   deploy)
     stage_deploy "1/1"
     ;;
   load)
-    stage_load "1/1"
+    stage_load_foreground "1/1"
     ;;
   validate)
     stage_validate "1/1"

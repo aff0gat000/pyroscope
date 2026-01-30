@@ -27,7 +27,9 @@ Select an application, then use these profile types:
 |---|---|
 | `process_cpu:cpu:nanoseconds:cpu:nanoseconds` | CPU flame graph — hot methods |
 | `memory:alloc_in_new_tlab_bytes:bytes:space:bytes` | Allocation flame graph — where memory is allocated |
-| `lock:contentions:count:lock:count` | Lock contention — synchronized blocks under contention |
+| `memory:alloc_in_new_tlab_objects:count:space:bytes` | Allocation object count — how many objects allocated |
+| `mutex:contentions:count:mutex:count` | Mutex contention — synchronized blocks under contention |
+| `mutex:delay:nanoseconds:mutex:count` | Mutex delay — time spent waiting on mutexes |
 
 ### Label selectors (paste in "Label Selector" field)
 
@@ -83,7 +85,9 @@ Other useful comparisons:
 ### List all application names
 
 ```bash
-curl -s 'http://localhost:4040/pyroscope/label-values?label=service_name' | python3 -m json.tool
+curl -s 'http://localhost:4040/querier.v1.QuerierService/LabelValues' \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"name":"service_name"}'
 ```
 
 ### List all profile types
@@ -123,10 +127,10 @@ curl -s 'http://localhost:4040/pyroscope/render?query=process_cpu:cpu:nanosecond
 curl -s 'http://localhost:4040/pyroscope/render?query=memory:alloc_in_new_tlab_bytes:bytes:space:bytes%7Bservice_name%3D%22bank-api-gateway%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
 ```
 
-### Render lock contention profile
+### Render mutex contention profile
 
 ```bash
-curl -s 'http://localhost:4040/pyroscope/render?query=lock:contentions:count:lock:count%7Bservice_name%3D%22bank-order-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
+curl -s 'http://localhost:4040/pyroscope/render?query=mutex:contentions:count:mutex:count%7Bservice_name%3D%22bank-order-service%22%7D&from=now-1h&until=now&format=json' | python3 -m json.tool
 ```
 
 ---
@@ -166,47 +170,57 @@ curl -s 'http://localhost:4040/pyroscope/render?query=lock:contentions:count:loc
 - Profile type: `memory:alloc_in_new_tlab_bytes:bytes:space:bytes`
 - Label selector: `{service_name="bank-notification-service"}`
 
-**Lock contention (Order Service — has synchronized blocks):**
-- Profile type: `lock:contentions:count:lock:count`
+**Mutex contention (Order Service — has synchronized blocks):**
+- Profile type: `mutex:contentions:count:mutex:count`
 - Label selector: `{service_name="bank-order-service"}`
 
 ### Prometheus datasource queries
 
 Switch to the "Prometheus" datasource in Explore, then paste:
 
-**CPU usage rate per instance:**
+**CPU usage rate per instance (JVM metrics from JMX Exporter, job="jvm"):**
 ```promql
-rate(process_cpu_seconds_total{job="bank-app"}[1m])
+rate(process_cpu_seconds_total{job="jvm"}[1m])
 ```
 
 **JVM heap memory by area:**
 ```promql
-jvm_memory_used_bytes{job="bank-app", area="heap"}
+jvm_memory_used_bytes{job="jvm", area="heap"}
 ```
 
-**GC pause rate:**
+**GC collection rate:**
 ```promql
-rate(jvm_gc_pause_seconds_sum{job="bank-app"}[1m])
+rate(jvm_gc_collection_seconds_sum{job="jvm"}[1m])
 ```
 
-**HTTP request rate by endpoint:**
+**HTTP request rate by endpoint (Vert.x metrics, job="vertx-apps"):**
 ```promql
-rate(http_server_requests_seconds_count{job="bank-app"}[1m])
+sum by (route) (rate(vertx_http_server_requests_total{job="vertx-apps"}[1m]))
 ```
 
-**HTTP request latency p99:**
+**HTTP avg latency by endpoint:**
 ```promql
-histogram_quantile(0.99, rate(http_server_requests_seconds_bucket{job="bank-app"}[5m]))
+sum by (route) (rate(vertx_http_server_response_time_seconds_sum{job="vertx-apps"}[1m])) / sum by (route) (rate(vertx_http_server_response_time_seconds_count{job="vertx-apps"}[1m]))
 ```
 
 **Thread count:**
 ```promql
-jvm_threads_live_threads{job="bank-app"}
+jvm_threads_current{job="jvm"}
 ```
 
 **Classes loaded:**
 ```promql
-jvm_classes_loaded_classes{job="bank-app"}
+jvm_classes_currently_loaded{job="jvm"}
+```
+
+**Open file descriptors:**
+```promql
+process_open_fds{job="jvm"}
+```
+
+**Memory pool utilization:**
+```promql
+jvm_memory_pool_used_bytes{job="jvm"} / jvm_memory_pool_max_bytes{job="jvm"} > 0
 ```
 
 ---
@@ -216,7 +230,7 @@ jvm_classes_loaded_classes{job="bank-app"}
 The provisioned dashboard has template variables at the top:
 
 1. **application** — select any of the 7 services: `bank-api-gateway`, `bank-order-service`, `bank-payment-service`, `bank-fraud-service`, `bank-account-service`, `bank-loan-service`, `bank-notification-service`
-2. **profile_type** — switch between CPU, memory, lock profiles
+2. **profile_type** — switch between CPU, memory, mutex profiles
 3. **comparison_range** — 15m, 30m, 1h, 3h, 6h for diff views
 
 If panels show "No data":
@@ -232,23 +246,36 @@ Run these after `deploy.sh` + ~30s of `generate-load.sh`:
 
 ```bash
 # 1. All 7 services responding
-curl -sf http://localhost:8080/health && echo " api-gateway OK"
-curl -sf http://localhost:8081/health && echo " order-service OK"
-curl -sf http://localhost:8082/health && echo " payment-service OK"
-curl -sf http://localhost:8083/health && echo " fraud-service OK"
-curl -sf http://localhost:8084/health && echo " account-service OK"
-curl -sf http://localhost:8085/health && echo " loan-service OK"
-curl -sf http://localhost:8086/health && echo " notification-service OK"
+for port in 18080 18081 18082 18083 18084 18085 18086; do
+  curl -sf "http://localhost:$port/health" && echo " :$port OK" || echo " :$port FAIL"
+done
 
 # 2. Pyroscope receiving profiles from all services
-curl -sf 'http://localhost:4040/pyroscope/label-values?label=service_name' | grep bank
+curl -sf 'http://localhost:4040/querier.v1.QuerierService/LabelValues' \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"name":"service_name"}'
 
-# 3. Prometheus scraping metrics
-curl -sf 'http://localhost:9090/api/v1/query?query=up' | grep bank
+# 3. Prometheus scraping JVM metrics
+curl -sf 'http://localhost:9090/api/v1/query?query=up{job="jvm"}' | python3 -c "
+import json,sys
+for r in json.load(sys.stdin)['data']['result']:
+    print(f\"  {r['metric']['instance']}: {'UP' if r['value'][1]=='1' else 'DOWN'}\")"
 
-# 4. Grafana datasources provisioned
-curl -sf -u admin:admin 'http://localhost:3000/api/datasources' | python3 -m json.tool | grep uid
+# 4. Prometheus scraping Vert.x metrics
+curl -sf 'http://localhost:9090/api/v1/query?query=up{job="vertx-apps"}' | python3 -c "
+import json,sys
+for r in json.load(sys.stdin)['data']['result']:
+    print(f\"  {r['metric']['instance']}: {'UP' if r['value'][1]=='1' else 'DOWN'}\")"
 
-# 5. Dashboard exists
-curl -sf -u admin:admin 'http://localhost:3000/api/dashboards/uid/pyroscope-java-overview' | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Dashboard: {d[\"dashboard\"][\"title\"]} — {len(d[\"dashboard\"][\"panels\"])} panels')"
+# 5. Grafana datasources provisioned
+curl -sf -u admin:admin 'http://localhost:3000/api/datasources' | python3 -c "
+import json,sys
+for ds in json.load(sys.stdin):
+    print(f\"  {ds['name']} (uid={ds['uid']}, type={ds['type']})\")"
+
+# 6. All 4 dashboards exist
+for uid in pyroscope-java-overview jvm-metrics-deep-dive http-performance service-comparison; do
+  title=$(curl -sf -u admin:admin "http://localhost:3000/api/dashboards/uid/$uid" | python3 -c "import json,sys; print(json.load(sys.stdin)['dashboard']['title'])" 2>/dev/null)
+  echo "  $uid: ${title:-MISSING}"
+done
 ```

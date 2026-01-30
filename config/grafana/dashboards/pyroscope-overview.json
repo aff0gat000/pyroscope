@@ -20,7 +20,7 @@
       {
         "name": "profile_type",
         "type": "custom",
-        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,lock:contentions:count:lock:count",
+        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,mutex:contentions:count:mutex:count",
         "current": { "text": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" },
         "includeAll": false,
         "multi": false,
@@ -66,13 +66,13 @@
     },
     {
       "id": 3,
-      "title": "Lock Contention – Flame Graph",
+      "title": "Mutex Contention – Flame Graph",
       "type": "flamegraph",
       "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
       "gridPos": { "h": 12, "w": 24, "x": 0, "y": 24 },
       "targets": [
         {
-          "profileTypeId": "lock:contentions:count:lock:count",
+          "profileTypeId": "mutex:contentions:count:mutex:count",
           "labelSelector": "{service_name=\"$application\"}"
         }
       ]
@@ -117,7 +117,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 48 },
       "targets": [
         {
-          "expr": "jvm_memory_bytes_used{job=\"jvm\", area=\"heap\"}",
+          "expr": "jvm_memory_used_bytes{job=\"jvm\", area=\"heap\"}",
           "legendFormat": "{{instance}}"
         }
       ],

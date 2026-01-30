@@ -12,7 +12,7 @@ groups:
           runbook: "Check Pyroscope CPU flame graph for hot methods. See docs/runbook.md#high-cpu"
 
       - alert: HighHeapUsage
-        expr: jvm_memory_bytes_used{job="jvm", area="heap"} / jvm_memory_bytes_max{job="jvm", area="heap"} > 0.85
+        expr: jvm_memory_used_bytes{job="jvm", area="heap"} / jvm_memory_max_bytes{job="jvm", area="heap"} > 0.85
         for: 2m
         labels:
           severity: warning
