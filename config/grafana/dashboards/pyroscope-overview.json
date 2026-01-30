@@ -10,7 +10,7 @@
         "name": "application",
         "type": "query",
         "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
-        "query": { "type": "label_values", "label": "service_name" },
+        "query": { "type": "label_values", "label": "service_name", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" },
         "current": { "text": "bank-api-gateway", "value": "bank-api-gateway" },
         "refresh": 2,
         "includeAll": false,
