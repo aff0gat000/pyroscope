@@ -155,13 +155,16 @@ The **Before vs After Fix** dashboard is already provisioned in Grafana. No addi
 1. Run `bash scripts/run.sh`. The default pipeline deploys, generates load, and validates.
 2. Run `bash scripts/run.sh --fixed` to redeploy with optimizations and generate a second round of load.
 
-**Option C: Manual comparison**
+**Option C: Manual toggle with optimize/unoptimize commands**
 
 1. With the stack running, generate load: `bash scripts/run.sh load 60`.
 2. Note the start and end time (Phase 1: unoptimized).
-3. Redeploy with fixes: `COMPOSE_EXTRA_FILES=docker-compose.fixed.yml bash scripts/deploy.sh`.
+3. Switch to optimized mode: `bash scripts/run.sh optimize`.
 4. Generate load again: `bash scripts/run.sh load 60`.
 5. Note the start and end time (Phase 2: optimized).
+6. To switch back to unoptimized: `bash scripts/run.sh unoptimize`.
+
+The `optimize` and `unoptimize` commands restart the Java services with or without the `OPTIMIZED=true` flag. This allows repeated toggling between modes on a running stack without a full redeploy.
 
 **View results in Grafana:**
 

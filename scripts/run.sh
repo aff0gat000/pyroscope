@@ -18,6 +18,8 @@ set -euo pipefail
 #   bash scripts/run.sh compare              # before/after on running stack
 #   bash scripts/run.sh dump-config          # dump running config to config/ directory
 #   bash scripts/run.sh check-dashboards    # validate dashboard queries against Prometheus/Pyroscope
+#   bash scripts/run.sh optimize            # restart services with OPTIMIZED=true
+#   bash scripts/run.sh unoptimize          # restart services without optimizations
 #
 # In the full pipeline ("all"), load generation runs in the background so the
 # pipeline is not blocked. After validation completes, load continues running
@@ -25,6 +27,9 @@ set -euo pipefail
 #
 # Commands safe to run alongside a running stack (read-only):
 #   health, top, diagnose, bottleneck, validate, load, dump-config, check-dashboards
+#
+# Commands that mutate the stack (restart services, no confirmation needed):
+#   optimize, unoptimize
 #
 # Commands that mutate the stack (will prompt for confirmation if running):
 #   all (teardown + redeploy), deploy (recreate), compare (restart services),
@@ -71,7 +76,7 @@ while [ $# -gt 0 ]; do
     --fixed)
       FIXED=1
       ;;
-    deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|check-dashboards|all)
+    deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|check-dashboards|optimize|unoptimize|all)
       COMMAND="$1"
       ;;
     *)
@@ -274,7 +279,18 @@ restart_with_optimized() {
   cd "$PROJECT_DIR"
   docker compose -f docker-compose.yml -f docker-compose.fixed.yml up -d --no-deps --build \
     api-gateway order-service payment-service fraud-service account-service loan-service notification-service
-  # Wait for services to be healthy again
+  wait_for_services
+}
+
+restart_without_optimized() {
+  echo "  Restarting all services without optimizations (default)..."
+  cd "$PROJECT_DIR"
+  docker compose -f docker-compose.yml up -d --no-deps --build \
+    api-gateway order-service payment-service fraud-service account-service loan-service notification-service
+  wait_for_services
+}
+
+wait_for_services() {
   for svc in api-gateway order-service payment-service fraud-service account-service loan-service notification-service; do
     for _attempt in $(seq 1 30); do
       if docker compose ps "$svc" 2>/dev/null | grep -q "Up"; then
@@ -395,7 +411,7 @@ stage_health() {
 # Commands that only read from the running stack (safe to run anytime):
 #   dump-config, health, top, diagnose, bottleneck, validate, load, check-dashboards
 # Commands that mutate the stack (will restart/stop containers):
-#   all, deploy, teardown, compare, benchmark
+#   all, deploy, teardown, compare, benchmark, optimize, unoptimize
 
 stack_is_running() {
   docker compose -f "$PROJECT_DIR/docker-compose.yml" ps --status running 2>/dev/null | grep -q "pyroscope" 2>/dev/null
@@ -537,6 +553,28 @@ case "$COMMAND" in
   check-dashboards)
     bash "$SCRIPT_DIR/check-dashboards.sh"
     ;;
+  optimize)
+    echo ""
+    echo "===== Switching to Optimized Mode ====="
+    echo ""
+    restart_with_optimized
+    echo ""
+    echo "  Services restarted with OPTIMIZED=true."
+    echo "  Generate load to see the difference: bash scripts/run.sh load 60"
+    echo "  Switch back: bash scripts/run.sh unoptimize"
+    echo ""
+    ;;
+  unoptimize)
+    echo ""
+    echo "===== Switching to Default (Unoptimized) Mode ====="
+    echo ""
+    restart_without_optimized
+    echo ""
+    echo "  Services restarted without optimizations."
+    echo "  Generate load to see the difference: bash scripts/run.sh load 60"
+    echo "  Switch to optimized: bash scripts/run.sh optimize"
+    echo ""
+    ;;
   dump-config)
     # Dump the running config from each infrastructure container into
     # a timestamped snapshot directory. Never overwrites repo defaults.
@@ -624,7 +662,7 @@ case "$COMMAND" in
     ;;
   *)
     echo "Unknown command: $COMMAND"
-    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|check-dashboards|all] [--verbose] [--log-dir DIR] [--load-duration N] [--fixed]"
+    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|check-dashboards|optimize|unoptimize|all] [--verbose] [--log-dir DIR] [--load-duration N] [--fixed]"
     exit 1
     ;;
 esac

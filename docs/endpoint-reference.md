@@ -282,6 +282,26 @@ To generate profiling data with Postman Runner:
 4. Run the collection.
 5. Switch to Grafana and observe the flame graph update in near real-time.
 
+## Switching between optimized and unoptimized modes
+
+Toggle service optimizations on a running stack without a full redeploy:
+
+```bash
+# Switch to optimized code paths (OPTIMIZED=true)
+bash scripts/run.sh optimize
+
+# Generate load to capture optimized flame graphs
+bash scripts/run.sh load 60
+
+# Switch back to unoptimized code paths (default)
+bash scripts/run.sh unoptimize
+
+# Generate load to capture unoptimized flame graphs
+bash scripts/run.sh load 60
+```
+
+This allows repeated A/B comparison. Use the **Before vs After Fix** dashboard in Grafana to compare flame graphs from each phase.
+
 ## Recommended investigation sequences
 
 ### Investigate CPU bottlenecks
@@ -325,4 +345,26 @@ for i in $(seq 1 50); do curl -s http://localhost:18086/notify/render > /dev/nul
 
 # 4. Check JVM Metrics Deep Dive for GC impact
 # 5. Correlate: high GC rate + wide allocation bars = the cause of GC pressure
+```
+
+### Investigate before and after optimization
+
+```bash
+# 1. Generate load against unoptimized services
+bash scripts/run.sh load 60
+
+# 2. Open Grafana: Pyroscope Java Overview → bank-api-gateway → cpu
+# 3. Note the fibonacci() frame width
+
+# 4. Switch to optimized mode
+bash scripts/run.sh optimize
+
+# 5. Generate load again
+bash scripts/run.sh load 60
+
+# 6. Open Before vs After Fix dashboard → compare flame graphs
+# 7. fibonacci frame should shrink from dominant to near-zero
+
+# 8. Switch back to unoptimized to repeat or test other services
+bash scripts/run.sh unoptimize
 ```
