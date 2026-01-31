@@ -1,30 +1,34 @@
-# Profiling Scenarios — Using Pyroscope in Grafana to Identify Performance Issues
+# Profiling Scenarios
 
-Step-by-step walkthroughs using Pyroscope flame graphs in Grafana to identify real performance issues. Each scenario follows the same pattern: notice a symptom in metrics, switch to the flame graph to find the root cause.
+Use Pyroscope in Grafana to identify performance issues across CPU, memory, and lock contention.
 
-Prerequisites: stack running with load (`bash scripts/run.sh`).
+Each scenario follows the same pattern: observe a symptom in metrics panels, then switch to a Pyroscope flame graph to find the root cause.
 
----
+## Prerequisites
 
-## Scenario 1: CPU Hotspot — Recursive Algorithm
+- Stack running with load generation active (`bash scripts/run.sh`).
+- Grafana accessible at `http://localhost:3000`.
+- For related documentation, see [dashboard-guide.md](dashboard-guide.md) and [mttr-guide.md](mttr-guide.md).
 
-**Symptom:** API Gateway has high CPU usage relative to other services.
+## Scenario 1: CPU hotspot from a recursive algorithm
 
-**Steps in Grafana:**
+**Symptom:** The API Gateway has high CPU usage relative to other services.
 
-1. Open **Service Performance** dashboard
-2. Look at **Request Rate by Service** — all services get similar traffic
-3. Look at **Avg Latency by Service** — `api-gateway` latency is noticeably higher on `/cpu` endpoint
-4. This tells you *what* is slow but not *why*
+**Investigate with metrics:**
 
-**Switch to the flame graph:**
+1. Open the **Service Performance** dashboard.
+2. Check **Request Rate by Service**. All services receive similar traffic.
+3. Check **Avg Latency by Service**. The `api-gateway` latency is noticeably higher on the `/cpu` endpoint.
+4. Metrics confirm the problem exists but do not explain the cause.
 
-5. On the same dashboard, scroll to the **Flame Graph** panel (or open **Pyroscope Java Overview**)
-6. Set the `pyroscope_app` dropdown to `bank-api-gateway`
-7. Set `profile_type` to `cpu`
-8. The flame graph renders — look for the **widest bar** near the top of the graph
+**Investigate with the flame graph:**
 
-**What you see:**
+5. On the same dashboard, scroll to the **Flame Graph** panel, or open **Pyroscope Java Overview**.
+6. Set `pyroscope_app` to `bank-api-gateway`.
+7. Set `profile_type` to `cpu`.
+8. Look for the widest bar near the top of the graph.
+
+**Expected flame graph:**
 
 ```
 MainVerticle.handleCpu()
@@ -34,25 +38,23 @@ MainVerticle.handleCpu()
         └── MainVerticle.fibonacci()     ← recursive call (wide)
 ```
 
-The `fibonacci()` frame is extremely wide — it dominates CPU time. The recursion is visible as nested calls of the same function. This is O(2^n) complexity.
+The `fibonacci()` frame dominates CPU time. The recursion is visible as nested calls of the same function, indicating O(2^n) complexity.
 
-**Root cause:** Recursive Fibonacci implementation. Each call spawns two more calls.
+**Root cause:** Recursive Fibonacci implementation. Each call spawns two additional calls.
 
-**Verify the fix:** Deploy with `OPTIMIZED=true` (uses iterative version), then compare the flame graph — the `fibonacci` frame shrinks dramatically. Use the **Before vs After Fix** dashboard to see both side by side.
+**Verification:** Deploy with `OPTIMIZED=true` (uses an iterative version), then compare the flame graph. The `fibonacci` frame shrinks dramatically. Use the **Before vs After Fix** dashboard to view both side by side.
 
----
+## Scenario 2: Hidden per-request overhead from a crypto provider lookup
 
-## Scenario 2: Hidden Per-Request Overhead — Crypto Provider Lookup
+**Symptom:** The payment service has higher CPU usage than expected for its traffic volume.
 
-**Symptom:** Payment service has higher CPU than expected for its traffic volume.
+**Investigate with the flame graph:**
 
-**Steps in Grafana:**
+1. Open **Pyroscope Java Overview**.
+2. Set `application` to `bank-payment-service`.
+3. Set `profile_type` to `cpu`.
 
-1. Open **Pyroscope Java Overview** (or the flame graph panel on any dashboard)
-2. Set `application` to `bank-payment-service`
-3. Set `profile_type` to `cpu`
-
-**What you see:**
+**Expected flame graph:**
 
 ```
 PaymentVerticle.handleTransfer()
@@ -62,31 +64,29 @@ PaymentVerticle.handleTransfer()
         └── String.format("%02x", b)               ← 4% self-time
 ```
 
-**How to read this:** `MessageDigest.getInstance()` is wide — it's looking up the JCE security provider registry on **every single request**. This is a static lookup that should happen once. `String.format` is boxing each byte into an Integer for hex formatting — unnecessary allocation and CPU work.
+`MessageDigest.getInstance()` is wide because it performs a JCE security provider registry lookup on every request. This lookup should happen once and be reused. `String.format` boxes each byte into an `Integer` for hex formatting, adding unnecessary allocation and CPU overhead.
 
-**Root cause:** Per-request provider lookup + autoboxing in a tight loop. Neither would be obvious from code review alone.
+**Root cause:** Per-request provider lookup combined with autoboxing in a tight loop. Neither issue is obvious from code review alone.
 
-**Key insight:** The flame graph exposes overhead hidden inside JDK library calls. You didn't write `MessageDigest.getInstance()` but you're paying for it on every request.
+**Key takeaway:** Flame graphs expose overhead hidden inside JDK library calls. The application code did not implement `MessageDigest.getInstance()`, but it pays for the cost on every request.
 
----
+## Scenario 3: Memory allocation pressure from String.format
 
-## Scenario 3: Memory Allocation Pressure — String.format
+**Symptom:** The notification service has frequent GC pauses visible in the JVM Metrics dashboard as a high GC collection duration rate.
 
-**Symptom:** Notification service has frequent GC pauses visible in the JVM Metrics dashboard (high GC collection duration rate).
+**Investigate with metrics:**
 
-**Steps in Grafana:**
+1. Open **JVM Metrics Deep Dive**. Confirm a high GC rate for `notification-service`.
+2. The heap panel shows a rapid sawtooth pattern: memory fills quickly and GC runs frequently.
+3. Something is allocating at a high rate, but the metrics do not identify the source.
 
-1. Open **JVM Metrics Deep Dive** — confirm high GC rate for `notification-service`
-2. The heap panel shows a rapid sawtooth: memory fills quickly, GC runs frequently
-3. This tells you something is allocating fast — but what?
+**Investigate with the allocation flame graph:**
 
-**Switch to allocation flame graph:**
+4. Open **Pyroscope Java Overview**.
+5. Set `application` to `bank-notification-service`.
+6. Set `profile_type` to `alloc (memory)`.
 
-4. Open **Pyroscope Java Overview**
-5. Set `application` to `bank-notification-service`
-6. Set `profile_type` to `alloc (memory)`
-
-**What you see:**
+**Expected flame graph:**
 
 ```
 NotificationVerticle.handleRender()
@@ -97,35 +97,33 @@ NotificationVerticle.handleRender()
               └── new Object[]{}              ← varargs array allocation
 ```
 
-The `String.format()` and `Formatter` frames dominate the allocation profile. Every template render creates multiple intermediate String objects, a Formatter instance, and a varargs Object array.
+`String.format()` and `Formatter` dominate the allocation profile. Every template render creates multiple intermediate `String` objects, a `Formatter` instance, and a varargs `Object[]` array.
 
-**Root cause:** `String.format()` in a hot loop. Each call allocates temporary objects that become garbage immediately.
+**Root cause:** `String.format()` called in a hot loop. Each invocation allocates temporary objects that become garbage immediately.
 
-**Fix pattern:** Replace with `StringBuilder` + manual substitution. The optimized version (`OPTIMIZED=true`) does this — the allocation flame graph becomes flat with StringBuilder's single buffer resize.
+**Fix pattern:** Replace with `StringBuilder` and manual substitution. The optimized version (`OPTIMIZED=true`) applies this change, and the allocation flame graph flattens to a single `StringBuilder` buffer resize.
 
-**How to correlate:** Open two browser tabs — JVM Metrics (GC rate) and Pyroscope Overview (alloc profile). The GC rate tells you *how bad* the problem is. The allocation flame graph tells you *which function* to fix.
+**Correlation technique:** Open two browser tabs side by side: JVM Metrics (GC rate) and Pyroscope Overview (alloc profile). The GC rate shows the severity of the problem. The allocation flame graph identifies which function to fix.
 
----
-
-## Scenario 4: Lock Contention — Synchronized Methods
+## Scenario 4: Lock contention from synchronized methods
 
 **Symptom:** Order service latency increases under load, but CPU stays low.
 
-This is the tricky one — low CPU + high latency usually means threads are **waiting**, not working.
+Low CPU combined with high latency typically indicates threads are waiting rather than working.
 
-**Steps in Grafana:**
+**Investigate with metrics:**
 
-1. Open **HTTP Performance** — confirm order-service latency is high
-2. Open **JVM Metrics Deep Dive** — CPU is low (~15%), threads may be elevated
-3. Low CPU + high latency = threads are blocked on something
+1. Open **HTTP Performance**. Confirm that order-service latency is high.
+2. Open **JVM Metrics Deep Dive**. CPU is low (~15%) and thread count may be elevated.
+3. Low CPU with high latency indicates threads are blocked.
 
-**Switch to mutex flame graph:**
+**Investigate with the mutex flame graph:**
 
-4. Open **Pyroscope Java Overview**
-5. Set `application` to `bank-order-service`
-6. Set `profile_type` to `mutex (lock)`
+4. Open **Pyroscope Java Overview**.
+5. Set `application` to `bank-order-service`.
+6. Set `profile_type` to `mutex (lock)`.
 
-**What you see:**
+**Expected flame graph:**
 
 ```
 OrderVerticle.handleProcess()
@@ -133,93 +131,89 @@ OrderVerticle.handleProcess()
         └── java.lang.Object.wait()                  ← threads waiting for the lock
 ```
 
-The `processOrdersSynchronized` frame is wide in the mutex profile — this is a `synchronized` method that forces all concurrent requests through a single lock. Under load, threads queue up waiting for the lock.
+The `processOrdersSynchronized` frame is wide in the mutex profile. This `synchronized` method forces all concurrent requests through a single lock. Under load, threads queue up waiting.
 
-**Root cause:** `synchronized` method serializes all order processing. Only one thread can execute at a time.
+**Root cause:** The `synchronized` method serializes all order processing. Only one thread can execute at a time.
 
-**Fix pattern:** Replace with `ConcurrentHashMap.computeIfPresent()` for lock-free updates. After the fix, the mutex flame graph becomes flat — no contention.
+**Fix pattern:** Replace with `ConcurrentHashMap.computeIfPresent()` for lock-free updates. After the fix, the mutex flame graph flattens and contention disappears.
 
-**Key insight:** This issue is invisible in CPU profiles. CPU is low because threads are sleeping, not computing. Only the **mutex profile type** reveals it.
+**Key takeaway:** This issue is invisible in CPU profiles. CPU is low because threads are sleeping, not computing. Only the mutex profile type reveals it.
 
----
+## Scenario 5: Before and after comparison
 
-## Scenario 5: Before vs After Comparison
+**Use case:** Verify that a deployed fix reduced resource consumption using profiling data rather than assumptions.
 
-**Use case:** You've deployed a fix and want to prove it worked with data, not guesses.
+**Steps:**
 
-**Steps in Grafana:**
+1. Run `bash scripts/run.sh compare` in the terminal. This generates load before and after applying optimizations.
+2. Open the **Before vs After Fix** dashboard in Grafana.
+3. Set `application` to the service you fixed (for example, `bank-payment-service`).
+4. Set `profile_type` to the relevant type (for example, `cpu` for the `sha256` fix).
 
-1. Run `bash scripts/run.sh compare` in the terminal — this generates load before and after applying optimizations
-2. Open the **Before vs After Fix** dashboard in Grafana
-3. Set `application` to the service you fixed (e.g., `bank-payment-service`)
-4. Set `profile_type` to the relevant type (e.g., `cpu` for the sha256 fix)
+**Expected result:**
 
-**What you see:**
+Two flame graph panels appear side by side:
 
-Two flame graph panels side by side:
+- **Before Fix:** `sha256()` calls `MessageDigest.getInstance()`, which appears as a wide bar at approximately 18% of CPU.
+- **After Fix:** `sha256Optimized()` shows only `MessageDigest.digest()`. The `getInstance()` frame is gone.
 
-- **Before Fix:** `sha256()` → `MessageDigest.getInstance()` is a wide bar (~18% of CPU)
-- **After Fix:** `sha256Optimized()` → `MessageDigest.digest()` is the only visible bar, `getInstance()` is gone
+The CPU metrics panels below show the aggregate impact as a measurable drop in CPU usage for the payment service.
 
-The CPU metrics panels below show the aggregate impact — CPU usage for payment-service drops measurably.
+**Why this matters:** Before-and-after flame graph screenshots provide concrete evidence for pull request reviews, incident postmortems, and stakeholder communication. The data shows that a specific function went from 18% CPU to 0%, replacing guesswork with measurement.
 
-**Why this matters:** Screenshots of before/after flame graphs are concrete evidence for PR reviews, incident postmortems, and stakeholder communication. It's not "we think it's faster" — it's "this function went from 18% CPU to 0%."
+## Scenario 6: Cross-referencing profile types
 
----
+**Use case:** A service is slow, but the bottleneck type (CPU, memory, or locks) is unknown.
 
-## Scenario 6: Cross-Referencing Profile Types
+**Steps:**
 
-**Use case:** A service is slow but you're not sure if it's CPU, memory, or locks.
+1. Open **Pyroscope Java Overview**.
+2. Select the affected service.
+3. Cycle through each profile type using the `profile_type` dropdown.
 
-**Steps in Grafana:**
-
-1. Open **Pyroscope Java Overview**
-2. Select the service
-3. Check each profile type in sequence using the `profile_type` dropdown:
-
-| Profile Type | What to look for | If the flame graph is flat |
-|-------------|-----------------|--------------------------|
-| `cpu` | Wide bars = computation bottleneck | CPU is not the problem |
-| `alloc (memory)` | Wide bars = GC pressure source | Allocations are reasonable |
-| `mutex (lock)` | Wide bars = thread contention | No lock contention |
+| Profile type | Indicator | If the flame graph is flat |
+|---|---|---|
+| `cpu` | Wide bars indicate a computation bottleneck | CPU is not the problem |
+| `alloc (memory)` | Wide bars indicate a GC pressure source | Allocation rates are reasonable |
+| `mutex (lock)` | Wide bars indicate thread contention | No lock contention exists |
 
 **Decision matrix:**
 
-- **CPU hot, alloc flat, mutex flat** → pure computation problem (optimize algorithm)
-- **CPU flat, alloc hot, mutex flat** → GC pressure (reduce allocations, reuse objects)
-- **CPU flat, alloc flat, mutex hot** → lock contention (reduce synchronized scope)
-- **CPU hot, alloc hot, mutex flat** → computation creating temp objects (common — optimize both)
-- **All flat** → problem is off-CPU (network I/O, external service calls, Thread.sleep)
+| CPU | Alloc | Mutex | Diagnosis |
+|---|---|---|---|
+| Hot | Flat | Flat | Pure computation problem. Optimize the algorithm. |
+| Flat | Hot | Flat | GC pressure. Reduce allocations or reuse objects. |
+| Flat | Flat | Hot | Lock contention. Reduce `synchronized` scope or use concurrent data structures. |
+| Hot | Hot | Flat | Computation creating temporary objects. Optimize both. |
+| Flat | Flat | Flat | Off-CPU bottleneck. Check for network I/O, external service calls, or `Thread.sleep`. |
 
-This is the core profiling workflow: **triangulate across profile types** to classify the bottleneck before attempting a fix.
+This is the core profiling workflow: triangulate across profile types to classify the bottleneck before attempting a fix.
 
----
+## Reference: Reading flame graphs
 
-## Reading Flame Graphs — Quick Reference
+| Concept | Meaning |
+|---|---|
+| Width | Proportion of the resource consumed (CPU time, allocations, or lock wait time). |
+| Depth (vertical) | Call stack depth. Deeper frames indicate more nested calls. |
+| Top of graph | Leaf functions performing the actual work. Start reading here. |
+| Bottom of graph | Entry points such as `main`, the event loop, or the HTTP handler. |
+| Color | No semantic meaning in Pyroscope. Colors are assigned for visual distinction. |
+| Self time | Time in the function itself, excluding callees. A wide bar with no children means the function itself is expensive. |
+| Total time | Time including all callees. A wide bar with many children means the function calls expensive code. |
 
-- **Width** of a bar = proportion of resource consumed (CPU time, allocations, or lock wait time)
-- **Depth** (vertical) = call stack depth. Deeper = more nested calls
-- **Top of the graph** = leaf functions doing the actual work. Start reading from the top
-- **Bottom of the graph** = entry points (main, event loop, HTTP handler)
-- **Color** has no meaning in Pyroscope (it's random for visual distinction)
-- **Self time** = time spent in the function itself, excluding callees. A wide bar with no children = the function itself is expensive
-- **Total time** = time including all callees. A wide bar with many children = the function calls expensive things
+**Sandwich view:** Click a function name to see all callers above and all callees below. This is useful when the same function is called from multiple locations.
 
-**Sandwich view** (click a function name): shows all callers above and all callees below for a single function — useful when the same function is called from multiple places.
+**Diff view:** Available in the Before vs After dashboard. Red indicates increased resource usage; green indicates decreased usage.
 
-**Diff view** (Before vs After dashboard): red = increased, green = decreased. Shows exactly which functions changed between two time ranges.
+## Reference: Grafana dashboard navigation
 
----
-
-## Grafana Navigation Quick Reference
-
-| To investigate... | Go to... | Set profile_type to... |
-|-------------------|----------|----------------------|
-| High CPU | Pyroscope Java Overview | `cpu` |
-| Frequent GC / memory pressure | Pyroscope Java Overview | `alloc (memory)` |
-| High latency + low CPU | Pyroscope Java Overview | `mutex (lock)` |
-| Which service is worst | Service Performance | (metrics panels, then flame graph) |
-| Did my fix work | Before vs After Fix | (match the profile type to your fix) |
-| Side-by-side services | Service Comparison | (compares API Gateway vs Order Service) |
-| JVM health overview | JVM Metrics Deep Dive | (Prometheus metrics, no profiling) |
-| Endpoint-level latency | HTTP Performance | (Prometheus metrics, no profiling) |
+| Investigation goal | Dashboard | Profile type |
+|---|---|---|
+| High CPU usage | Pyroscope Java Overview | `cpu` |
+| Frequent GC or memory pressure | Pyroscope Java Overview | `alloc (memory)` |
+| High latency with low CPU | Pyroscope Java Overview | `mutex (lock)` |
+| Identify the worst-performing service | Service Performance | Metrics panels, then flame graph |
+| Verify a fix | Before vs After Fix | Match the profile type to the fix |
+| Compare two services side by side | Service Comparison | CPU flame graphs for both services |
+| JVM health overview | JVM Metrics Deep Dive | Prometheus metrics only |
+| Endpoint-level latency breakdown | HTTP Performance | Prometheus metrics only |
