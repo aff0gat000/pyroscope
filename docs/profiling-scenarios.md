@@ -143,12 +143,33 @@ The `processOrdersSynchronized` frame is wide in the mutex profile. This `synchr
 
 **Use case:** Verify that a deployed fix reduced resource consumption using profiling data rather than assumptions.
 
-**Steps:**
+The **Before vs After Fix** dashboard is already provisioned in Grafana. No additional setup is required. The `compare` command automates the two-phase load generation, or you can use the default pipeline which handles both phases.
 
-1. Run `bash scripts/run.sh compare` in the terminal. This generates load before and after applying optimizations.
-2. Open the **Before vs After Fix** dashboard in Grafana.
-3. Set `application` to the service you fixed (for example, `bank-payment-service`).
+**Option A: Automated comparison on a running stack**
+
+1. Run `bash scripts/run.sh compare`. This generates load against the unoptimized services, restarts them with `OPTIMIZED=true`, then generates load again.
+2. Note the timestamps printed in the terminal output for each phase.
+
+**Option B: Full pipeline (handles everything automatically)**
+
+1. Run `bash scripts/run.sh`. The default pipeline deploys, generates load, and validates.
+2. Run `bash scripts/run.sh --fixed` to redeploy with optimizations and generate a second round of load.
+
+**Option C: Manual comparison**
+
+1. With the stack running, generate load: `bash scripts/run.sh load 60`.
+2. Note the start and end time (Phase 1: unoptimized).
+3. Redeploy with fixes: `COMPOSE_EXTRA_FILES=docker-compose.fixed.yml bash scripts/deploy.sh`.
+4. Generate load again: `bash scripts/run.sh load 60`.
+5. Note the start and end time (Phase 2: optimized).
+
+**View results in Grafana:**
+
+1. Open the **Before vs After Fix** dashboard at `http://localhost:3000/d/before-after-comparison`.
+2. Set the Grafana time range to cover both phases (for example, "Last 1 hour").
+3. Set `application` to the service to investigate (for example, `bank-payment-service`).
 4. Set `profile_type` to the relevant type (for example, `cpu` for the `sha256` fix).
+5. Adjust the **Before Fix** panel's time override to cover Phase 1, and the **After Fix** panel to cover Phase 2.
 
 **Expected result:**
 
@@ -157,7 +178,17 @@ Two flame graph panels appear side by side:
 - **Before Fix:** `sha256()` calls `MessageDigest.getInstance()`, which appears as a wide bar at approximately 18% of CPU.
 - **After Fix:** `sha256Optimized()` shows only `MessageDigest.digest()`. The `getInstance()` frame is gone.
 
-The CPU metrics panels below show the aggregate impact as a measurable drop in CPU usage for the payment service.
+The CPU and Heap metrics panels below show the aggregate impact across all seven services over time.
+
+**What each optimization changes:**
+
+| Service | Fix applied | Flame graph impact |
+|---|---|---|
+| API Gateway | `fibonacci()` replaced with iterative loop | `fibonacci` frame: dominant to near-zero |
+| Order Service | `processOrders()` replaced with lock-free `computeIfPresent` | Lock contention frames disappear |
+| Payment Service | `sha256()` replaced with ThreadLocal + `Character.forDigit` | `getInstance` and `String.format` frames vanish |
+| Fraud Service | Percentile sort replaced with primitive `double[]` + `Arrays.sort` | `Double.compareTo` boxing eliminated |
+| Notification Service | `renderTemplate()` replaced with StringBuilder + `indexOf` | `Formatter.format` frames disappear |
 
 **Why this matters:** Before-and-after flame graph screenshots provide concrete evidence for pull request reviews, incident postmortems, and stakeholder communication. The data shows that a specific function went from 18% CPU to 0%, replacing guesswork with measurement.
 
