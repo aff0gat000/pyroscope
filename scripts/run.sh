@@ -544,14 +544,21 @@ case "$COMMAND" in
     echo "  Snapshot directory: $DUMP_DIR"
     echo ""
 
-    # Pyroscope: copy config from running container (no shell in minimal images)
+    # Pyroscope: fetch runtime config via API, fall back to docker cp
     echo "--- Pyroscope ---"
-    if docker cp pyroscope:/etc/pyroscope/pyroscope.yaml "$DUMP_DIR/pyroscope.yaml" 2>/dev/null; then
+    PYRO_URL="http://localhost:${PYROSCOPE_PORT:-4040}"
+    PYRO_CONFIG=$(curl -sf "$PYRO_URL/config" 2>/dev/null) || true
+    if [ -n "$PYRO_CONFIG" ]; then
+      echo "$PYRO_CONFIG" > "$DUMP_DIR/pyroscope.yaml"
       cat "$DUMP_DIR/pyroscope.yaml"
       echo ""
-      echo "  → $DUMP_DIR/pyroscope.yaml"
+      echo "  → $DUMP_DIR/pyroscope.yaml (from API)"
+    elif docker cp pyroscope:/etc/pyroscope/config.yaml "$DUMP_DIR/pyroscope.yaml" 2>/dev/null; then
+      cat "$DUMP_DIR/pyroscope.yaml"
+      echo ""
+      echo "  → $DUMP_DIR/pyroscope.yaml (from container)"
     else
-      echo "  (container not running or config not found)"
+      echo "  (Pyroscope not reachable at $PYRO_URL and container not running)"
     fi
     echo ""
 
