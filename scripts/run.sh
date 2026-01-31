@@ -544,12 +544,10 @@ case "$COMMAND" in
     echo "  Snapshot directory: $DUMP_DIR"
     echo ""
 
-    # Pyroscope: read config from running container
+    # Pyroscope: copy config from running container (no shell in minimal images)
     echo "--- Pyroscope ---"
-    PYRO_CONFIG=$(docker exec pyroscope cat /etc/pyroscope/pyroscope.yaml 2>/dev/null) || true
-    if [ -n "$PYRO_CONFIG" ]; then
-      echo "$PYRO_CONFIG"
-      echo "$PYRO_CONFIG" > "$DUMP_DIR/pyroscope.yaml"
+    if docker cp pyroscope:/etc/pyroscope/pyroscope.yaml "$DUMP_DIR/pyroscope.yaml" 2>/dev/null; then
+      cat "$DUMP_DIR/pyroscope.yaml"
       echo ""
       echo "  → $DUMP_DIR/pyroscope.yaml"
     else
