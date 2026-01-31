@@ -315,7 +315,7 @@ environment:
     -Dpyroscope.application.name=bank-payment-service
     -Dpyroscope.server.address=http://pyroscope:4040
     -Dpyroscope.format=jfr
-    -Dpyroscope.profiler.event=cpu,alloc,lock,wall
+    -Dpyroscope.profiler.event=itimer
     -Dpyroscope.profiler.alloc=512k
     -Dpyroscope.profiler.lock=10ms
     -Dpyroscope.labels.env=production

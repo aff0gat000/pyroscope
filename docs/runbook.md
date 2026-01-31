@@ -642,7 +642,7 @@ If a service shows >10% overhead:
 
 - **Raise the allocation threshold**: change `-Dpyroscope.profiler.alloc=512k` to `1m` or `2m` in `docker-compose.yml`. Higher threshold = fewer allocation samples = less overhead.
 - **Raise the lock threshold**: change `-Dpyroscope.profiler.lock=10ms` to `50ms`. Captures fewer lock events.
-- **Disable a profile type**: remove the event from `-Dpyroscope.profiler.event=cpu,alloc,lock,wall`. For example, drop `wall` if wall-clock profiling isn't needed.
+- **Disable a profile type**: remove `-Dpyroscope.profiler.lock=10ms` or `-Dpyroscope.profiler.alloc=512k` to disable lock or alloc profiling respectively.
 - **Re-run the benchmark** after each change to confirm the reduction.
 
 ### Production validation checklist

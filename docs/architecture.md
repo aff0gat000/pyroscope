@@ -239,7 +239,7 @@ Each Vert.x server container sets `JAVA_TOOL_OPTIONS` with two Java agents:
 -Dpyroscope.application.name=vertx-server-1       # Application name in Pyroscope UI
 -Dpyroscope.server.address=http://pyroscope:4040   # Push target
 -Dpyroscope.format=jfr                             # JDK Flight Recorder format
--Dpyroscope.profiler.event=cpu,alloc,lock,wall     # All four event types
+-Dpyroscope.profiler.event=itimer                   # CPU profiling event (alloc/lock enabled by their own flags)
 -Dpyroscope.profiler.alloc=512k                    # Allocation sampling interval
 -Dpyroscope.profiler.lock=10ms                     # Lock contention threshold
 -Dpyroscope.labels.env=production                  # Static label
