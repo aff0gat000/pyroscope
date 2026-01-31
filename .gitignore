@@ -8,18 +8,11 @@ target/
 build/
 .vscode/
 
-# Terraform
-terraform/.terraform/
-terraform/*.tfstate
-terraform/*.tfstate.backup
-terraform/.terraform.lock.hcl
-terraform/terraform.tfvars
-
-# Ansible
-ansible/*.retry
-
 # Auto-generated port config
 .env
+
+# Config snapshots (dump-config output)
+config-snapshots/
 
 # IDE / tool config
 .claude/

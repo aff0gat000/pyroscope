@@ -23,8 +23,13 @@ DEFAULT_TIMEOUT = 10  # seconds
 # Container name -> Pyroscope application name
 
 SVC_MAP = {
-    "vertx-server-1": "vertx-server-1",
-    "vertx-server-2": "vertx-server-2",
+    "api-gateway": "bank-api-gateway",
+    "order-service": "bank-order-service",
+    "payment-service": "bank-payment-service",
+    "fraud-service": "bank-fraud-service",
+    "account-service": "bank-account-service",
+    "loan-service": "bank-loan-service",
+    "notification-service": "bank-notification-service",
 }
 
 REVERSE_MAP = {v: k for k, v in SVC_MAP.items()}

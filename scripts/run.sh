@@ -16,6 +16,7 @@ set -euo pipefail
 #   bash scripts/run.sh --load-duration 60   # full pipeline with custom load duration
 #   bash scripts/run.sh --fixed              # deploy with OPTIMIZED=true (skip before phase)
 #   bash scripts/run.sh compare              # before/after on running stack
+#   bash scripts/run.sh dump-config          # dump running config to config/ directory
 #
 # In the full pipeline ("all"), load generation runs in the background so the
 # pipeline is not blocked. After validation completes, load continues running
@@ -62,7 +63,7 @@ while [ $# -gt 0 ]; do
     --fixed)
       FIXED=1
       ;;
-    deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|all)
+    deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|all)
       COMMAND="$1"
       ;;
     *)
@@ -471,9 +472,93 @@ case "$COMMAND" in
   diagnose)
     bash "$SCRIPT_DIR/diagnose.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
     ;;
+  dump-config)
+    # Dump the running config from each infrastructure container into
+    # a timestamped snapshot directory. Never overwrites repo defaults.
+    DUMP_DIR="$PROJECT_DIR/config-snapshots/$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$DUMP_DIR"
+
+    echo ""
+    echo "===== Dumping Running Configuration ====="
+    echo "  Snapshot directory: $DUMP_DIR"
+    echo ""
+
+    # Pyroscope: read config from running container
+    echo "--- Pyroscope ---"
+    PYRO_CONFIG=$(docker exec pyroscope cat /etc/pyroscope/pyroscope.yaml 2>/dev/null) || true
+    if [ -n "$PYRO_CONFIG" ]; then
+      echo "$PYRO_CONFIG"
+      echo "$PYRO_CONFIG" > "$DUMP_DIR/pyroscope.yaml"
+      echo ""
+      echo "  → $DUMP_DIR/pyroscope.yaml"
+    else
+      echo "  (container not running or config not found)"
+    fi
+    echo ""
+
+    # Prometheus: dump resolved config via API
+    echo "--- Prometheus ---"
+    PROM_URL="http://localhost:${PROMETHEUS_PORT:-9090}"
+    PROM_CONFIG=$(curl -sf "$PROM_URL/api/v1/status/config" 2>/dev/null \
+      | jq -r '.data.yaml // empty' 2>/dev/null) || true
+    if [ -n "$PROM_CONFIG" ]; then
+      echo "$PROM_CONFIG"
+      echo "$PROM_CONFIG" > "$DUMP_DIR/prometheus.yml"
+      echo ""
+      echo "  → $DUMP_DIR/prometheus.yml"
+    else
+      echo "  (Prometheus not reachable at $PROM_URL)"
+    fi
+    echo ""
+
+    # Grafana: dump datasources via API
+    echo "--- Grafana Datasources ---"
+    GF_URL="http://localhost:${GRAFANA_PORT:-3000}"
+    GF_DS=$(curl -sf -u admin:admin "$GF_URL/api/datasources" 2>/dev/null) || true
+    if [ -n "$GF_DS" ]; then
+      echo "$GF_DS" | jq .
+      echo "$GF_DS" | jq . > "$DUMP_DIR/grafana-datasources.json"
+      echo ""
+      echo "  → $DUMP_DIR/grafana-datasources.json"
+    else
+      echo "  (Grafana not reachable at $GF_URL)"
+    fi
+    echo ""
+
+    # .env (port assignments)
+    if [ -f "$PROJECT_DIR/.env" ]; then
+      cp "$PROJECT_DIR/.env" "$DUMP_DIR/env"
+      echo "--- .env (port assignments) ---"
+      cat "$PROJECT_DIR/.env"
+      echo ""
+      echo "  → $DUMP_DIR/env"
+      echo ""
+    fi
+
+    echo "===== Snapshot saved to $DUMP_DIR ====="
+    echo ""
+    echo "  To use this snapshot instead of repo defaults:"
+    echo ""
+    echo "    # Pyroscope"
+    echo "    cp $DUMP_DIR/pyroscope.yaml config/pyroscope/pyroscope.yaml"
+    echo ""
+    echo "    # Prometheus"
+    echo "    cp $DUMP_DIR/prometheus.yml config/prometheus/prometheus.yml"
+    echo ""
+    echo "    # Port assignments"
+    echo "    cp $DUMP_DIR/env .env"
+    echo ""
+    echo "    # Then redeploy"
+    echo "    bash scripts/run.sh teardown && bash scripts/run.sh"
+    echo ""
+    echo "  Or diff against current config:"
+    echo "    diff config/pyroscope/pyroscope.yaml $DUMP_DIR/pyroscope.yaml"
+    echo "    diff config/prometheus/prometheus.yml $DUMP_DIR/prometheus.yml"
+    echo ""
+    ;;
   *)
     echo "Unknown command: $COMMAND"
-    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|all] [--verbose] [--log-dir DIR] [--load-duration N] [--fixed]"
+    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|all] [--verbose] [--log-dir DIR] [--load-duration N] [--fixed]"
     exit 1
     ;;
 esac

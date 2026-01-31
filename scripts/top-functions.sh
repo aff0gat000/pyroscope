@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Reports the top classes and functions consuming CPU, memory, and mutex
-# contention across all bank services. Uses the Pyroscope HTTP API.
+# Reports the top functions consuming CPU, memory, and mutex contention
+# across all bank services using the Pyroscope HTTP API.
 #
 # Usage:
 #   bash scripts/top-functions.sh                  # all services, all profiles
@@ -20,7 +20,6 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 ENV_FILE="$PROJECT_DIR/.env"
 
-# Load port assignments
 if [ -f "$ENV_FILE" ]; then
   set -a; . "$ENV_FILE"; set +a
 fi
@@ -32,8 +31,6 @@ TOP_N=15
 TIME_RANGE="5m"
 USER_CODE_ONLY=0
 FILTER_PREFIX=""
-
-# Application package prefix — functions matching this are tagged [app].
 APP_PREFIX="com.example."
 
 # Parse arguments
@@ -90,7 +87,7 @@ else
   SERVICES=$(curl -sf "$PYROSCOPE_URL/querier.v1.QuerierService/LabelValues" \
     -X POST -H 'Content-Type: application/json' \
     -d '{"name":"service_name"}' 2>/dev/null \
-    | python3 -c "import json,sys; [print(n) for n in json.load(sys.stdin).get('names',[])]" 2>/dev/null) || true
+    | jq -r '.names[]?' 2>/dev/null) || true
   if [ -z "$SERVICES" ]; then
     echo "ERROR: Cannot reach Pyroscope at $PYROSCOPE_URL or no services found."
     echo "Make sure the stack is running: bash scripts/run.sh"
@@ -98,133 +95,14 @@ else
   fi
 fi
 
-# Python script that parses flamebearer JSON and extracts top functions
-PARSE_SCRIPT='
-import json, sys
-
-data = json.load(sys.stdin)
-fb = data.get("flamebearer", {})
-names = fb.get("names", [])
-levels = fb.get("levels", [])
-total = fb.get("numTicks", 0)
-top_n = int(sys.argv[1]) if len(sys.argv) > 1 else 15
-unit = sys.argv[2] if len(sys.argv) > 2 else "samples"
-app_prefix = sys.argv[3] if len(sys.argv) > 3 else "com.example."
-user_code_only = sys.argv[4] == "1" if len(sys.argv) > 4 else False
-filter_prefix = sys.argv[5] if len(sys.argv) > 5 else ""
-
-if total == 0:
-    print("  (no data — generate load first)")
-    sys.exit(0)
-
-# Known JVM / runtime prefixes
-JVM_PREFIXES = (
-    "java.", "javax.", "jdk.", "sun.", "com.sun.",
-    "org.graalvm.", "jdk.internal.",
-)
-# Known library/framework prefixes
-LIB_PREFIXES = (
-    "io.vertx.", "io.netty.", "io.pyroscope.",
-    "org.apache.", "org.slf4j.", "ch.qos.",
-    "com.fasterxml.", "org.jboss.",
-    "one.profiler.",
-)
-
-def normalize(name):
-    """Convert JFR slash-separated names to dot-separated for matching."""
-    return name.replace("/", ".")
-
-def classify(name):
-    n = normalize(name)
-    if n.startswith(app_prefix):
-        return "app"
-    for p in JVM_PREFIXES:
-        if n.startswith(p):
-            return "jvm"
-    for p in LIB_PREFIXES:
-        if n.startswith(p):
-            return "lib"
-    return "other"
-
-def format_val(val):
-    if unit == "bytes":
-        return f"{val / 1024 / 1024:,.1f} MB"
-    elif unit == "count":
-        return f"{val:,} events"
-    return f"{val / 1_000_000_000:.2f}s"
-
-def print_ranked(items, top_n):
-    for rank, (name, val) in enumerate(items[:top_n], 1):
-        pct = val / total * 100
-        cat = classify(name)
-        tag = f"[{cat:5s}]"
-        parts = name.rsplit(".", 1)
-        display = f"{parts[0]}.{parts[1]}" if len(parts) == 2 else name
-        print("  {:3d}. {:5.1f}%  {:>14s}  {}  {}".format(rank, pct, format_val(val), tag, display))
-
-# Sum self-time per function across all levels
-self_map = {}
-for level in levels:
-    i = 0
-    while i + 3 < len(level):
-        name_idx = level[i + 3]
-        self_val = level[i + 2]
-        if name_idx < len(names) and self_val > 0:
-            self_map[names[name_idx]] = self_map.get(names[name_idx], 0) + self_val
-        i += 4
-
-all_sorted = sorted(self_map.items(), key=lambda x: -x[1])
-
-# If filtering, just show filtered results
-if user_code_only:
-    filtered = [(n, v) for n, v in all_sorted if normalize(n).startswith(app_prefix)]
-    if not filtered:
-        print(f"  (no application code found — app prefix: {app_prefix})")
-        sys.exit(0)
-    print_ranked(filtered, top_n)
-    sys.exit(0)
-
-if filter_prefix:
-    filtered = [(n, v) for n, v in all_sorted if normalize(n).startswith(filter_prefix)]
-    if not filtered:
-        print(f"  (no functions matching prefix: {filter_prefix})")
-        sys.exit(0)
-    print_ranked(filtered, top_n)
-    sys.exit(0)
-
-# Default mode: summary + all + user code
-
-# Category summary
-cat_totals = {}
-for name, val in self_map.items():
-    cat = classify(name)
-    cat_totals[cat] = cat_totals.get(cat, 0) + val
-self_total = sum(cat_totals.values())
-if self_total > 0:
-    print("")
-    hdr = "  {:<10s} {:>14s} {:>7s} {:>10s}".format("Category", "Self-time", "%", "Functions")
-    print(hdr)
-    print("  " + "─" * 10 + "  " + "─" * 14 + " " + "─" * 7 + " " + "─" * 10)
-    for cat in ["app", "lib", "jvm", "other"]:
-        if cat in cat_totals:
-            v = cat_totals[cat]
-            pct = v / total * 100
-            count = sum(1 for n in self_map if classify(n) == cat)
-            print("  {:<10s} {:>14s} {:6.1f}% {:>10d}".format(cat, format_val(v), pct, count))
-    print("")
-
-# Top N overall
-print(f"  All functions (top {top_n}):")
-print_ranked(all_sorted, top_n)
-
-# Top user-code functions
-app_sorted = [(n, v) for n, v in all_sorted if normalize(n).startswith(app_prefix)]
-if app_sorted:
-    app_top = min(top_n, len(app_sorted))
-    print("")
-    print(f"  Application code (top {app_top}):")
-    print_ranked(app_sorted, app_top)
-'
+# Build parse_flamegraph.py arguments
+PARSE_ARGS="--top $TOP_N --app-prefix $APP_PREFIX"
+if [ "$USER_CODE_ONLY" = "1" ]; then
+  PARSE_ARGS="$PARSE_ARGS --user-code"
+fi
+if [ -n "$FILTER_PREFIX" ]; then
+  PARSE_ARGS="$PARSE_ARGS --filter $FILTER_PREFIX"
+fi
 
 # Query and report
 for profile in $PROFILES; do
@@ -242,13 +120,13 @@ for profile in $PROFILES; do
   for svc in $SERVICES; do
     echo ""
     echo "--- $svc ---"
-    ENCODED_QUERY=$(python3 -c "import urllib.parse; print(urllib.parse.quote('${QUERY}{service_name=\"${svc}\"}'))")
+    ENCODED_QUERY=$(printf '%s' "${QUERY}{service_name=\"${svc}\"}" | jq -sRr '@uri')
     RESULT=$(curl -sf "${PYROSCOPE_URL}/pyroscope/render?query=${ENCODED_QUERY}&from=now-${TIME_RANGE}&until=now&format=json" 2>/dev/null) || true
     if [ -z "$RESULT" ]; then
       echo "  (no data or Pyroscope unreachable)"
       continue
     fi
-    echo "$RESULT" | python3 -c "$PARSE_SCRIPT" "$TOP_N" "$UNIT" "$APP_PREFIX" "$USER_CODE_ONLY" "$FILTER_PREFIX"
+    echo "$RESULT" | PYTHONPATH="$SCRIPT_DIR/lib" python3 "$SCRIPT_DIR/lib/parse_flamegraph.py" --unit "$UNIT" $PARSE_ARGS
   done
 done
 

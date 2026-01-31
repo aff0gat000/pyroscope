@@ -120,7 +120,7 @@ def main():
     # Human-readable output
     print("")
     print("=" * 72)
-    print("  JVM Health Check \u2014 All Vert.x Servers")
+    print("  JVM Health Check \u2014 All Bank Services")
     print("=" * 72)
 
     for r in results:
