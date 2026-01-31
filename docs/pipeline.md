@@ -27,9 +27,7 @@ Optional stages: `benchmark` (overhead measurement), `teardown` (cleanup), `atta
 
 ## Running the Pipeline
 
-Two equivalent methods. Both produce the same result.
-
-### Shell scripts (recommended -- requires only bash + curl)
+### Shell scripts (requires only bash + curl)
 
 ```bash
 # Full pipeline: deploy -> load -> validate -> data check (quiet mode with spinners)
@@ -66,32 +64,6 @@ bash scripts/generate-load.sh 120
 bash scripts/validate.sh
 bash scripts/teardown.sh
 ```
-
-### Ansible (requires ansible + community.docker collection)
-
-Use this path for remote host deployment or existing Ansible workflows.
-
-```bash
-# One-time setup
-cd ansible
-ansible-galaxy collection install community.docker
-
-# Full pipeline
-ansible-playbook -i inventory.yml pipeline.yml
-
-# Individual stages via tags
-ansible-playbook -i inventory.yml pipeline.yml --tags deploy
-ansible-playbook -i inventory.yml pipeline.yml --tags load
-ansible-playbook -i inventory.yml pipeline.yml --tags validate
-
-# Custom load duration
-ansible-playbook -i inventory.yml pipeline.yml --tags load -e duration=60
-
-# Teardown
-ansible-playbook -i inventory.yml teardown.yml
-```
-
-To target a remote host, edit `ansible/inventory.yml` and replace `localhost` with the target hostname.
 
 ## Stage 1: Deploy
 

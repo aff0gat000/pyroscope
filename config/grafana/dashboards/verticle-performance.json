@@ -1,0 +1,323 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 2,
+  "links": [
+    { "title": "Pyroscope Overview", "url": "/d/pyroscope-java-overview", "type": "link" },
+    { "title": "Service Comparison", "url": "/d/service-comparison", "type": "link" },
+    { "title": "JVM Metrics", "url": "/d/jvm-metrics-deep-dive", "type": "link" },
+    { "title": "HTTP Performance", "url": "/d/http-performance", "type": "link" },
+    { "title": "Before vs After", "url": "/d/before-after-comparison", "type": "link" }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "server",
+        "type": "custom",
+        "label": "Server",
+        "current": { "text": "All", "value": "$__all" },
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "vertx-server-1", "value": "vertx-server-1:8080", "selected": false },
+          { "text": "vertx-server-2", "value": "vertx-server-2:8080", "selected": false }
+        ],
+        "query": "vertx-server-1:8080,vertx-server-2:8080",
+        "includeAll": true,
+        "allValue": "vertx-server-.*"
+      },
+      {
+        "name": "verticle",
+        "type": "custom",
+        "label": "Verticle",
+        "current": { "text": "All", "value": "$__all" },
+        "options": [
+          { "text": "All", "value": "$__all", "selected": true },
+          { "text": "main (gateway)", "value": "main", "selected": false },
+          { "text": "order", "value": "order", "selected": false },
+          { "text": "payment", "value": "payment", "selected": false },
+          { "text": "fraud", "value": "fraud", "selected": false },
+          { "text": "account", "value": "account", "selected": false },
+          { "text": "loan", "value": "loan", "selected": false },
+          { "text": "notification", "value": "notification", "selected": false }
+        ],
+        "query": "main,order,payment,fraud,account,loan,notification",
+        "includeAll": true,
+        "allValue": ".*"
+      },
+      {
+        "name": "pyroscope_app",
+        "type": "custom",
+        "label": "Pyroscope Application",
+        "current": { "text": "vertx-server-1", "value": "vertx-server-1" },
+        "options": [
+          { "text": "vertx-server-1", "value": "vertx-server-1", "selected": true },
+          { "text": "vertx-server-2", "value": "vertx-server-2", "selected": false }
+        ],
+        "query": "vertx-server-1,vertx-server-2"
+      },
+      {
+        "name": "profile_type",
+        "type": "custom",
+        "label": "Profile Type",
+        "current": { "text": "cpu", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" },
+        "options": [
+          { "text": "cpu", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "selected": true },
+          { "text": "alloc (memory)", "value": "memory:alloc_in_new_tlab_objects:count:space:bytes", "selected": false },
+          { "text": "mutex (lock)", "value": "mutex:contentions:count:mutex:count", "selected": false },
+          { "text": "wall", "value": "wall:wall:nanoseconds:cpu:nanoseconds", "selected": false }
+        ],
+        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_objects:count:space:bytes,mutex:contentions:count:mutex:count,wall:wall:nanoseconds:cpu:nanoseconds"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 100,
+      "title": "Verticle → Server Mapping",
+      "type": "text",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "| Server | Verticles | Host Port | Pyroscope App |\n|--------|-----------|-----------|---------------|\n| **vertx-server-1** | main (gateway), order, payment, fraud | :18080 | `vertx-server-1` |\n| **vertx-server-2** | account, loan, notification | :18081 | `vertx-server-2` |\n\n> Verticles share a JVM — heap, GC, and threads are per-server, not per-verticle. Route-level metrics are the best way to isolate verticle behavior."
+      }
+    },
+    {
+      "id": 1,
+      "title": "Request Rate by Verticle",
+      "description": "Routes grouped by verticle prefix. Select a verticle from the dropdown to filter.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=~\"$server\", route=~\"/$verticle/.*\"}[1m]))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 15, "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Avg Latency by Verticle",
+      "description": "Average response time per route, filtered by verticle.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(vertx_http_server_response_time_seconds_sum{job=\"vertx-apps\", instance=~\"$server\", route=~\"/$verticle/.*\"}[1m])) / sum by (route) (rate(vertx_http_server_response_time_seconds_count{job=\"vertx-apps\", instance=~\"$server\", route=~\"/$verticle/.*\"}[1m]))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 15, "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Request Rate — Verticle Totals (Server 1)",
+      "description": "Total request rate grouped by verticle on server 1.",
+      "type": "barchart",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum(rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=\"vertx-server-1:8080\", route=~\"/order/.*\"}[5m]))",
+          "legendFormat": "order"
+        },
+        {
+          "expr": "sum(rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=\"vertx-server-1:8080\", route=~\"/payment/.*\"}[5m]))",
+          "legendFormat": "payment"
+        },
+        {
+          "expr": "sum(rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=\"vertx-server-1:8080\", route=~\"/fraud/.*\"}[5m]))",
+          "legendFormat": "fraud"
+        },
+        {
+          "expr": "sum(rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=\"vertx-server-1:8080\", route=~\"/(cpu|alloc|slow|db|mixed|sim|health|metrics|redis|json|xml|csv|batch|downstream)/.*|/(cpu|alloc|slow|db|mixed)\"}[5m]))",
+          "legendFormat": "main (gateway)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 80 } }
+      },
+      "options": { "orientation": "horizontal", "stacking": "none" }
+    },
+    {
+      "id": 4,
+      "title": "Request Rate — Verticle Totals (Server 2)",
+      "description": "Total request rate grouped by verticle on server 2.",
+      "type": "barchart",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "expr": "sum(rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=\"vertx-server-2:8080\", route=~\"/account/.*\"}[5m]))",
+          "legendFormat": "account"
+        },
+        {
+          "expr": "sum(rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=\"vertx-server-2:8080\", route=~\"/loan/.*\"}[5m]))",
+          "legendFormat": "loan"
+        },
+        {
+          "expr": "sum(rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=\"vertx-server-2:8080\", route=~\"/notify/.*\"}[5m]))",
+          "legendFormat": "notification"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 80 } }
+      },
+      "options": { "orientation": "horizontal", "stacking": "none" }
+    },
+    {
+      "id": 5,
+      "title": "Slowest Verticle Routes (Top 10)",
+      "description": "Routes with highest average latency across both servers.",
+      "type": "bargauge",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        {
+          "expr": "topk(10, sum by (route) (rate(vertx_http_server_response_time_seconds_sum{job=\"vertx-apps\", instance=~\"$server\"}[5m])) / sum by (route) (rate(vertx_http_server_response_time_seconds_count{job=\"vertx-apps\", instance=~\"$server\"}[5m])))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 0.1 }, { "color": "red", "value": 0.5 }] } }
+      },
+      "options": { "orientation": "horizontal", "displayMode": "gradient", "reduceOptions": { "calcs": ["lastNotNull"] } }
+    },
+    {
+      "id": 6,
+      "title": "Error Rate by Verticle Route",
+      "description": "5xx error rates grouped by route.",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=~\"$server\", route=~\"/$verticle/.*\", code=~\"5..\"}[1m]))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps", "custom": { "fillOpacity": 30, "lineWidth": 2 }, "color": { "mode": "palette-classic" } }
+      }
+    },
+    {
+      "id": 10,
+      "title": "JVM CPU — Server 1 vs Server 2",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 28 },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"vertx-server-1:9404\"}[1m])",
+          "legendFormat": "Server 1 (main+order+payment+fraud)"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"vertx-server-2:9404\"}[1m])",
+          "legendFormat": "Server 2 (account+loan+notification)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "custom": { "fillOpacity": 15, "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 11,
+      "title": "JVM Heap — Server 1 vs Server 2",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 28 },
+      "targets": [
+        {
+          "expr": "sum(jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"vertx-server-1:9404\"})",
+          "legendFormat": "Server 1 heap"
+        },
+        {
+          "expr": "sum(jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"vertx-server-2:9404\"})",
+          "legendFormat": "Server 2 heap"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "custom": { "fillOpacity": 15, "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 12,
+      "title": "GC Pause Rate — Server 1 vs Server 2",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 7, "w": 12, "x": 0, "y": 35 },
+      "targets": [
+        {
+          "expr": "rate(jvm_gc_collection_seconds_sum{job=\"jvm\", instance=\"vertx-server-1:9404\"}[1m])",
+          "legendFormat": "Server 1 — {{gc}}"
+        },
+        {
+          "expr": "rate(jvm_gc_collection_seconds_sum{job=\"jvm\", instance=\"vertx-server-2:9404\"}[1m])",
+          "legendFormat": "Server 2 — {{gc}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "s", "custom": { "fillOpacity": 20, "drawStyle": "bars" } }
+      }
+    },
+    {
+      "id": 13,
+      "title": "Thread Count — Server 1 vs Server 2",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 7, "w": 12, "x": 12, "y": 35 },
+      "targets": [
+        {
+          "expr": "jvm_threads_current{job=\"jvm\", instance=\"vertx-server-1:9404\"}",
+          "legendFormat": "Server 1 threads"
+        },
+        {
+          "expr": "jvm_threads_current{job=\"jvm\", instance=\"vertx-server-2:9404\"}",
+          "legendFormat": "Server 2 threads"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "custom": { "fillOpacity": 10 } }
+      }
+    },
+    {
+      "id": 20,
+      "title": "Flame Graph — $pyroscope_app ($profile_type)",
+      "description": "Continuous profiling flame graph. Use the Pyroscope Application and Profile Type dropdowns to switch between servers and profile types. Look for verticle class names (e.g. OrderVerticle, PaymentVerticle) in the stack frames.",
+      "type": "flamegraph",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 42 },
+      "targets": [
+        {
+          "profileTypeId": "$profile_type",
+          "labelSelector": "{service_name=\"$pyroscope_app\"}"
+        }
+      ]
+    },
+    {
+      "id": 21,
+      "title": "Flame Graph — Comparison (other server)",
+      "description": "Shows the other server's flame graph for side-by-side comparison.",
+      "type": "flamegraph",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 56 },
+      "targets": [
+        {
+          "profileTypeId": "$profile_type",
+          "labelSelector": "{service_name=~\"vertx-server-.*\", service_name!=\"$pyroscope_app\"}"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["verticle", "profiling", "comparison", "vertx"],
+  "time": { "from": "now-1h", "to": "now" },
+  "title": "Verticle Performance",
+  "uid": "verticle-performance"
+}

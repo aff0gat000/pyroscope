@@ -197,29 +197,6 @@ bash scripts/validate.sh           # automated health check
 bash scripts/teardown.sh           # stop + clean
 ```
 
-### Option 2: Ansible
-
-```bash
-cd ansible
-ansible-galaxy collection install community.docker
-ansible-playbook -i inventory.yml pipeline.yml                  # full pipeline
-ansible-playbook -i inventory.yml pipeline.yml --tags deploy    # deploy only
-ansible-playbook -i inventory.yml pipeline.yml --tags load      # load only
-ansible-playbook -i inventory.yml pipeline.yml --tags validate  # validate only
-ansible-playbook -i inventory.yml pipeline.yml -e duration=60   # custom load duration
-ansible-playbook -i inventory.yml teardown.yml                  # teardown
-```
-
-### Option 3: Terraform
-
-```bash
-docker compose build               # build app image first
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
-terraform init && terraform apply
-terraform destroy
-```
-
 ### Postman
 
 Import `postman/pyroscope-demo.postman_collection.json` into Postman
@@ -292,7 +269,6 @@ The default `bash scripts/run.sh` pipeline generates load in two phases — befo
 
 ```
 pyroscope/
-├── ansible/                        # Ansible playbooks
 ├── config/
 │   ├── grafana/dashboards/         # 5 Grafana dashboards (JSON)
 │   ├── grafana/provisioning/       # Datasources + dashboard provider
@@ -323,7 +299,6 @@ pyroscope/
 │   ├── generate-load.sh            # Traffic to all 7 services
 │   ├── validate.sh                 # End-to-end automated check
 │   └── teardown.sh
-├── terraform/                      # Terraform Docker provider
 ├── docker-compose.yml              # 10 containers (3 infra + 7 services)
 └── README.md
 ```

@@ -52,37 +52,6 @@ bash scripts/validate.sh
 bash scripts/teardown.sh
 ```
 
-### Ansible
-
-```bash
-ansible-galaxy collection install community.docker
-cd ansible
-ansible-playbook -i inventory.yml deploy.yml
-ansible-playbook -i inventory.yml generate-load.yml -e duration=120
-ansible-playbook -i inventory.yml teardown.yml
-```
-
-For remote hosts, edit `ansible/inventory.yml`:
-
-```yaml
-all:
-  hosts:
-    staging:
-      ansible_host: 10.0.1.50
-      ansible_user: deploy
-```
-
-### Terraform
-
-```bash
-docker compose build
-cd terraform
-cp terraform.tfvars.example terraform.tfvars
-terraform init
-terraform apply
-terraform destroy   # tear down
-```
-
 ---
 
 ## Verification
