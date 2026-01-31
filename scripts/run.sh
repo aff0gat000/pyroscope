@@ -161,12 +161,13 @@ run_load_stage_quiet() {
   local start_time
   start_time=$(date +%s)
 
-  setsid bash -c "
-    bash '$SCRIPT_DIR/generate-load.sh' '$LOAD_DURATION'
+  (
+    trap '' HUP
+    bash "$SCRIPT_DIR/generate-load.sh" "$LOAD_DURATION"
     while true; do
-      bash '$SCRIPT_DIR/generate-load.sh' 300 2>/dev/null || true
+      bash "$SCRIPT_DIR/generate-load.sh" 300 2>/dev/null || true
     done
-  " > "$dest" 2>&1 &
+  ) > "$dest" 2>&1 &
   LOAD_PID=$!
 
   local spin_chars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
@@ -288,10 +289,11 @@ cleanup() {
   exec 2>/dev/null
 
   if [ -n "$LOAD_PID" ]; then
-    # Kill the entire process group: setsid session + generate-load.sh + all curls
-    kill -- -"$LOAD_PID" 2>/dev/null || kill "$LOAD_PID" 2>/dev/null || true
-    # Brief pause for processes to exit
-    sleep 0.5 2>/dev/null || true
+    # Kill child processes first (generate-load.sh + curls), then the subshell.
+    # pkill -P works on both Linux and macOS.
+    pkill -P "$LOAD_PID" 2>/dev/null || true
+    kill "$LOAD_PID" 2>/dev/null || true
+    wait "$LOAD_PID" 2>/dev/null || true
   fi
 
   # Restore stderr for final message
@@ -330,15 +332,16 @@ stage_load_background() {
   echo ""
   echo "===== [$1] Starting background load (${LOAD_DURATION}s initial, then continuous) ====="
   echo ""
-  setsid bash -c "
-    bash '$SCRIPT_DIR/generate-load.sh' '$LOAD_DURATION'
-    echo ''
-    echo '===== Initial load complete. Restarting continuous load (Ctrl-C or teardown to stop) ====='
-    echo ''
+  (
+    trap '' HUP
+    bash "$SCRIPT_DIR/generate-load.sh" "$LOAD_DURATION"
+    echo ""
+    echo "===== Initial load complete. Restarting continuous load (Ctrl-C or teardown to stop) ====="
+    echo ""
     while true; do
-      bash '$SCRIPT_DIR/generate-load.sh' 300 2>/dev/null || true
+      bash "$SCRIPT_DIR/generate-load.sh" 300 2>/dev/null || true
     done
-  " &
+  ) &
   LOAD_PID=$!
   echo "Load generator running in background (PID $LOAD_PID)"
   echo "Waiting ${LOAD_DURATION}s for initial load to complete..."
@@ -470,10 +473,8 @@ case "$COMMAND" in
     fi
 
     # Keep the script alive so the background load continues.
-    # setsid makes LOAD_PID a session leader (not our child), so use
-    # kill -0 polling instead of wait.
     while kill -0 "$LOAD_PID" 2>/dev/null; do
-      sleep 2
+      wait "$LOAD_PID" 2>/dev/null || break
     done
     ;;
   deploy)
