@@ -93,7 +93,7 @@ terraform destroy   # tear down
 bash scripts/validate.sh
 ```
 
-Checks: all 10 containers running (7 services + Pyroscope + Prometheus + Grafana), Prometheus scraping all targets, alert rules loaded, 4 dashboards provisioned, both datasources active, Pyroscope receiving profiles, all service endpoints responding.
+Checks: all 10 containers running (7 services + Pyroscope + Prometheus + Grafana), Prometheus scraping all targets, alert rules loaded, 5 dashboards provisioned, both datasources active, Pyroscope receiving profiles, all service endpoints responding.
 
 ### Manual
 
@@ -223,7 +223,15 @@ bash scripts/run.sh diagnose
 
 ## Incident Response Playbooks
 
-### First 60 Seconds — Triage
+### First 30 Seconds — Automated Root Cause
+
+```bash
+bash scripts/run.sh bottleneck
+```
+
+This correlates JVM health, HTTP latency, and profiling hotspots to output a per-service verdict (CPU-bound, GC-bound, lock-bound, I/O-bound, or healthy) with the exact function and recommended action. See [mttr-guide.md](mttr-guide.md) for the full MTTR workflow.
+
+### First 60 Seconds — Full Diagnostic
 
 ```bash
 bash scripts/run.sh diagnose
@@ -462,6 +470,19 @@ The file contains JVM health, HTTP traffic stats, top 5 CPU/memory/mutex functio
 ---
 
 ## CLI Tools Reference
+
+### bottleneck
+
+Automated root-cause analysis — correlates health, HTTP, and profiles into a single verdict per service.
+
+```bash
+bash scripts/run.sh bottleneck                              # all services
+bash scripts/bottleneck.sh --service bank-payment-service   # one service
+bash scripts/bottleneck.sh --json                           # JSON for alerting
+bash scripts/bottleneck.sh --threshold cpu=0.5              # custom thresholds
+```
+
+Verdicts: `CPU-BOUND`, `GC-BOUND`, `MEMORY-PRESSURE`, `LOCK-BOUND`, `IO-BOUND`, `HEALTHY`. See [mttr-guide.md](mttr-guide.md) for the full decision matrix.
 
 ### diagnose
 
@@ -731,6 +752,7 @@ Host-side ports are configured in `.env` and may differ from internal ports. The
 | JVM Metrics Deep Dive | `jvm-metrics-deep-dive` | CPU, memory, GC, threads |
 | HTTP Performance | `http-performance` | Request rate, latency, errors |
 | Service Comparison | `service-comparison` | Side-by-side service comparison |
+| Before vs After Fix | `before-after-comparison` | Compare flame graphs before/after `OPTIMIZED=true` |
 
 ### Alert Rules
 

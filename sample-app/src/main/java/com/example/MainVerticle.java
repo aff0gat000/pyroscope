@@ -24,6 +24,7 @@ import java.util.Random;
 public class MainVerticle extends AbstractVerticle {
 
     private static final Random RNG = new Random();
+    private final boolean optimized = "true".equalsIgnoreCase(System.getenv("OPTIMIZED"));
 
     public static void main(String[] args) {
         PrometheusMeterRegistry registry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
@@ -151,8 +152,20 @@ public class MainVerticle extends AbstractVerticle {
     }
 
     private long fibonacci(int n) {
+        if (optimized) return fibonacciIterative(n);
         if (n <= 1) return n;
         return fibonacci(n - 1) + fibonacci(n - 2);
+    }
+
+    private long fibonacciIterative(int n) {
+        if (n <= 1) return n;
+        long[] fib = new long[n + 1];
+        fib[0] = 0;
+        fib[1] = 1;
+        for (int i = 2; i <= n; i++) {
+            fib[i] = fib[i - 1] + fib[i - 2];
+        }
+        return fib[n];
     }
 
     private void simulateDatabaseWork() {

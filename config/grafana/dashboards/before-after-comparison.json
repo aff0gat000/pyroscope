@@ -1,0 +1,202 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 2,
+  "uid": "before-after-comparison",
+  "title": "Before vs After Fix",
+  "tags": ["pyroscope", "comparison"],
+  "links": [
+    { "title": "Pyroscope Overview", "url": "/d/pyroscope-java-overview", "type": "link" },
+    { "title": "Service Comparison", "url": "/d/service-comparison", "type": "link" },
+    { "title": "JVM Metrics", "url": "/d/jvm-metrics-deep-dive", "type": "link" },
+    { "title": "HTTP Performance", "url": "/d/http-performance", "type": "link" }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "application",
+        "type": "custom",
+        "current": { "text": "bank-api-gateway", "value": "bank-api-gateway" },
+        "options": [
+          { "text": "bank-api-gateway", "value": "bank-api-gateway", "selected": true },
+          { "text": "bank-order-service", "value": "bank-order-service", "selected": false },
+          { "text": "bank-payment-service", "value": "bank-payment-service", "selected": false },
+          { "text": "bank-fraud-service", "value": "bank-fraud-service", "selected": false },
+          { "text": "bank-account-service", "value": "bank-account-service", "selected": false },
+          { "text": "bank-loan-service", "value": "bank-loan-service", "selected": false },
+          { "text": "bank-notification-service", "value": "bank-notification-service", "selected": false }
+        ],
+        "query": "bank-api-gateway,bank-order-service,bank-payment-service,bank-fraud-service,bank-account-service,bank-loan-service,bank-notification-service"
+      },
+      {
+        "name": "profile_type",
+        "type": "custom",
+        "current": { "text": "CPU", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" },
+        "options": [
+          { "text": "CPU", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "selected": true },
+          { "text": "Alloc (bytes)", "value": "memory:alloc_in_new_tlab_bytes:bytes:space:bytes", "selected": false },
+          { "text": "Alloc (objects)", "value": "memory:alloc_in_new_tlab_objects:count:space:bytes", "selected": false },
+          { "text": "Mutex (contentions)", "value": "mutex:contentions:count:mutex:count", "selected": false },
+          { "text": "Mutex (delay)", "value": "mutex:delay:nanoseconds:mutex:count", "selected": false },
+          { "text": "Wall Clock", "value": "wall:wall:nanoseconds:cpu:nanoseconds", "selected": false }
+        ],
+        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,memory:alloc_in_new_tlab_objects:count:space:bytes,mutex:contentions:count:mutex:count,mutex:delay:nanoseconds:mutex:count,wall:wall:nanoseconds:cpu:nanoseconds"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Instructions",
+      "type": "text",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "## Before vs After Fix Comparison\n\nThis dashboard compares flame graphs from **before** and **after** applying performance optimizations.\n\n### How to use\n1. Run `bash scripts/run.sh` — the default pipeline runs both phases automatically\n2. Set the time range to cover both phases (e.g., \"Last 1 hour\")\n3. Use the **Before** flame graph panel's time range to cover Phase 1 (unoptimized)\n4. Use the **After** flame graph panel's time range to cover Phase 2 (optimized)\n5. Compare the frame widths — optimized frames should be significantly narrower\n\n### What changed (OPTIMIZED=true)\n| Verticle | Fix | Flame Graph Impact |\n|---|---|---|\n| MainVerticle | `fibonacci()` → iterative loop | `fibonacci` frame: dominant → near-zero |\n| OrderVerticle | `processOrders()` → lock-free `computeIfPresent` | Lock contention frames disappear |\n| PaymentVerticle | `sha256()` → ThreadLocal + Character.forDigit | `getInstance` + `String.format` frames vanish |\n| FraudDetectionVerticle | Percentiles → primitive `double[]` + `Arrays.sort` | `Double.compareTo` boxing gone |\n| NotificationVerticle | `renderTemplate()` → StringBuilder + indexOf | `Formatter.format` frames disappear |"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Before Fix — Flame Graph",
+      "type": "flamegraph",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 5 },
+      "targets": [
+        {
+          "profileTypeId": "$profile_type",
+          "labelSelector": "{service_name=\"$application\"}",
+          "queryType": "profile",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "After Fix — Flame Graph",
+      "type": "flamegraph",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 14, "w": 24, "x": 0, "y": 19 },
+      "targets": [
+        {
+          "profileTypeId": "$profile_type",
+          "labelSelector": "{service_name=\"$application\"}",
+          "queryType": "profile",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Top Functions — CPU",
+      "type": "table",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 33 },
+      "targets": [
+        {
+          "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
+          "labelSelector": "{service_name=\"$application\"}",
+          "queryType": "profile",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Top Functions — Allocation",
+      "type": "table",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 33 },
+      "targets": [
+        {
+          "profileTypeId": "memory:alloc_in_new_tlab_bytes:bytes:space:bytes",
+          "labelSelector": "{service_name=\"$application\"}",
+          "queryType": "profile",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "CPU — All Services",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 43 },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"api-gateway:9404\"}[1m])",
+          "legendFormat": "API Gateway"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"order-service:9404\"}[1m])",
+          "legendFormat": "Order Service"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"payment-service:9404\"}[1m])",
+          "legendFormat": "Payment Service"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"fraud-service:9404\"}[1m])",
+          "legendFormat": "Fraud Service"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"account-service:9404\"}[1m])",
+          "legendFormat": "Account Service"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"loan-service:9404\"}[1m])",
+          "legendFormat": "Loan Service"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"notification-service:9404\"}[1m])",
+          "legendFormat": "Notification Service"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "percentunit", "custom": { "fillOpacity": 15, "lineWidth": 2 } }
+      }
+    },
+    {
+      "id": 7,
+      "title": "Heap Used — All Services",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 43 },
+      "targets": [
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"api-gateway:9404\"})",
+          "legendFormat": "API Gateway heap"
+        },
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"order-service:9404\"})",
+          "legendFormat": "Order Service heap"
+        },
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"payment-service:9404\"})",
+          "legendFormat": "Payment Service heap"
+        },
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"fraud-service:9404\"})",
+          "legendFormat": "Fraud Service heap"
+        },
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"account-service:9404\"})",
+          "legendFormat": "Account Service heap"
+        },
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"loan-service:9404\"})",
+          "legendFormat": "Loan Service heap"
+        },
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"notification-service:9404\"})",
+          "legendFormat": "Notification Service heap"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "bytes", "custom": { "fillOpacity": 15, "lineWidth": 2 } }
+      }
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-1h", "to": "now" }
+}

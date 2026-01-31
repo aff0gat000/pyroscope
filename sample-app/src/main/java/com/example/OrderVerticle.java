@@ -26,6 +26,7 @@ import java.util.concurrent.atomic.AtomicLong;
 public class OrderVerticle extends AbstractVerticle {
 
     private final PrometheusMeterRegistry registry;
+    private final boolean optimized = "true".equalsIgnoreCase(System.getenv("OPTIMIZED"));
     private final ConcurrentHashMap<String, Map<String, Object>> orders = new ConcurrentHashMap<>();
     private final AtomicLong orderSeq = new AtomicLong();
     private final Random rng = new Random();
@@ -148,7 +149,15 @@ public class OrderVerticle extends AbstractVerticle {
         return order;
     }
 
-    private synchronized void processOrders() {
+    private void processOrders() {
+        if (optimized) {
+            processOrdersOptimized();
+        } else {
+            processOrdersSynchronized();
+        }
+    }
+
+    private synchronized void processOrdersSynchronized() {
         // Synchronized to create lock contention under load
         List<String> toProcess = new ArrayList<>();
         for (Map.Entry<String, Map<String, Object>> e : orders.entrySet()) {
@@ -161,7 +170,6 @@ public class OrderVerticle extends AbstractVerticle {
         for (String id : toProcess) {
             Map<String, Object> order = orders.get(id);
             if (order != null) {
-                // Iterative price computation (different CPU shape from recursive fibonacci)
                 double total = 0;
                 @SuppressWarnings("unchecked")
                 List<String> items = (List<String>) order.get("items");
@@ -179,6 +187,35 @@ public class OrderVerticle extends AbstractVerticle {
                 order.put("status", "processed");
             }
         }
+        sleep(20 + rng.nextInt(40));
+    }
+
+    private void processOrdersOptimized() {
+        // Lock-free: use computeIfPresent to update each order atomically
+        int[] count = {0};
+        orders.forEach((id, order) -> {
+            if (count[0] >= 50) return;
+            orders.computeIfPresent(id, (k, o) -> {
+                if (!"pending".equals(o.get("status"))) return o;
+                double total = 0;
+                @SuppressWarnings("unchecked")
+                List<String> items = (List<String>) o.get("items");
+                if (items != null) {
+                    for (String item : items) {
+                        String[] parts = item.split("\\|");
+                        for (String part : parts) {
+                            if (part.startsWith("price=")) {
+                                total += Double.parseDouble(part.substring(6));
+                            }
+                        }
+                    }
+                }
+                o.put("total", total);
+                o.put("status", "processed");
+                return o;
+            });
+            count[0]++;
+        });
         sleep(20 + rng.nextInt(40));
     }
 

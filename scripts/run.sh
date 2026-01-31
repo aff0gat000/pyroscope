@@ -14,6 +14,8 @@ set -euo pipefail
 #   bash scripts/run.sh teardown         # clean up
 #   bash scripts/run.sh benchmark        # profiling overhead test
 #   bash scripts/run.sh --load-duration 60   # full pipeline with custom load duration
+#   bash scripts/run.sh --fixed              # deploy with OPTIMIZED=true (skip before phase)
+#   bash scripts/run.sh compare              # before/after on running stack
 #
 # In the full pipeline ("all"), load generation runs in the background so the
 # pipeline is not blocked. After validation completes, load continues running
@@ -41,6 +43,7 @@ COMMAND=""
 LOAD_DURATION=120
 VERBOSE=0
 LOG_DIR=""
+FIXED=0
 EXTRA_ARGS=()
 
 while [ $# -gt 0 ]; do
@@ -56,7 +59,10 @@ while [ $# -gt 0 ]; do
       shift
       LOAD_DURATION="${1:?--load-duration requires a value}"
       ;;
-    deploy|load|validate|teardown|benchmark|top|health|diagnose|all)
+    --fixed)
+      FIXED=1
+      ;;
+    deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|all)
       COMMAND="$1"
       ;;
     *)
@@ -231,16 +237,37 @@ print_ready_banner() {
   echo ""
   echo "    Grafana:    http://localhost:${gport}  (admin/admin)"
   echo "    Pyroscope:  http://localhost:${pport}"
+  echo "    Before vs After: http://localhost:${gport}/d/before-after-comparison"
   echo ""
   echo "    Quick commands:"
   echo "      bash scripts/run.sh health    # check JVM health"
   echo "      bash scripts/run.sh top       # top functions by CPU/memory/mutex"
+  echo "      bash scripts/run.sh compare   # before/after on running stack"
   echo "      Ctrl-C to stop load · bash scripts/run.sh teardown to clean up"
   if [ -n "$LOG_DIR" ]; then
     echo ""
     echo "    Full logs: $LOG_DIR/"
   fi
   echo ""
+}
+
+# ---------------------------------------------------------------------------
+# Restart services with OPTIMIZED=true
+# ---------------------------------------------------------------------------
+restart_with_optimized() {
+  echo "  Restarting all services with OPTIMIZED=true..."
+  cd "$PROJECT_DIR"
+  docker compose -f docker-compose.yml -f docker-compose.fixed.yml up -d --no-deps --build \
+    api-gateway order-service payment-service fraud-service account-service loan-service notification-service
+  # Wait for services to be healthy again
+  for svc in api-gateway order-service payment-service fraud-service account-service loan-service notification-service; do
+    for attempt in $(seq 1 30); do
+      if docker compose ps "$svc" 2>/dev/null | grep -q "Up"; then
+        break
+      fi
+      sleep 2
+    done
+  done
 }
 
 # ---------------------------------------------------------------------------
@@ -271,7 +298,11 @@ stage_deploy() {
   echo ""
   echo "===== [$1] Deploying ====="
   echo ""
-  bash "$SCRIPT_DIR/deploy.sh"
+  if [ "$FIXED" -eq 1 ]; then
+    COMPOSE_EXTRA_FILES="docker-compose.fixed.yml" bash "$SCRIPT_DIR/deploy.sh"
+  else
+    bash "$SCRIPT_DIR/deploy.sh"
+  fi
 }
 
 stage_load_foreground() {
@@ -363,8 +394,13 @@ case "$COMMAND" in
         mkdir -p "$LOG_DIR"
       fi
       echo ""
-      run_stage "1/4" "Deploying" "deploy" \
-        bash "$SCRIPT_DIR/deploy.sh"
+      if [ "$FIXED" -eq 1 ]; then
+        run_stage "1/4" "Deploying (optimized)" "deploy" \
+          env COMPOSE_EXTRA_FILES=docker-compose.fixed.yml bash "$SCRIPT_DIR/deploy.sh"
+      else
+        run_stage "1/4" "Deploying" "deploy" \
+          bash "$SCRIPT_DIR/deploy.sh"
+      fi
 
       # Reload .env now that deploy.sh has written actual port assignments.
       load_env
@@ -405,12 +441,39 @@ case "$COMMAND" in
   health)
     stage_health
     ;;
+  bottleneck)
+    bash "$SCRIPT_DIR/bottleneck.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
+    ;;
+  compare)
+    echo ""
+    echo "===== Before vs After Comparison (on running stack) ====="
+    echo ""
+    echo "Phase 1: Generating load WITHOUT optimizations..."
+    BEFORE_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    bash "$SCRIPT_DIR/generate-load.sh" "$LOAD_DURATION"
+    BEFORE_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    echo ""
+    echo "Phase 2: Restarting with OPTIMIZED=true..."
+    restart_with_optimized
+    echo ""
+    echo "Phase 2: Generating load WITH optimizations..."
+    AFTER_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    bash "$SCRIPT_DIR/generate-load.sh" "$LOAD_DURATION"
+    AFTER_END=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+    echo ""
+    echo "===== Comparison complete ====="
+    echo "  Before: $BEFORE_START → $BEFORE_END"
+    echo "  After:  $AFTER_START → $AFTER_END"
+    echo "  Open Grafana → Before vs After Fix dashboard"
+    echo "  Set 'Before' panel time to Phase 1 range, 'After' panel to Phase 2 range"
+    echo ""
+    ;;
   diagnose)
     bash "$SCRIPT_DIR/diagnose.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
     ;;
   *)
     echo "Unknown command: $COMMAND"
-    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|diagnose|all] [--verbose] [--log-dir DIR] [--load-duration N]"
+    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|all] [--verbose] [--log-dir DIR] [--load-duration N] [--fixed]"
     exit 1
     ;;
 esac

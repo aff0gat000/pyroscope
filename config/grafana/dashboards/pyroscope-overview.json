@@ -3,7 +3,9 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
-  "links": [],
+  "links": [
+    { "title": "Before vs After", "url": "/d/before-after-comparison", "type": "link" }
+  ],
   "templating": {
     "list": [
       {

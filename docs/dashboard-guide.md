@@ -1,7 +1,7 @@
 # Dashboard Reference
 
-Reference for the four Grafana dashboards provisioned by this project.
-For production debugging workflows, see [runbook.md](runbook.md).
+Reference for the five Grafana dashboards provisioned by this project.
+For production debugging workflows, see [runbook.md](runbook.md). For MTTR reduction and incident workflows, see [mttr-guide.md](mttr-guide.md).
 For ad-hoc Prometheus queries, see [sample-queries.md](sample-queries.md).
 
 Grafana version: 11.5.2. Dashboard URLs are printed in the run script banner.
@@ -162,6 +162,35 @@ Side-by-side comparison of API Gateway vs Order Service across all dimensions �
 | Avg Latency | Mean response time |
 | CPU Profile (API Gateway) | Flame graph — where API Gateway spends CPU |
 | CPU Profile (Order Service) | Flame graph — where Order Service spends CPU |
+
+---
+
+## Dashboard 5: Before vs After Fix
+
+Compares flame graphs from before and after applying performance optimizations (`OPTIMIZED=true`). Use with `bash scripts/run.sh` (default pipeline runs both phases) or `bash scripts/run.sh compare` on a running stack.
+
+### Panels
+
+| Panel | Data Source | What to look for |
+|-------|-----------|-----------------|
+| Instructions | — | How to use the dashboard, what each fix changes |
+| Before Fix (flame graph) | Pyroscope | Flame graph from unoptimized phase — look for wide frames |
+| After Fix (flame graph) | Pyroscope | Same service after fixes — frames should be narrower |
+| Top Functions — CPU | Pyroscope | Table of CPU-hottest functions |
+| Top Functions — Allocation | Pyroscope | Table of allocation-heaviest functions |
+| CPU — All Services | Prometheus (`jvm`) | CPU usage across all 7 services over time |
+| Heap Used — All Services | Prometheus (`jvm`) | Heap consumption across all 7 services |
+
+### Template Variables
+
+| Variable | Values | Default |
+|----------|--------|---------|
+| `application` | All 7 `bank-*` services | `bank-api-gateway` |
+| `profile_type` | CPU, Alloc (bytes/objects), Mutex (contentions/delay), Wall Clock | CPU |
+
+### When to Use
+
+Use this dashboard to verify that performance fixes actually reduced CPU/allocation/lock overhead. Compare frame widths between Before and After panels for the same service and profile type.
 
 ---
 

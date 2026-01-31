@@ -8,7 +8,8 @@
       "url": "/d/pyroscope-java-overview",
       "type": "link",
       "icon": "external link"
-    }
+    },
+    { "title": "Before vs After", "url": "/d/before-after-comparison", "type": "link" }
   ],
   "templating": {
     "list": [

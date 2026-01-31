@@ -21,6 +21,7 @@ import java.util.regex.Pattern;
  */
 public class FraudDetectionVerticle extends AbstractVerticle {
 
+    private final boolean optimized = "true".equalsIgnoreCase(System.getenv("OPTIMIZED"));
     private final PrometheusMeterRegistry registry;
     private final Random rng = new Random();
     private final ConcurrentLinkedDeque<Map<String, Object>> eventStream = new ConcurrentLinkedDeque<>();
@@ -169,10 +170,20 @@ public class FraudDetectionVerticle extends AbstractVerticle {
         }
 
         // Compute percentiles (sort-based)
-        Collections.sort(scores);
-        double p50 = scores.get(scores.size() / 2);
-        double p95 = scores.get((int) (scores.size() * 0.95));
-        double p99 = scores.get((int) (scores.size() * 0.99));
+        double p50, p95, p99;
+        if (optimized) {
+            double[] arr = new double[scores.size()];
+            for (int i = 0; i < arr.length; i++) arr[i] = scores.get(i);
+            java.util.Arrays.sort(arr);
+            p50 = arr[arr.length / 2];
+            p95 = arr[(int) (arr.length * 0.95)];
+            p99 = arr[(int) (arr.length * 0.99)];
+        } else {
+            Collections.sort(scores);
+            p50 = scores.get(scores.size() / 2);
+            p95 = scores.get((int) (scores.size() * 0.95));
+            p99 = scores.get((int) (scores.size() * 0.99));
+        }
 
         ctx.response().end(String.format("Anomaly: n=%d mean=%.1f std=%.1f p50=%.1f p95=%.1f p99=%.1f anomalies=%d",
                 scores.size(), mean, stddev, p50, p95, p99, anomalies));

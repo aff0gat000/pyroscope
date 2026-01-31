@@ -12,7 +12,8 @@
       "title": "JVM Metrics",
       "url": "/d/jvm-metrics-deep-dive",
       "type": "link"
-    }
+    },
+    { "title": "Before vs After", "url": "/d/before-after-comparison", "type": "link" }
   ],
   "templating": {
     "list": [

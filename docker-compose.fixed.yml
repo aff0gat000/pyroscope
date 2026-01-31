@@ -1,0 +1,34 @@
+# Override: run all services with OPTIMIZED=true for before/after comparison.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.fixed.yml up -d
+#
+# This enables optimized code paths in all verticles. Compare flame graphs
+# between runs with and without this override to see the performance fixes.
+
+services:
+  api-gateway:
+    environment:
+      OPTIMIZED: "true"
+
+  order-service:
+    environment:
+      OPTIMIZED: "true"
+
+  payment-service:
+    environment:
+      OPTIMIZED: "true"
+
+  fraud-service:
+    environment:
+      OPTIMIZED: "true"
+
+  account-service:
+    environment:
+      OPTIMIZED: "true"
+
+  loan-service:
+    environment:
+      OPTIMIZED: "true"
+
+  notification-service:
+    environment:
+      OPTIMIZED: "true"

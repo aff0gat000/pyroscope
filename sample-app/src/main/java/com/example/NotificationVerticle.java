@@ -21,6 +21,7 @@ import java.util.concurrent.atomic.AtomicLong;
  */
 public class NotificationVerticle extends AbstractVerticle {
 
+    private final boolean optimized = "true".equalsIgnoreCase(System.getenv("OPTIMIZED"));
     private final PrometheusMeterRegistry registry;
     private final ConcurrentLinkedDeque<Map<String, Object>> outbox = new ConcurrentLinkedDeque<>();
     private final ConcurrentLinkedDeque<Map<String, Object>> sentLog = new ConcurrentLinkedDeque<>();
@@ -231,11 +232,28 @@ public class NotificationVerticle extends AbstractVerticle {
                 default: args[i] = new Date().toString(); break;
             }
         }
+        if (optimized) {
+            return renderTemplateOptimized(template, args);
+        }
         try {
             return String.format(template, args);
         } catch (Exception e) {
-            return template; // fallback if format args don't match
+            return template;
         }
+    }
+
+    private String renderTemplateOptimized(String template, Object[] args) {
+        StringBuilder sb = new StringBuilder(template.length() + 64);
+        int argIndex = 0;
+        int pos = 0;
+        int idx;
+        while ((idx = template.indexOf("%s", pos)) >= 0 && argIndex < args.length) {
+            sb.append(template, pos, idx);
+            sb.append(args[argIndex++]);
+            pos = idx + 2;
+        }
+        sb.append(template, pos, template.length());
+        return sb.toString();
     }
 
     private void addToLog(Map<String, Object> msg) {

@@ -142,8 +142,16 @@ echo ""
 # ---------------------------------------------------------------------------
 echo "==> Building and starting all services..."
 cd "$PROJECT_DIR"
-docker compose build --parallel
-docker compose up -d
+
+COMPOSE_FILES=(-f docker-compose.yml)
+if [ -n "${COMPOSE_EXTRA_FILES:-}" ]; then
+  for f in $COMPOSE_EXTRA_FILES; do
+    COMPOSE_FILES+=(-f "$f")
+  done
+fi
+
+docker compose "${COMPOSE_FILES[@]}" build --parallel
+docker compose "${COMPOSE_FILES[@]}" up -d
 
 echo ""
 echo "==> Waiting for services to become healthy..."

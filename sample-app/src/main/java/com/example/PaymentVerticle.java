@@ -30,9 +30,15 @@ import java.util.concurrent.atomic.AtomicLong;
 public class PaymentVerticle extends AbstractVerticle {
 
     private final PrometheusMeterRegistry registry;
+    private final boolean optimized = "true".equalsIgnoreCase(System.getenv("OPTIMIZED"));
     private final ConcurrentHashMap<String, Map<String, Object>> ledger = new ConcurrentHashMap<>();
     private final AtomicLong txnSeq = new AtomicLong();
     private final Random rng = new Random();
+
+    private static final ThreadLocal<MessageDigest> SHA256_DIGEST = ThreadLocal.withInitial(() -> {
+        try { return MessageDigest.getInstance("SHA-256"); }
+        catch (NoSuchAlgorithmException e) { throw new RuntimeException(e); }
+    });
 
     public PaymentVerticle() {
         this(new PrometheusMeterRegistry(PrometheusConfig.DEFAULT));
@@ -254,6 +260,7 @@ public class PaymentVerticle extends AbstractVerticle {
     }
 
     private String sha256(String input) {
+        if (optimized) return sha256Optimized(input);
         try {
             MessageDigest md = MessageDigest.getInstance("SHA-256");
             byte[] hash = md.digest(input.getBytes());
@@ -263,6 +270,18 @@ public class PaymentVerticle extends AbstractVerticle {
         } catch (NoSuchAlgorithmException e) {
             return "error";
         }
+    }
+
+    private String sha256Optimized(String input) {
+        MessageDigest md = SHA256_DIGEST.get();
+        md.reset();
+        byte[] hash = md.digest(input.getBytes());
+        StringBuilder sb = new StringBuilder(hash.length * 2);
+        for (byte b : hash) {
+            sb.append(Character.forDigit((b >> 4) & 0xF, 16));
+            sb.append(Character.forDigit(b & 0xF, 16));
+        }
+        return sb.toString();
     }
 
     private void sleep(int ms) {

@@ -1,6 +1,6 @@
 # Pyroscope + Java Vert.x — Zero-Code Continuous Profiling
 
-A bank enterprise microservices demo with **7 Vert.x services** profiled by the **Pyroscope Java agent** — no application code changes required. Integrates with Prometheus, Grafana (4 dashboards), and alert rules.
+A bank enterprise microservices demo with **7 Vert.x services** profiled by the **Pyroscope Java agent** — no application code changes required. Integrates with Prometheus, Grafana (5 dashboards), and alert rules.
 
 ## TL;DR
 
@@ -178,6 +178,10 @@ bash scripts/run.sh health --json       # JSON output for automation
 bash scripts/run.sh diagnose            # full diagnostic report (no browser needed)
 bash scripts/run.sh diagnose --json     # machine-readable JSON for scripting
 bash scripts/run.sh --load-duration 60  # full pipeline with custom load duration
+bash scripts/run.sh --fixed             # deploy with OPTIMIZED=true (optimized-only mode)
+bash scripts/run.sh compare             # before/after comparison on running stack
+bash scripts/run.sh bottleneck          # automated root-cause analysis per service
+bash scripts/run.sh bottleneck --json   # machine-readable for alerting pipelines
 ```
 
 The default full pipeline runs in **quiet mode**: each stage shows a single-line spinner with elapsed time, and on completion prints a "Ready" banner with Grafana/Pyroscope URLs. Use `--verbose` for full inline output or `--log-dir DIR` to persist stage logs to disk.
@@ -238,7 +242,7 @@ for interactive API exploration. See [postman/README.md](postman/README.md).
 
 ## Grafana Dashboards
 
-Four pre-provisioned dashboards:
+Five pre-provisioned dashboards:
 
 | Dashboard | UID | Description |
 |-----------|-----|-------------|
@@ -246,6 +250,19 @@ Four pre-provisioned dashboards:
 | **JVM Metrics Deep Dive** | `jvm-metrics-deep-dive` | CPU gauge, heap/non-heap, GC pauses, threads, memory pool utilization |
 | **HTTP Performance** | `http-performance` | Request rate, p50/p95/p99 latency, error rate, slowest endpoints |
 | **Service Comparison** | `service-comparison` | Side-by-side metrics and flame graphs |
+| **Before vs After Fix** | `before-after-comparison` | Compare flame graphs before/after `OPTIMIZED=true` performance fixes |
+
+### Before vs After Fix
+
+The default `bash scripts/run.sh` pipeline generates load in two phases — before and after applying optimizations. Use the Before vs After Fix dashboard to compare flame graphs.
+
+| Verticle | Fix | Flame Graph Impact |
+|----------|-----|--------------------|
+| MainVerticle | `fibonacci()` → iterative loop | `fibonacci` frame: dominant → near-zero |
+| OrderVerticle | `processOrders()` → lock-free `computeIfPresent` | Lock contention frames disappear |
+| PaymentVerticle | `sha256()` → ThreadLocal + `Character.forDigit` | `getInstance` + `String.format` frames vanish |
+| FraudDetectionVerticle | Percentiles → primitive `double[]` + `Arrays.sort` | `Double.compareTo` boxing gone |
+| NotificationVerticle | `renderTemplate()` → StringBuilder + `indexOf` | `Formatter.format` frames disappear |
 
 ## Prometheus Alert Rules
 
@@ -268,6 +285,7 @@ Four pre-provisioned dashboards:
 | [docs/pipeline.md](docs/pipeline.md) | Pipeline stages, data flow, and configuration |
 | [docs/incident-profiling-runbook.md](docs/incident-profiling-runbook.md) | Incident runbook: find the exact class/method causing CPU, memory, lock, or latency issues |
 | [docs/cli-observability.md](docs/cli-observability.md) | CLI observability: diagnose, monitor, and debug without a browser |
+| [docs/mttr-guide.md](docs/mttr-guide.md) | Reducing MTTR with continuous profiling — incident workflows, bottleneck analysis, observability outcomes |
 | [docs/dashboard-guide.md](docs/dashboard-guide.md) | Dashboard guide, production debugging runbook, and queries |
 
 ## Project Structure
@@ -276,7 +294,7 @@ Four pre-provisioned dashboards:
 pyroscope/
 ├── ansible/                        # Ansible playbooks
 ├── config/
-│   ├── grafana/dashboards/         # 4 Grafana dashboards (JSON)
+│   ├── grafana/dashboards/         # 5 Grafana dashboards (JSON)
 │   ├── grafana/provisioning/       # Datasources + dashboard provider
 │   ├── prometheus/
 │   │   ├── prometheus.yml          # Scrape config for 7 services
@@ -371,9 +389,22 @@ Compare CPU profiles across all 7 services. The Payment Service's BigDecimal mat
 When the Fraud Service p99 spikes, open the flame graph for `bank-fraud-service` and see whether the regex rule engine or the anomaly detection is the bottleneck. See [docs/runbook.md](docs/runbook.md) for full playbooks.
 
 ### CI/CD Regression Detection
+
+Query Pyroscope API to compare profiles between builds:
+
 ```bash
 curl "http://pyroscope:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds%7Bservice_name%3D%22bank-payment-service%22%7D&from=now-1h&until=now&format=json"
 ```
+
+### CI/CD Integration — TODO
+
+The before/after comparison workflow can be automated in CI pipelines to catch performance regressions per-PR:
+
+- [ ] **Baseline snapshot script** (`scripts/ci-snapshot.sh`) — dump per-service top-N function CPU/alloc totals from Pyroscope API to `baseline/profiles.json`. Commit as the known-good baseline
+- [ ] **Regression gate script** (`scripts/ci-compare.sh`) — fetch the same top-N data after a PR build, diff against baseline, fail the pipeline if any function's CPU share increases by a configurable threshold (e.g. 20%)
+- [ ] **GitHub Actions / GitLab CI job** — spin up the stack, generate load, run the regression gate, upload flame graph diffs as PR artifacts
+- [ ] **Pyroscope diff API** — use `GET /pyroscope/render-diff?leftFrom=...&rightFrom=...` for server-side profile diffs
+- [ ] **Slack/webhook notification** — on regression, post a summary (service, function, % increase, Grafana link) to a channel
 
 ## Multi-Language Roadmap
 
