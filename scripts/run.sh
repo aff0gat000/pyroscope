@@ -17,13 +17,14 @@ set -euo pipefail
 #   bash scripts/run.sh --fixed              # deploy with OPTIMIZED=true (skip before phase)
 #   bash scripts/run.sh compare              # before/after on running stack
 #   bash scripts/run.sh dump-config          # dump running config to config/ directory
+#   bash scripts/run.sh check-dashboards    # validate dashboard queries against Prometheus/Pyroscope
 #
 # In the full pipeline ("all"), load generation runs in the background so the
 # pipeline is not blocked. After validation completes, load continues running
 # to keep dashboards populated. Use "teardown" or Ctrl-C to stop.
 #
 # Commands safe to run alongside a running stack (read-only):
-#   health, top, diagnose, bottleneck, validate, load, dump-config
+#   health, top, diagnose, bottleneck, validate, load, dump-config, check-dashboards
 #
 # Commands that mutate the stack (will prompt for confirmation if running):
 #   all (teardown + redeploy), deploy (recreate), compare (restart services),
@@ -70,7 +71,7 @@ while [ $# -gt 0 ]; do
     --fixed)
       FIXED=1
       ;;
-    deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|all)
+    deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|check-dashboards|all)
       COMMAND="$1"
       ;;
     *)
@@ -392,7 +393,7 @@ stage_health() {
 # Guard: warn if mutating command targets a running stack
 # ---------------------------------------------------------------------------
 # Commands that only read from the running stack (safe to run anytime):
-#   dump-config, health, top, diagnose, bottleneck, validate, load
+#   dump-config, health, top, diagnose, bottleneck, validate, load, check-dashboards
 # Commands that mutate the stack (will restart/stop containers):
 #   all, deploy, teardown, compare, benchmark
 
@@ -414,7 +415,7 @@ case "$COMMAND" in
       esac
       echo ""
       echo "  Safe commands for a running stack:"
-      echo "    health, top, diagnose, bottleneck, validate, load, dump-config"
+      echo "    health, top, diagnose, bottleneck, validate, load, dump-config, check-dashboards"
       echo ""
       read -r -p "  Continue? [y/N] " confirm
       case "$confirm" in
@@ -533,6 +534,9 @@ case "$COMMAND" in
   diagnose)
     bash "$SCRIPT_DIR/diagnose.sh" "${EXTRA_ARGS[@]+"${EXTRA_ARGS[@]}"}"
     ;;
+  check-dashboards)
+    bash "$SCRIPT_DIR/check-dashboards.sh"
+    ;;
   dump-config)
     # Dump the running config from each infrastructure container into
     # a timestamped snapshot directory. Never overwrites repo defaults.
@@ -620,7 +624,7 @@ case "$COMMAND" in
     ;;
   *)
     echo "Unknown command: $COMMAND"
-    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|all] [--verbose] [--log-dir DIR] [--load-duration N] [--fixed]"
+    echo "Usage: bash scripts/run.sh [deploy|load|validate|teardown|benchmark|top|health|diagnose|compare|bottleneck|dump-config|check-dashboards|all] [--verbose] [--log-dir DIR] [--load-duration N] [--fixed]"
     exit 1
     ;;
 esac
