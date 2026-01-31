@@ -129,8 +129,8 @@ run_stage() {
     sleep 0.1
   done
 
-  wait "$cmd_pid"
-  local rc=$?
+  local rc=0
+  wait "$cmd_pid" || rc=$?
 
   local elapsed=$(( $(date +%s) - start_time ))
   if [ $rc -eq 0 ]; then
