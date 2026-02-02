@@ -11,7 +11,7 @@
       {
         "name": "application",
         "type": "custom",
-        "query": "bank-api-gateway,bank-order-service,bank-payment-service,bank-fraud-service,bank-account-service,bank-loan-service,bank-notification-service",
+        "query": "bank-api-gateway,bank-order-service,bank-payment-service,bank-fraud-service,bank-account-service,bank-loan-service,bank-notification-service,bank-stream-service,bank-faas-server",
         "current": { "text": "bank-api-gateway", "value": "bank-api-gateway" },
         "includeAll": false,
         "multi": false,
@@ -20,7 +20,7 @@
       {
         "name": "profile_type",
         "type": "custom",
-        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,mutex:contentions:count:mutex:count",
+        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,mutex:contentions:count:mutex:count,wall:wall:nanoseconds:cpu:nanoseconds",
         "current": { "text": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" },
         "includeAll": false,
         "multi": false,

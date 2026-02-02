@@ -4,7 +4,6 @@
   "graphTooltip": 2,
   "links": [
     { "title": "Pyroscope Overview", "url": "/d/pyroscope-java-overview", "type": "link" },
-    { "title": "Service Comparison", "url": "/d/service-comparison", "type": "link" },
     { "title": "JVM Metrics", "url": "/d/jvm-metrics-deep-dive", "type": "link" },
     { "title": "HTTP Performance", "url": "/d/http-performance", "type": "link" },
     { "title": "Before vs After", "url": "/d/before-after-comparison", "type": "link" }
@@ -24,9 +23,11 @@
           { "text": "fraud-service", "value": "fraud-service", "selected": false },
           { "text": "account-service", "value": "account-service", "selected": false },
           { "text": "loan-service", "value": "loan-service", "selected": false },
-          { "text": "notification-service", "value": "notification-service", "selected": false }
+          { "text": "notification-service", "value": "notification-service", "selected": false },
+          { "text": "stream-service", "value": "stream-service", "selected": false },
+          { "text": "faas-server", "value": "faas-server", "selected": false }
         ],
-        "query": "api-gateway,order-service,payment-service,fraud-service,account-service,loan-service,notification-service",
+        "query": "api-gateway,order-service,payment-service,fraud-service,account-service,loan-service,notification-service,stream-service,faas-server",
         "includeAll": true,
         "allValue": ".*"
       },
@@ -42,9 +43,11 @@
           { "text": "bank-fraud-service", "value": "bank-fraud-service", "selected": false },
           { "text": "bank-account-service", "value": "bank-account-service", "selected": false },
           { "text": "bank-loan-service", "value": "bank-loan-service", "selected": false },
-          { "text": "bank-notification-service", "value": "bank-notification-service", "selected": false }
+          { "text": "bank-notification-service", "value": "bank-notification-service", "selected": false },
+          { "text": "bank-stream-service", "value": "bank-stream-service", "selected": false },
+          { "text": "bank-faas-server", "value": "bank-faas-server", "selected": false }
         ],
-        "query": "bank-api-gateway,bank-order-service,bank-payment-service,bank-fraud-service,bank-account-service,bank-loan-service,bank-notification-service"
+        "query": "bank-api-gateway,bank-order-service,bank-payment-service,bank-fraud-service,bank-account-service,bank-loan-service,bank-notification-service,bank-stream-service,bank-faas-server"
       },
       {
         "name": "profile_type",
@@ -69,7 +72,7 @@
       "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
       "options": {
         "mode": "markdown",
-        "content": "| Service | Verticle | Endpoints | Pyroscope App |\n|---------|----------|-----------|---------------|\n| **api-gateway** | MainVerticle | /cpu, /alloc, /redis, /json, /batch, /mixed | `bank-api-gateway` |\n| **order-service** | OrderVerticle | /order/create, /order/process | `bank-order-service` |\n| **payment-service** | PaymentVerticle | /payment/transfer, /payment/fx, /payment/orchestrate | `bank-payment-service` |\n| **fraud-service** | FraudDetectionVerticle | /fraud/score, /fraud/ingest, /fraud/anomaly | `bank-fraud-service` |\n| **account-service** | AccountVerticle | /account/balance, /account/deposit, /account/interest | `bank-account-service` |\n| **loan-service** | LoanVerticle | /loan/apply, /loan/amortize, /loan/risk-sim | `bank-loan-service` |\n| **notification-service** | NotificationVerticle | /notify/send, /notify/bulk, /notify/drain | `bank-notification-service` |"
+        "content": "| Service | Verticle | Endpoints | Pyroscope App |\n|---------|----------|-----------|---------------|\n| **api-gateway** | MainVerticle | /cpu, /alloc, /redis, /json, /batch, /mixed | `bank-api-gateway` |\n| **order-service** | OrderVerticle | /order/create, /order/process | `bank-order-service` |\n| **payment-service** | PaymentVerticle | /payment/transfer, /payment/fx, /payment/orchestrate | `bank-payment-service` |\n| **fraud-service** | FraudDetectionVerticle | /fraud/score, /fraud/ingest, /fraud/anomaly | `bank-fraud-service` |\n| **account-service** | AccountVerticle | /account/balance, /account/deposit, /account/interest | `bank-account-service` |\n| **loan-service** | LoanVerticle | /loan/apply, /loan/amortize, /loan/risk-sim | `bank-loan-service` |\n| **notification-service** | NotificationVerticle | /notify/send, /notify/bulk, /notify/drain | `bank-notification-service` |\n| **stream-service** | StreamVerticle | /stream/transactions, /stream/fanout | `bank-stream-service` |\n| **faas-server** | FaasVerticle | /fn/invoke, /fn/burst, /fn/chain | `bank-faas-server` |"
       }
     },
     {

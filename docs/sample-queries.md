@@ -1,6 +1,6 @@
 # Sample Queries for UI Debugging
 
-Copy-paste these into the respective UIs to verify data is flowing. All ports below assume defaults; check `.env` for actual values if ports were remapped.
+Reference queries for verifying data flow in each UI. All ports assume defaults; check `.env` for actual values if ports were remapped.
 
 ---
 
@@ -193,7 +193,7 @@ Open `http://localhost:${GRAFANA_PORT}/explore` (default port 3000).
 
 ### Prometheus datasource queries
 
-Switch to the "Prometheus" datasource in Explore, then paste:
+Datasource: Prometheus. In Grafana Explore:
 
 **CPU usage rate per instance (JVM metrics from JMX Exporter, job="jvm"):**
 ```promql

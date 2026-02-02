@@ -49,6 +49,10 @@ scrape_configs:
         labels:
           group: "vertx"
           verticle: "stream"
+      - targets: ["faas-server:8080"]
+        labels:
+          group: "vertx"
+          verticle: "faas"
 
   # JVM metrics via JMX Exporter agent (port 9404) — heap, GC, threads, CPU.
   # Zero code changes: attached as a Java agent via JAVA_TOOL_OPTIONS.
@@ -87,3 +91,7 @@ scrape_configs:
         labels:
           group: "vertx"
           verticle: "stream"
+      - targets: ["faas-server:9404"]
+        labels:
+          group: "vertx"
+          verticle: "faas"

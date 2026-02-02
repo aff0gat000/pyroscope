@@ -18,10 +18,12 @@ ACCOUNT="http://localhost:${ACCOUNT_SERVICE_PORT:-8084}"
 LOAN="http://localhost:${LOAN_SERVICE_PORT:-8085}"
 NOTIFY="http://localhost:${NOTIFICATION_SERVICE_PORT:-8086}"
 STREAM="http://localhost:${STREAM_SERVICE_PORT:-8087}"
+FAAS="http://localhost:${FAAS_SERVICE_PORT:-8088}"
 
 echo "==> Bank Enterprise Load Generator (${DURATION_SECONDS}s)"
 echo "    API Gateway :${API_GATEWAY_PORT:-8080} | Order :${ORDER_SERVICE_PORT:-8081} | Payment :${PAYMENT_SERVICE_PORT:-8082} | Fraud :${FRAUD_SERVICE_PORT:-8083}"
 echo "    Account :${ACCOUNT_SERVICE_PORT:-8084} | Loan :${LOAN_SERVICE_PORT:-8085} | Notification :${NOTIFICATION_SERVICE_PORT:-8086} | Stream :${STREAM_SERVICE_PORT:-8087}"
+echo "    FaaS :${FAAS_SERVICE_PORT:-8088}"
 echo "    Press Ctrl-C to stop early."
 echo ""
 
@@ -70,6 +72,36 @@ while [ "$(date +%s)" -lt "$END_TIME" ]; do
   # Stream Service
   SEPS=("/stream/transactions" "/stream/windowed-aggregation" "/stream/fanout" "/stream/transform-pipeline" "/stream/backpressure-stress" "/stream/merge-sorted")
   hit "${STREAM}${SEPS[$((RANDOM % ${#SEPS[@]}))]}" &
+
+  # FaaS server — all 10 function verticles
+  EFNS=("fibonacci" "transform" "hash" "sort" "sleep" "matrix" "regex" "compress" "primes" "contention" "fanout")
+  EROLL=$((RANDOM % 100))
+  if [ "$EROLL" -lt 50 ]; then
+    # Single invoke — pick any function
+    FN="${EFNS[$((RANDOM % ${#EFNS[@]}))]}"
+    curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  POST ${FAAS}/fn/invoke/${FN}\n" \
+      -X POST "${FAAS}/fn/invoke/${FN}" -H "Content-Type: application/json" -d '{}' --max-time 15 || true
+  elif [ "$EROLL" -lt 75 ]; then
+    # Burst — concurrent deploys of same function
+    BURST_FNS=("hash" "sort" "regex" "compress" "primes" "matrix" "contention")
+    FN="${BURST_FNS[$((RANDOM % ${#BURST_FNS[@]}))]}"
+    curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  POST ${FAAS}/fn/burst/${FN}\n" \
+      -X POST "${FAAS}/fn/burst/${FN}?count=$((2 + RANDOM % 5))" -H "Content-Type: application/json" -d '{}' --max-time 30 || true
+  elif [ "$EROLL" -lt 90 ]; then
+    # Chain — sequential deploy/run/undeploy across different functions
+    CHAINS=('["hash","sort","fibonacci"]' '["regex","compress","primes"]' '["transform","matrix","hash"]' '["sleep","sort","compress"]')
+    CHAIN="${CHAINS[$((RANDOM % ${#CHAINS[@]}))]}"
+    curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  POST ${FAAS}/fn/chain\n" \
+      -X POST "${FAAS}/fn/chain" -H "Content-Type: application/json" \
+      -d "{\"chain\":${CHAIN},\"params\":{}}" --max-time 30 || true
+  else
+    # Fanout — deploy N child verticles in parallel
+    FANOUT_FNS=("hash" "primes" "regex")
+    FN="${FANOUT_FNS[$((RANDOM % ${#FANOUT_FNS[@]}))]}"
+    curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  POST ${FAAS}/fn/invoke/fanout\n" \
+      -X POST "${FAAS}/fn/invoke/fanout" -H "Content-Type: application/json" \
+      -d "{\"count\":$((2 + RANDOM % 4)),\"function\":\"${FN}\"}" --max-time 30 || true
+  fi &
 
   wait
   sleep "0.$((RANDOM % 3))"

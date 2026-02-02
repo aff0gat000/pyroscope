@@ -61,6 +61,9 @@ public class MainVerticle extends AbstractVerticle {
             case "stream":
                 vertx.deployVerticle(new StreamVerticle(registry));
                 break;
+            case "faas":
+                vertx.deployVerticle(new FaasVerticle(registry));
+                break;
             default:
                 vertx.deployVerticle(new MainVerticle(registry));
                 break;

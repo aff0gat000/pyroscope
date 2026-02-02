@@ -31,7 +31,7 @@ C4Context
 
 ## 2. Application Architecture — Vert.x Shared-JVM Model
 
-### How It Works
+### Verticle Dispatch
 
 `MainVerticle.main()` is the single entry point for every server container:
 
@@ -94,7 +94,7 @@ flowchart LR
     end
 ```
 
-### Why This Matters for Profiling
+### Profiling Implications
 
 Pyroscope sees **one application per server**. Flame graphs show mixed code from all verticles on that server — exactly as in production. To identify which verticle owns a hot frame, look at the package/class in the stack:
 

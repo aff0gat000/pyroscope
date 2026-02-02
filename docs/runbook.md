@@ -192,7 +192,7 @@ bash scripts/run.sh diagnose
 
 ## Incident Response Playbooks
 
-### First 30 Seconds — Automated Root Cause
+### Automated Root Cause Detection
 
 ```bash
 bash scripts/run.sh bottleneck
@@ -210,7 +210,7 @@ bash scripts/run.sh diagnose
 |---------|-------------------|-----------|
 | JVM HEALTH | Which services have high CPU, heap, GC, threads | Go to that service's playbook below |
 | HTTP TRAFFIC | Request rate, error rate, avg latency per service | High errors: check logs. High latency: check profiles |
-| PROFILING HOTSPOTS | Top function consuming CPU/memory/mutex per service | You now know the class and method — go to code |
+| PROFILING HOTSPOTS | Top function consuming CPU/memory/mutex per service | Identifies the class and method to investigate |
 | FIRING ALERTS | Which Prometheus alerts are active | Confirms the symptom |
 
 For one service:
@@ -229,7 +229,7 @@ bash scripts/run.sh diagnose --json | jq .
 
 **Alert:** `HighCpuUsage` — process CPU > 80% for 1 minute.
 
-**Steps:**
+**Procedure:**
 
 1. Identify the top CPU functions:
    ```bash
@@ -261,7 +261,7 @@ bash scripts/top-functions.sh cpu bank-api-gateway
 
 **Alert:** `HighHeapUsage` (heap > 85%) or `HighGcPauseRate` (GC > 50ms/s).
 
-**Steps:**
+**Procedure:**
 
 1. Check heap status:
    ```bash
@@ -307,7 +307,7 @@ bash scripts/top-functions.sh cpu bank-api-gateway
 
 **Symptom:** High latency despite low CPU. Threads piling up.
 
-**Steps:**
+**Procedure:**
 
 1. Check thread counts:
    ```bash
@@ -344,7 +344,7 @@ bash scripts/top-functions.sh cpu bank-api-gateway
 
 **Alert:** `HighLatency` — p99 > 2 seconds for 2 minutes.
 
-**Steps:**
+**Procedure:**
 
 1. Find the slow service and endpoint:
    ```bash
@@ -376,7 +376,7 @@ bash scripts/top-functions.sh cpu bank-api-gateway
 
 ### Post-Deploy Regression
 
-**Steps:**
+**Procedure:**
 
 1. Capture current state:
    ```bash
@@ -635,6 +635,8 @@ The Pyroscope JFR agent is designed for production use. Expected ranges with the
 | Lock (`lock`) | `-Dpyroscope.profiler.lock=10ms` | 1-3% |
 | Wall clock (`wall`) | default sampling | 1-2% |
 | All combined (current config) | all of the above | 3-8% |
+
+**Note on the FaaS server:** The FaaS server sees slightly more profiler activity per request due to verticle deploy/undeploy cycles and classloader activity, but overhead stays within the same 3-8% range because sampling frequency is fixed (the profiler does not sample more often for busier workloads). The `contention` function generates more mutex profile data due to its `synchronized` lock competition, but this does not increase CPU overhead — it only increases the volume of mutex profile data sent to Pyroscope.
 
 ### Tuning if overhead is too high
 

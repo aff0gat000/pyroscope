@@ -1,12 +1,12 @@
 # Reducing MTTR with Continuous Profiling
 
-How to use Pyroscope, Grafana, and the CLI tooling in this project to reduce Mean Time To Resolution (MTTR) and drive observability outcomes in production.
+MTTR reduction workflow using Pyroscope, Grafana, and CLI tooling.
 
 ---
 
 ## Why Continuous Profiling Reduces MTTR
 
-Traditional observability (metrics + logs + traces) tells you **what** is wrong — high CPU, slow responses, OOM restarts. Continuous profiling tells you **why** — the exact function, class, and line consuming the resource. This eliminates the investigation gap between "we see the symptom" and "we know the root cause."
+Traditional observability (metrics + logs + traces) identifies **what** is wrong — high CPU, slow responses, OOM restarts. Continuous profiling identifies **why** — the exact function, class, and line consuming the resource.
 
 | Without Profiling | With Profiling |
 |---|---|
@@ -23,7 +23,7 @@ The profiling data is always-on — you don't need to reproduce the issue or att
 
 ## Incident Response Workflow
 
-### 30-Second Triage
+### Automated Triage
 
 ```bash
 bash scripts/run.sh bottleneck
@@ -42,15 +42,15 @@ This single command queries Prometheus and Pyroscope, correlates JVM health with
        CPU: 15%  Heap: 38%  GC: 0.004s/s  Threads: 18  Lat: 45ms  Err: 0.0%
 ```
 
-**What you now know in 30 seconds:**
-- Which service is the problem
-- What type of bottleneck (CPU, memory/GC, lock contention, I/O)
-- The exact function causing it
-- What to do next
+Output provides:
+- Affected service
+- Bottleneck classification (CPU, memory/GC, lock contention, I/O)
+- Top contributing function
+- Recommended action
 
-### 2-Minute Deep Dive
+### Deep Dive
 
-Once you know the service and bottleneck type:
+With the affected service and bottleneck type identified:
 
 ```bash
 # Detailed function list for the affected service
@@ -65,9 +65,9 @@ Open the Grafana flame graph to see the full call stack:
 - Click the wide `sha256` bar → see callers and callees
 - Use **Sandwich view** to see all callers of the hot function
 
-### 5-Minute Root Cause
+### Root Cause Identification
 
-The flame graph shows you the exact call stack. In the `sha256` example:
+The flame graph shows the exact call stack. In the `sha256` example:
 
 ```
 handleTransfer()
@@ -81,7 +81,7 @@ handleTransfer()
 
 **Fix:** ThreadLocal `MessageDigest` + `Character.forDigit()` — exactly what `OPTIMIZED=true` enables in this demo.
 
-### Verify the Fix
+### Fix Validation
 
 ```bash
 # Before/after comparison on running stack
@@ -97,7 +97,7 @@ Open the **Before vs After Fix** dashboard in Grafana to visually compare flame 
 
 ## Bottleneck Decision Matrix
 
-The `bottleneck` command classifies each service automatically. Here's how each verdict maps to investigation steps:
+The `bottleneck` command classifies each service automatically. Each verdict maps to specific investigation steps:
 
 | Verdict | Symptoms | What the Flame Graph Shows | Fix Pattern |
 |---------|----------|---------------------------|-------------|
@@ -119,7 +119,7 @@ bash scripts/top-functions.sh memory $SERVICE   # what's allocating?
 bash scripts/top-functions.sh mutex $SERVICE    # what's contending?
 ```
 
-| CPU Hot | Memory Hot | Mutex Hot | Diagnosis |
+| CPU Elevated | Memory Elevated | Mutex Elevated | Diagnosis |
 |---------|-----------|-----------|-----------|
 | Yes | No | No | Pure computation — optimize the algorithm |
 | No | Yes | No | GC pressure — reduce allocations |
@@ -141,7 +141,7 @@ bash scripts/bottleneck.sh --service bank-api-gateway
 # → CPU-BOUND: MainVerticle.fibonacci at 62% self-time
 ```
 
-Traditional metrics tell you CPU is high. Profiling tells you `fibonacci()` is recursive O(2^n) and should be iterative. Time from alert to root cause: under a minute.
+Metrics indicate high CPU. Profiling identifies `fibonacci()` as recursive O(2^n), indicating it should be iterative.
 
 ### Outcome 2: Distinguish Real Bottlenecks from Noise
 
@@ -151,7 +151,7 @@ Traditional metrics tell you CPU is high. Profiling tells you `fibonacci()` is r
 bash scripts/run.sh bottleneck
 ```
 
-If all services show **HEALTHY** with slightly elevated latency, the issue is likely infrastructure (network, DNS, load balancer) — not application code. If one service shows **CPU-BOUND** or **LOCK-BOUND**, you know exactly where to look.
+If all services report **HEALTHY** with slightly elevated latency, the cause is likely infrastructure (network, DNS, load balancer) rather than application code. If one service reports **CPU-BOUND** or **LOCK-BOUND**, investigation targets that service.
 
 ### Outcome 3: Prove a Fix Worked
 
@@ -166,7 +166,7 @@ The Before vs After dashboard shows:
 - **After:** mutex flame graph is flat — contention eliminated
 - **HTTP latency panel:** p99 dropped from 800ms to 120ms
 
-This is concrete evidence for the PR review and the incident postmortem.
+This data serves as evidence for PR review and incident postmortem.
 
 ### Outcome 4: Capacity Planning from Profile Data
 
@@ -194,7 +194,7 @@ bash scripts/run.sh top memory         # "what allocates the most?"
 bash scripts/run.sh top mutex          # "where are the locks?"
 ```
 
-The flame graph is a map of the runtime behavior — more accurate than documentation and always up to date.
+Flame graphs provide an accurate, current map of runtime behavior.
 
 ---
 
@@ -221,7 +221,7 @@ Before deploying profiling to production, verify:
 | **Verification** | Redeploy + wait + hope | Before/after flame graph diff | Before vs After dashboard |
 | **Total MTTR** | 30-90 min | 5-15 min | — |
 
-The key insight: profiling data is **already captured** when the incident happens. You don't need to reproduce anything — just look at the flame graph for the incident time window.
+Profiling data is **already captured** when the incident occurs. Reproduction is unnecessary — the flame graph for the incident time window is available immediately.
 
 ---
 

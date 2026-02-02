@@ -278,7 +278,7 @@ restart_with_optimized() {
   echo "  Restarting all services with OPTIMIZED=true..."
   cd "$PROJECT_DIR"
   docker compose -f docker-compose.yaml -f docker-compose.fixed.yaml up -d --no-deps --build \
-    api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service
+    api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service faas-server
   wait_for_services
 }
 
@@ -286,12 +286,12 @@ restart_without_optimized() {
   echo "  Restarting all services without optimizations (default)..."
   cd "$PROJECT_DIR"
   docker compose -f docker-compose.yaml up -d --no-deps --build \
-    api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service
+    api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service faas-server
   wait_for_services
 }
 
 wait_for_services() {
-  for svc in api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service; do
+  for svc in api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service faas-server; do
     for _attempt in $(seq 1 30); do
       if docker compose ps "$svc" 2>/dev/null | grep -q "Up"; then
         break

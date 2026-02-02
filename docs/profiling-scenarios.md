@@ -68,7 +68,7 @@ PaymentVerticle.handleTransfer()
 
 **Root cause:** Per-request provider lookup combined with autoboxing in a tight loop. Neither issue is obvious from code review alone.
 
-**Key takeaway:** Flame graphs expose overhead hidden inside JDK library calls. The application code did not implement `MessageDigest.getInstance()`, but it pays for the cost on every request.
+Flame graphs expose overhead hidden inside JDK library calls. The application code did not implement `MessageDigest.getInstance()`, but it pays for the cost on every request.
 
 ## Scenario 3: Memory allocation pressure from String.format
 
@@ -193,7 +193,7 @@ The CPU and Heap metrics panels below show the aggregate impact across all seven
 | Fraud Service | Percentile sort replaced with primitive `double[]` + `Arrays.sort` | `Double.compareTo` boxing eliminated |
 | Notification Service | `renderTemplate()` replaced with StringBuilder + `indexOf` | `Formatter.format` frames disappear |
 
-**Why this matters:** Before-and-after flame graph screenshots provide concrete evidence for pull request reviews, incident postmortems, and stakeholder communication. The data shows that a specific function went from 18% CPU to 0%, replacing guesswork with measurement.
+Before-and-after flame graph screenshots provide evidence for pull request reviews, incident postmortems, and stakeholder communication. The data shows that a specific function went from 18% CPU to 0%.
 
 ## Scenario 6: Cross-referencing profile types
 

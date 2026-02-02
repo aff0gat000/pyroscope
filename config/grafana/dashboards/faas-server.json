@@ -1,0 +1,213 @@
+{
+  "uid": "faas-server",
+  "title": "FaaS Server",
+  "description": "Function-as-a-Service runtime: deploy/invoke/undeploy lifecycle, burst concurrency, warm pools",
+  "annotations": { "list": [] },
+  "editable": true,
+  "graphTooltip": 2,
+  "links": [
+    { "title": "Pyroscope Overview", "url": "/d/pyroscope-java-overview", "type": "link" },
+    { "title": "JVM Metrics", "url": "/d/jvm-metrics-deep-dive", "type": "link" },
+    { "title": "Service Performance", "url": "/d/verticle-performance", "type": "link" },
+    { "title": "HTTP Performance", "url": "/d/http-performance", "type": "link" }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "profile_type",
+        "type": "custom",
+        "label": "Profile Type",
+        "current": { "text": "cpu", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" },
+        "options": [
+          { "text": "cpu", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "selected": true },
+          { "text": "alloc (memory)", "value": "memory:alloc_in_new_tlab_objects:count:space:bytes", "selected": false },
+          { "text": "mutex (lock)", "value": "mutex:contentions:count:mutex:count", "selected": false },
+          { "text": "wall", "value": "wall:wall:nanoseconds:cpu:nanoseconds", "selected": false }
+        ],
+        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_objects:count:space:bytes,mutex:contentions:count:mutex:count,wall:wall:nanoseconds:cpu:nanoseconds"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "FaaS Server Overview",
+      "type": "text",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "Lightweight FaaS runtime that deploys/undeploys short-lived verticle functions on demand. Each invocation creates a full verticle lifecycle, producing classloader activity, deployment overhead, and short-burst compute in profiling data.\n\n| Function | Type | Profile Signature |\n|----------|------|----------|\n| `fibonacci` | CPU-bound | Deep recursive call stacks |\n| `transform` | Alloc-heavy | GC pressure, object churn |\n| `hash` | CPU burst | SHA-256 iterated hashing |\n| `sort` | CPU + alloc | Large dataset sort |\n| `sleep` | I/O sim | Timer-based latency (wall-clock) |\n| `matrix` | CPU-heavy | O(n³) matrix multiply |\n| `regex` | CPU + backtrack | Pattern matching workload |\n| `compress` | CPU + I/O alloc | GZIP compression |\n| `primes` | CPU-bound | Sieve of Eratosthenes |\n| `contention` | Mutex | Synchronized lock contention across threads |\n| `fanout` | Concurrent | Parallel child verticle deploys |"
+      }
+    },
+    {
+      "id": 2,
+      "title": "Request Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 3 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(vertx_http_server_requests_total{instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m]))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": { "fillOpacity": 15, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 3,
+      "title": "Avg Response Time",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 3 },
+      "targets": [
+        {
+          "expr": "sum by (route) (rate(vertx_http_server_response_time_seconds_sum{instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m])) / sum by (route) (rate(vertx_http_server_response_time_seconds_count{instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m]))",
+          "legendFormat": "{{route}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 4,
+      "title": "JVM Heap Used",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 11 },
+      "targets": [
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{instance=~\"faas-server.*\", area=\"heap\"})",
+          "legendFormat": "heap used"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": { "fillOpacity": 15, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "GC Collection Rate",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 11 },
+      "targets": [
+        {
+          "expr": "rate(jvm_gc_collection_seconds_sum{instance=~\"faas-server.*\"}[1m])",
+          "legendFormat": "{{gc}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "fillOpacity": 15, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 6,
+      "title": "CPU Usage",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 11 },
+      "targets": [
+        {
+          "expr": "rate(process_cpu_seconds_total{instance=~\"faas-server.*\"}[1m])",
+          "legendFormat": "process CPU"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1,
+          "custom": { "fillOpacity": 15, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 7,
+      "title": "JVM Threads",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
+      "targets": [
+        {
+          "expr": "jvm_threads_current{instance=~\"faas-server.*\"}",
+          "legendFormat": "current"
+        },
+        {
+          "expr": "jvm_threads_peak{instance=~\"faas-server.*\"}",
+          "legendFormat": "peak"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 10, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 8,
+      "title": "Classes Loaded",
+      "type": "timeseries",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 },
+      "targets": [
+        {
+          "expr": "jvm_classes_currently_loaded{instance=~\"faas-server.*\"}",
+          "legendFormat": "loaded classes"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "fillOpacity": 15, "lineWidth": 2 }
+        }
+      }
+    },
+    {
+      "id": 9,
+      "title": "Total Requests",
+      "type": "stat",
+      "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 },
+      "targets": [
+        {
+          "expr": "sum(rate(vertx_http_server_requests_total{instance=~\"faas-server.*\"}[1m]))",
+          "legendFormat": "req/s"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": { "unit": "reqps" }
+      }
+    },
+    {
+      "id": 10,
+      "title": "Flame Graph — FaaS Server",
+      "type": "flamegraph",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 27 },
+      "targets": [
+        {
+          "profileTypeId": "$profile_type",
+          "labelSelector": "{service_name=\"bank-faas-server\"}"
+        }
+      ]
+    }
+  ],
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "version": 1
+}

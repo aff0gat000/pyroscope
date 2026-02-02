@@ -87,7 +87,7 @@ Primary profiling dashboard. Shows CPU, memory, and mutex flame graphs for any s
 
 ### When to Use
 
-Use this dashboard to investigate which methods consume the most CPU, find memory allocation hotspots driving GC pauses, identify lock contention in concurrent code, or compare profile shapes before and after a deployment.
+Investigate CPU-consuming methods, memory allocation hotspots driving GC pauses, lock contention in concurrent code, or compare profile shapes before and after a deployment.
 
 ---
 
@@ -190,7 +190,7 @@ Compares flame graphs from before and after applying performance optimizations (
 
 ### When to Use
 
-Use this dashboard to verify that performance fixes actually reduced CPU/allocation/lock overhead. Compare frame widths between Before and After panels for the same service and profile type.
+Verifies that performance fixes reduced CPU/allocation/lock overhead. Compare frame widths between Before and After panels for the same service and profile type.
 
 ---
 
