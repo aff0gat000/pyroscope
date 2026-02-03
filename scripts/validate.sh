@@ -45,16 +45,21 @@ check_url() {
   fi
 }
 
-# Check a URL and grep for a pattern. WARN (not FAIL) if missing.
+# Check a URL and grep for a pattern. Retries up to 6 times (30s total) before warning.
 check_url_grep() {
   local name="$1"
   local url="$2"
   local pattern="$3"
-  if curl -sf --max-time "$T" "$url" 2>/dev/null | grep -q "$pattern" 2>/dev/null; then
-    echo "  [PASS] $name"; ((PASS++)) || true
-  else
-    echo "  [WARN] $name (may need more load time)"; ((WARN++)) || true
-  fi
+  local retries=6
+  local delay=5
+  for ((i=1; i<=retries; i++)); do
+    if curl -sf --max-time "$T" "$url" 2>/dev/null | grep -q "$pattern" 2>/dev/null; then
+      echo "  [PASS] $name"; ((PASS++)) || true
+      return
+    fi
+    [ "$i" -lt "$retries" ] && sleep "$delay"
+  done
+  echo "  [WARN] $name (not found after ${retries} attempts)"; ((WARN++)) || true
 }
 
 echo "=== Pyroscope Bank Enterprise Validation ==="

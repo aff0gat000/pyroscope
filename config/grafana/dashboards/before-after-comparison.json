@@ -151,6 +151,14 @@
         {
           "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"notification-service:9404\"}[1m])",
           "legendFormat": "Notification Service"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"stream-service:9404\"}[1m])",
+          "legendFormat": "Stream Service"
+        },
+        {
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=\"faas-server:9404\"}[1m])",
+          "legendFormat": "FaaS Server"
         }
       ],
       "fieldConfig": {
@@ -191,6 +199,14 @@
         {
           "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"notification-service:9404\"})",
           "legendFormat": "Notification Service heap"
+        },
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"stream-service:9404\"})",
+          "legendFormat": "Stream Service heap"
+        },
+        {
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", area=\"heap\", instance=\"faas-server:9404\"})",
+          "legendFormat": "FaaS Server heap"
         }
       ],
       "fieldConfig": {

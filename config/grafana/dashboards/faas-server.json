@@ -47,7 +47,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 0, "y": 3 },
       "targets": [
         {
-          "expr": "sum by (route) (rate(vertx_http_server_requests_total{instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m]))",
+          "expr": "sum by (route) (rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m]))",
           "legendFormat": "{{route}}"
         }
       ],
@@ -66,7 +66,7 @@
       "gridPos": { "h": 8, "w": 12, "x": 12, "y": 3 },
       "targets": [
         {
-          "expr": "sum by (route) (rate(vertx_http_server_response_time_seconds_sum{instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m])) / sum by (route) (rate(vertx_http_server_response_time_seconds_count{instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m]))",
+          "expr": "sum by (route) (rate(vertx_http_server_response_time_seconds_sum{job=\"vertx-apps\", instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m])) / sum by (route) (rate(vertx_http_server_response_time_seconds_count{job=\"vertx-apps\", instance=~\"faas-server.*\", route!=\"\", route!~\"/health|/metrics\"}[1m]))",
           "legendFormat": "{{route}}"
         }
       ],
@@ -85,7 +85,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 11 },
       "targets": [
         {
-          "expr": "sum by (instance) (jvm_memory_used_bytes{instance=~\"faas-server.*\", area=\"heap\"})",
+          "expr": "sum by (instance) (jvm_memory_used_bytes{job=\"jvm\", instance=~\"faas-server.*\", area=\"heap\"})",
           "legendFormat": "heap used"
         }
       ],
@@ -104,7 +104,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 11 },
       "targets": [
         {
-          "expr": "rate(jvm_gc_collection_seconds_sum{instance=~\"faas-server.*\"}[1m])",
+          "expr": "rate(jvm_gc_collection_seconds_sum{job=\"jvm\", instance=~\"faas-server.*\"}[1m])",
           "legendFormat": "{{gc}}"
         }
       ],
@@ -123,7 +123,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 11 },
       "targets": [
         {
-          "expr": "rate(process_cpu_seconds_total{instance=~\"faas-server.*\"}[1m])",
+          "expr": "rate(process_cpu_seconds_total{job=\"jvm\", instance=~\"faas-server.*\"}[1m])",
           "legendFormat": "process CPU"
         }
       ],
@@ -144,11 +144,11 @@
       "gridPos": { "h": 8, "w": 8, "x": 0, "y": 19 },
       "targets": [
         {
-          "expr": "jvm_threads_current{instance=~\"faas-server.*\"}",
+          "expr": "jvm_threads_current{job=\"jvm\", instance=~\"faas-server.*\"}",
           "legendFormat": "current"
         },
         {
-          "expr": "jvm_threads_peak{instance=~\"faas-server.*\"}",
+          "expr": "jvm_threads_peak{job=\"jvm\", instance=~\"faas-server.*\"}",
           "legendFormat": "peak"
         }
       ],
@@ -166,7 +166,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 19 },
       "targets": [
         {
-          "expr": "jvm_classes_currently_loaded{instance=~\"faas-server.*\"}",
+          "expr": "jvm_classes_currently_loaded{job=\"jvm\", instance=~\"faas-server.*\"}",
           "legendFormat": "loaded classes"
         }
       ],
@@ -184,7 +184,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 19 },
       "targets": [
         {
-          "expr": "sum(rate(vertx_http_server_requests_total{instance=~\"faas-server.*\"}[1m]))",
+          "expr": "sum(rate(vertx_http_server_requests_total{job=\"vertx-apps\", instance=~\"faas-server.*\"}[1m]))",
           "legendFormat": "req/s"
         }
       ],
