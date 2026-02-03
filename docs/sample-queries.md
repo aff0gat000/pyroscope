@@ -1,8 +1,6 @@
 # Sample Queries Reference
 
-Copy-paste queries for Pyroscope, Prometheus, and Grafana. Each query includes context on when and why to use it.
-
-Ports assume defaults from `.env`. Replace `4040`, `9090`, `3000` if you remapped them.
+Copy-paste queries for Pyroscope, Prometheus, and Grafana. Ports assume defaults from `.env`.
 
 ---
 
@@ -26,14 +24,14 @@ Ports assume defaults from `.env`. Replace `4040`, `9090`, `3000` if you remappe
 
 | Profile Type ID | Short Name | What It Captures | When To Use |
 |----------------|-----------|-----------------|-------------|
-| `process_cpu:cpu:nanoseconds:cpu:nanoseconds` | CPU | Methods actively executing on CPU | "CPU is high — which function?" |
-| `wall:wall:nanoseconds:wall:nanoseconds` | Wall clock | All threads regardless of state (on-CPU, blocked, sleeping) | "Latency is high but CPU is low — what are threads waiting on?" |
-| `memory:alloc_in_new_tlab_bytes:bytes:space:bytes` | Alloc (bytes) | Where `new` objects are created, measured in bytes | "GC runs constantly — what is allocating the most memory?" |
-| `memory:alloc_in_new_tlab_objects:count:space:bytes` | Alloc (objects) | Where `new` objects are created, measured in object count | "GC runs constantly — what creates the most short-lived objects?" |
-| `mutex:contentions:count:mutex:count` | Mutex (count) | How many times threads block on `synchronized` / locks | "Throughput plateaued — where is lock contention?" |
-| `mutex:delay:nanoseconds:mutex:count` | Mutex (delay) | Total time threads spend waiting on locks | "Threads are blocked — how long are they waiting?" |
-| `block:contentions:count:block:count` | Block (count) | Thread block events (I/O, park, sleep) | "Threads are parked — how often?" |
-| `block:delay:nanoseconds:block:count` | Block (delay) | Total time threads spend in blocked state | "Threads are parked — for how long?" |
+| `process_cpu:cpu:nanoseconds:cpu:nanoseconds` | CPU | Methods actively executing on CPU | CPU is high — which function? |
+| `wall:wall:nanoseconds:wall:nanoseconds` | Wall clock | All threads regardless of state (on-CPU, blocked, sleeping) | Latency is high but CPU is low — what are threads waiting on? |
+| `memory:alloc_in_new_tlab_bytes:bytes:space:bytes` | Alloc (bytes) | Where `new` objects are created, measured in bytes | GC runs constantly — what allocates the most memory? |
+| `memory:alloc_in_new_tlab_objects:count:space:bytes` | Alloc (objects) | Where `new` objects are created, measured in object count | GC runs constantly — what creates the most short-lived objects? |
+| `mutex:contentions:count:mutex:count` | Mutex (count) | How many times threads block on `synchronized` / locks | Throughput plateaued — where is lock contention? |
+| `mutex:delay:nanoseconds:mutex:count` | Mutex (delay) | Total time threads spend waiting on locks | Threads are blocked — how long are they waiting? |
+| `block:contentions:count:block:count` | Block (count) | Thread block events (I/O, park, sleep) | Threads are parked — how often? |
+| `block:delay:nanoseconds:block:count` | Block (delay) | Total time threads spend in blocked state | Threads are parked — for how long? |
 
 ---
 
@@ -43,7 +41,7 @@ Open http://localhost:4040.
 
 ### Label selectors
 
-Paste these into the Pyroscope UI "Label Selector" field after selecting a profile type.
+Paste into the Pyroscope UI "Label Selector" field after selecting a profile type.
 
 **Single service:**
 ```
@@ -62,7 +60,7 @@ Paste these into the Pyroscope UI "Label Selector" field after selecting a profi
 
 ### Comparison view
 
-Use the Pyroscope Comparison view to diff two time ranges or two services. This is the primary tool for verifying that a code change reduced resource consumption.
+Use the Comparison view to diff two time ranges or two services. Primary tool for verifying that a code change reduced resource consumption.
 
 1. Open Pyroscope UI → Comparison view
 2. Left panel: `{service_name="bank-api-gateway"}` with time range covering the "before" period
@@ -70,23 +68,23 @@ Use the Pyroscope Comparison view to diff two time ranges or two services. This 
 4. Profile type: `process_cpu:cpu:nanoseconds:cpu:nanoseconds`
 5. Red frames = increased in the right panel, green = decreased
 
-**Useful comparisons:**
+Useful comparisons:
 
-| Left | Right | What It Shows |
-|------|-------|--------------|
+| Left | Right | Shows |
+|------|-------|-------|
 | `bank-api-gateway` (before fix) | `bank-api-gateway` (after fix) | Whether the optimization reduced CPU/alloc/mutex |
-| `bank-payment-service` | `bank-fraud-service` | Compare CPU patterns between payment processing and fraud detection |
+| `bank-payment-service` | `bank-fraud-service` | CPU patterns: payment processing vs fraud detection |
 | `bank-order-service` (CPU) | `bank-order-service` (mutex) | Whether a service is CPU-bound or lock-bound |
 
 ---
 
 ## Pyroscope HTTP API (curl)
 
-These queries hit the Pyroscope server directly. Useful for scripting, CI checks, and debugging without a browser.
+Hit the Pyroscope server directly. Useful for scripting, CI checks, and debugging without a browser.
 
 ### List all applications reporting profiles
 
-**Why:** Verify all 9 services are sending profile data to Pyroscope.
+Verifies all 9 services are sending profile data.
 
 ```bash
 curl -s "http://localhost:4040/querier.v1.QuerierService/LabelValues" \
@@ -96,7 +94,7 @@ curl -s "http://localhost:4040/querier.v1.QuerierService/LabelValues" \
 
 ### List all available profile types
 
-**Why:** Confirm which profile types the agents are producing. You should see all 8 types listed above.
+Should return all 8 types listed above.
 
 ```bash
 curl -s "http://localhost:4040/pyroscope/label-values?label=__name__&name=process_cpu:cpu:nanoseconds:cpu:nanoseconds" \
@@ -105,10 +103,10 @@ curl -s "http://localhost:4040/pyroscope/label-values?label=__name__&name=proces
 
 ### Render a CPU profile as JSON
 
-**Why:** Fetch raw flame graph data for a specific service and time range. Useful for automated analysis or piping into scripts.
+Fetches raw flame graph data for a specific service and time range. Useful for automated analysis or piping into scripts.
 
 ```bash
-# API Gateway — last 1 hour
+# API Gateway, last 1 hour
 curl -s "http://localhost:4040/pyroscope/render" \
   --data-urlencode 'query=process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name="bank-api-gateway"}' \
   --data-urlencode 'from=now-1h' \
@@ -121,7 +119,7 @@ Replace `bank-api-gateway` with any service name. Replace the profile type ID wi
 
 ### Render a memory allocation profile
 
-**Why:** Identify which methods allocate the most memory. Useful when investigating GC pressure.
+Shows which methods allocate the most memory. Use when investigating GC pressure.
 
 ```bash
 curl -s "http://localhost:4040/pyroscope/render" \
@@ -134,7 +132,7 @@ curl -s "http://localhost:4040/pyroscope/render" \
 
 ### Render a mutex contention profile
 
-**Why:** Find which `synchronized` blocks or locks cause thread contention. The Order Service is a good target — it uses `synchronized` methods under concurrent load.
+Shows which `synchronized` blocks or locks cause thread contention. The Order Service is a good target since it uses `synchronized` methods under concurrent load.
 
 ```bash
 curl -s "http://localhost:4040/pyroscope/render" \
@@ -149,7 +147,7 @@ curl -s "http://localhost:4040/pyroscope/render" \
 
 ## Prometheus Queries (PromQL)
 
-Use these in Grafana Explore (select the Prometheus datasource) or query directly via the Prometheus API at http://localhost:9090.
+Use in Grafana Explore (Prometheus datasource) or query directly at http://localhost:9090.
 
 Two Prometheus jobs scrape the services:
 - `job="jvm"` — JVM metrics from JMX Exporter on port 9404 (CPU, heap, GC, threads)
@@ -157,17 +155,13 @@ Two Prometheus jobs scrape the services:
 
 ### CPU and compute
 
-**CPU usage per service**
-
-Why: First check during a CPU alert. Shows which service is consuming CPU.
+**CPU usage per service** — first check during a CPU alert.
 
 ```promql
 rate(process_cpu_seconds_total{job="jvm"}[1m])
 ```
 
-**CPU usage for a single service**
-
-Why: Drill into one service after identifying it from the overview.
+**CPU usage for a single service** — drill into one service after identifying it from the overview.
 
 ```promql
 rate(process_cpu_seconds_total{job="jvm", instance="api-gateway:9404"}[1m])
@@ -175,17 +169,13 @@ rate(process_cpu_seconds_total{job="jvm", instance="api-gateway:9404"}[1m])
 
 ### Memory and GC
 
-**Heap memory used per service**
-
-Why: Spot services approaching heap limits. A rising baseline indicates a memory leak.
+**Heap memory used per service** — a rising baseline indicates a memory leak.
 
 ```promql
 sum by (instance) (jvm_memory_used_bytes{job="jvm", area="heap"})
 ```
 
-**Heap utilization percentage**
-
-Why: More actionable than raw bytes. Above 85% means GC is working hard to reclaim space.
+**Heap utilization percentage** — more actionable than raw bytes. Above 85% means GC is working hard to reclaim space.
 
 ```promql
 sum by (instance) (jvm_memory_used_bytes{job="jvm", area="heap"})
@@ -193,25 +183,19 @@ sum by (instance) (jvm_memory_used_bytes{job="jvm", area="heap"})
 sum by (instance) (jvm_memory_max_bytes{job="jvm", area="heap"}) > 0
 ```
 
-**GC pause rate (seconds spent in GC per second)**
-
-Why: Above 0.05 (5% of time in GC) warrants investigation. Use the allocation flame graph to find what is allocating.
+**GC pause rate (seconds spent in GC per second)** — above 0.05 (5% of time in GC) warrants investigation. Use the allocation flame graph to find the source.
 
 ```promql
 sum by (instance, gc) (rate(jvm_gc_collection_seconds_sum{job="jvm"}[1m]))
 ```
 
-**GC collection count rate**
-
-Why: Frequent minor GCs indicate high allocation rate. Frequent major GCs indicate heap pressure.
+**GC collection count rate** — frequent minor GCs indicate high allocation rate. Frequent major GCs indicate heap pressure.
 
 ```promql
 sum by (instance, gc) (rate(jvm_gc_collection_seconds_count{job="jvm"}[1m]))
 ```
 
-**Memory pool utilization (per pool)**
-
-Why: Identify which memory pool (Eden, Survivor, Old Gen, Metaspace) is under pressure.
+**Memory pool utilization (per pool)** — shows which pool (Eden, Survivor, Old Gen, Metaspace) is under pressure.
 
 ```promql
 jvm_memory_pool_used_bytes{job="jvm"} / jvm_memory_pool_max_bytes{job="jvm"} > 0
@@ -219,17 +203,13 @@ jvm_memory_pool_used_bytes{job="jvm"} / jvm_memory_pool_max_bytes{job="jvm"} > 0
 
 ### Threads
 
-**Thread count per service**
-
-Why: A monotonically rising thread count indicates a thread leak. Correlate with wall clock / mutex flame graphs.
+**Thread count per service** — a monotonically rising count indicates a thread leak. Correlate with wall clock / mutex flame graphs.
 
 ```promql
 jvm_threads_current{job="jvm"}
 ```
 
-**Thread count rate of change**
-
-Why: Positive rate for an extended period confirms a thread leak.
+**Thread count rate of change** — positive rate for an extended period confirms a thread leak.
 
 ```promql
 deriv(jvm_threads_current{job="jvm"}[5m])
@@ -237,17 +217,13 @@ deriv(jvm_threads_current{job="jvm"}[5m])
 
 ### File descriptors
 
-**Open file descriptors**
-
-Why: A rising count can indicate connection leaks or file handle leaks.
+**Open file descriptors** — a rising count can indicate connection leaks or file handle leaks.
 
 ```promql
 process_open_fds{job="jvm"}
 ```
 
-**File descriptor utilization**
-
-Why: Approaching 100% causes "Too many open files" errors.
+**File descriptor utilization** — approaching 100% causes "Too many open files" errors.
 
 ```promql
 process_open_fds{job="jvm"} / process_max_fds{job="jvm"}
@@ -255,9 +231,7 @@ process_open_fds{job="jvm"} / process_max_fds{job="jvm"}
 
 ### Classloader
 
-**Classes currently loaded**
-
-Why: A rising count in a long-running JVM can indicate classloader leaks, common with dynamic class generation or repeated deployments.
+**Classes currently loaded** — a rising count in a long-running JVM can indicate classloader leaks, common with dynamic class generation or repeated deployments.
 
 ```promql
 jvm_classes_currently_loaded{job="jvm"}
@@ -265,25 +239,19 @@ jvm_classes_currently_loaded{job="jvm"}
 
 ### HTTP performance
 
-**Request rate by endpoint**
-
-Why: Understand traffic distribution. Identify which endpoints receive the most load.
+**Request rate by endpoint** — traffic distribution across routes.
 
 ```promql
 sum by (route) (rate(vertx_http_server_requests_total{job="vertx-apps"}[1m]))
 ```
 
-**Request rate by service**
-
-Why: Compare overall load across services.
+**Request rate by service** — overall load per service.
 
 ```promql
 sum by (instance) (rate(vertx_http_server_requests_total{job="vertx-apps"}[1m]))
 ```
 
-**Average latency by endpoint**
-
-Why: Find the slowest endpoints. Correlate with the wall clock flame graph to find what the code is waiting on inside slow endpoints.
+**Average latency by endpoint** — find the slowest endpoints. Correlate with wall clock flame graphs to see what the code is waiting on.
 
 ```promql
 sum by (route) (rate(vertx_http_server_response_time_seconds_sum{job="vertx-apps"}[1m]))
@@ -291,9 +259,7 @@ sum by (route) (rate(vertx_http_server_response_time_seconds_sum{job="vertx-apps
 sum by (route) (rate(vertx_http_server_response_time_seconds_count{job="vertx-apps"}[1m]))
 ```
 
-**Average latency by service**
-
-Why: Identify which service is the latency bottleneck in a request chain.
+**Average latency by service** — identifies the latency bottleneck in a request chain.
 
 ```promql
 sum by (instance) (rate(vertx_http_server_response_time_seconds_sum{job="vertx-apps"}[1m]))
@@ -301,17 +267,13 @@ sum by (instance) (rate(vertx_http_server_response_time_seconds_sum{job="vertx-a
 sum by (instance) (rate(vertx_http_server_response_time_seconds_count{job="vertx-apps"}[1m]))
 ```
 
-**5xx error rate**
-
-Why: Detect error spikes. Correlate with CPU/heap/GC metrics to determine if errors are caused by resource exhaustion.
+**5xx error rate** — correlate with CPU/heap/GC metrics to determine if errors are caused by resource exhaustion.
 
 ```promql
 sum by (instance) (rate(vertx_http_server_requests_total{job="vertx-apps", code=~"5.."}[1m]))
 ```
 
-**Error rate as percentage of total**
-
-Why: A low absolute error rate on a low-traffic service may still be a high percentage.
+**Error rate as percentage of total** — a low absolute error rate on a low-traffic service may still be a high percentage.
 
 ```promql
 sum by (instance) (rate(vertx_http_server_requests_total{job="vertx-apps", code=~"5.."}[1m]))
@@ -319,9 +281,7 @@ sum by (instance) (rate(vertx_http_server_requests_total{job="vertx-apps", code=
 sum by (instance) (rate(vertx_http_server_requests_total{job="vertx-apps"}[1m]))
 ```
 
-**Top 10 slowest endpoints**
-
-Why: Quick triage — immediately shows which endpoints need attention.
+**Top 10 slowest endpoints** — quick triage to see which endpoints need attention.
 
 ```promql
 topk(10,
@@ -333,7 +293,7 @@ topk(10,
 
 ### Alerting queries
 
-These queries can be used as Prometheus alerting rules or Grafana alert conditions.
+Usable as Prometheus alerting rules or Grafana alert conditions.
 
 **High CPU (above 80% for 5 minutes)**
 
@@ -377,38 +337,38 @@ sum by (instance) (rate(vertx_http_server_requests_total{job="vertx-apps"}[5m]))
 
 Open http://localhost:3000/explore, select the **Pyroscope** datasource.
 
-### Investigate a CPU spike
+### CPU spike
 
-**Why:** An alert fires for high CPU on the API Gateway. The Prometheus query tells you CPU is high. The flame graph tells you which function.
+Alert fires for high CPU on the API Gateway. Prometheus tells you CPU is high. The flame graph tells you which function.
 
 - Profile type: `process_cpu:cpu:nanoseconds:cpu:nanoseconds`
 - Label selector: `{service_name="bank-api-gateway"}`
 - Time range: match the alert window
 
-### Investigate GC pressure
+### GC pressure
 
-**Why:** GC rate is high. The allocation flame graph shows which methods create the most objects.
+GC rate is high. The allocation flame graph shows which methods create the most objects.
 
 - Profile type: `memory:alloc_in_new_tlab_bytes:bytes:space:bytes`
 - Label selector: `{service_name="bank-payment-service"}`
 
-### Investigate lock contention
+### Lock contention
 
-**Why:** Throughput is flat despite available CPU. The mutex profile shows which locks threads contend on.
+Throughput is flat despite available CPU. The mutex profile shows which locks threads contend on.
 
 - Profile type: `mutex:contentions:count:mutex:count`
 - Label selector: `{service_name="bank-order-service"}`
 
-### Investigate high latency with low CPU
+### High latency with low CPU
 
-**Why:** P99 latency is high but CPU is normal. The wall clock profile shows what threads are waiting on (I/O, sleep, downstream calls).
+P99 latency is high but CPU is normal. The wall clock profile shows what threads are waiting on (I/O, sleep, downstream calls).
 
 - Profile type: `wall:wall:nanoseconds:wall:nanoseconds`
 - Label selector: `{service_name="bank-stream-service"}`
 
-### Investigate FaaS cold start overhead
+### FaaS cold start overhead
 
-**Why:** FaaS invocations show high latency on first call. The wall clock profile reveals verticle deployment and classloader overhead.
+FaaS invocations show high latency on first call. The wall clock profile reveals verticle deployment and classloader overhead.
 
 - Profile type: `wall:wall:nanoseconds:wall:nanoseconds`
 - Label selector: `{service_name="bank-faas-server"}`
@@ -417,35 +377,31 @@ Open http://localhost:3000/explore, select the **Pyroscope** datasource.
 
 ## Grafana Dashboards
 
-All 6 dashboards are provisioned under the **Pyroscope** folder at http://localhost:3000.
+All 6 dashboards are under the **Pyroscope** folder at http://localhost:3000.
 
-| Dashboard | URL | What It Shows |
-|-----------|-----|--------------|
-| Pyroscope Java Overview | `/d/pyroscope-java-overview` | CPU, allocation, and mutex flame graphs with JVM metrics for all services |
-| Service Performance | `/d/verticle-performance` | Per-service HTTP rates, latency, JVM metrics, and a flame graph panel |
+| Dashboard | URL | Content |
+|-----------|-----|---------|
+| Pyroscope Java Overview | `/d/pyroscope-java-overview` | CPU, allocation, and mutex flame graphs with JVM metrics |
+| Service Performance | `/d/verticle-performance` | Per-service HTTP rates, latency, JVM metrics, flame graph |
 | JVM Metrics Deep Dive | `/d/jvm-metrics-deep-dive` | Heap pools, GC pauses, threads, classloading, file descriptors |
-| HTTP Performance | `/d/http-performance` | Request rate, latency, error rate, slowest endpoints across all services |
-| Before vs After Fix | `/d/before-after-comparison` | Side-by-side flame graphs for comparing before and after optimization |
-| FaaS Server | `/d/faas-server` | FaaS-specific metrics: deploy rate, invocation count, cold vs warm start |
+| HTTP Performance | `/d/http-performance` | Request rate, latency, error rate, slowest endpoints |
+| Before vs After Fix | `/d/before-after-comparison` | Side-by-side flame graphs for before/after optimization |
+| FaaS Server | `/d/faas-server` | FaaS-specific metrics: deploy rate, invocation count, cold vs warm |
 
 ### Template variables
 
 Most dashboards have dropdowns at the top:
 
-- **application / pyroscope_app** — Select which service's flame graph to display
-- **profile_type** — Switch between CPU, allocation, mutex, wall clock, block profiles
-- **service / instance** — Filter Prometheus panels to a specific service
+- **application / pyroscope_app** — which service's flame graph to display
+- **profile_type** — CPU, allocation, mutex, wall clock, block
+- **service / instance** — filter Prometheus panels to one service
 
 ### Troubleshooting "No data"
 
-1. Verify load has been running for at least 30 seconds
-2. Set the time range picker (top right) to "Last 1 hour"
-3. Confirm the template variable matches a running service
-4. If dashboards are stale after file changes, tear down and redeploy:
-   ```bash
-   bash scripts/run.sh teardown
-   bash scripts/run.sh
-   ```
+1. Check time range picker is set to "Last 1 hour"
+2. Confirm the dropdown matches a running service
+3. Verify load has been running for at least 30 seconds
+4. If stale after file changes: `bash scripts/run.sh teardown && bash scripts/run.sh`
 
 ---
 
@@ -453,7 +409,7 @@ Most dashboards have dropdowns at the top:
 
 ### Top functions
 
-Find the hottest functions without opening a browser.
+Hottest functions without opening a browser.
 
 ```bash
 # All services, all profile types
@@ -471,13 +427,13 @@ bash scripts/top-functions.sh mutex --range 30m
 
 ### Bottleneck classification
 
-Classify each service as CPU-bound, GC-bound, lock-bound, or healthy.
+Classifies each service as CPU-bound, GC-bound, lock-bound, or healthy.
 
 ```bash
 bash scripts/bottleneck.sh
 ```
 
-### Full diagnostic report
+### Diagnostic report
 
 Combines health checks, HTTP stats, profile data, and alert status.
 
@@ -487,9 +443,9 @@ bash scripts/diagnose.sh
 
 ---
 
-## Quick Smoke Test
+## Smoke Test
 
-Run after deploying to verify the full stack is working. All 9 services, both Prometheus jobs, Pyroscope ingestion, and all 6 Grafana dashboards.
+Run after deploying to verify the full stack. Checks all 9 services, both Prometheus jobs, Pyroscope ingestion, and all 6 dashboards.
 
 ```bash
 source .env 2>/dev/null

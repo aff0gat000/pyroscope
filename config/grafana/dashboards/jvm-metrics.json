@@ -91,7 +91,7 @@
     {
       "id": 3,
       "title": "Open File Descriptors",
-      "type": "stat",
+      "type": "timeseries",
       "datasource": { "type": "prometheus", "uid": "prometheus-ds" },
       "gridPos": { "h": 8, "w": 6, "x": 18, "y": 0 },
       "targets": [
@@ -102,9 +102,12 @@
       ],
       "fieldConfig": {
         "defaults": {
+          "custom": { "fillOpacity": 10, "lineWidth": 2 },
           "thresholds": {
+            "mode": "absolute",
             "steps": [
               { "color": "green", "value": null },
+              { "color": "yellow", "value": 500 },
               { "color": "red", "value": 1000 }
             ]
           }

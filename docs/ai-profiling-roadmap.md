@@ -14,7 +14,7 @@ Foundation: export profiling data to ML-consumable formats.
 - Establish baseline profiles per service per deploy version
 - Storage: time-series DB or columnar store (Parquet on S3, ClickHouse, BigQuery)
 
-Key outputs: per-service, per-function feature vectors at regular intervals (e.g., 1-minute granularity).
+Produces per-service, per-function feature vectors at regular intervals (e.g., 1-minute granularity).
 
 ---
 

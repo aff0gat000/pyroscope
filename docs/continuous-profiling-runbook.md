@@ -28,7 +28,7 @@ The output is a **flame graph**: a visualization where each horizontal bar repre
 | **Traces** (Jaeger, Tempo) | Request flow across services, per-span latency | Internal CPU/memory/lock behavior within a service |
 | **Continuous Profiling** (Pyroscope) | Exact function-level resource consumption over time | Request-level correlation (use traces for that) |
 
-Profiling fills the gap between "what resource is elevated" (metrics) and "which code path is responsible" (flame graph).
+Metrics show which resource is elevated. Profiling shows which code path is responsible.
 
 ---
 
@@ -485,7 +485,7 @@ Continuous profiling eliminates the investigation gap between symptom detection 
 | **Verification** | Redeploy, wait, check metrics | Compare before/after flame graphs |
 | **Total** | 30-90 min | 5-15 min |
 
-The key difference: profiling data is **already captured** when the incident occurs. There is no need to reproduce the issue, attach a debugger, or add logging. The flame graph for the incident time window is available immediately.
+Profiling data is already captured when the incident occurs. No reproduction, no debugger, no logging changes — the flame graph for the incident time window is available immediately.
 
 ### Triage workflow
 
