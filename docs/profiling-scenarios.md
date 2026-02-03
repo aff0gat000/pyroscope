@@ -251,3 +251,66 @@ This is the core profiling workflow: triangulate across profile types to classif
 | Compare two services side by side | Service Comparison | CPU flame graphs for both services |
 | JVM health overview | JVM Metrics Deep Dive | Prometheus metrics only |
 | Endpoint-level latency breakdown | HTTP Performance | Prometheus metrics only |
+
+---
+
+## Quick Reference: All Bottlenecks by Service
+
+Use this table to find specific issues in flame graphs. Select the service from the application dropdown, set the profile type, and look for the listed frame.
+
+### Payment Service (`bank-payment-service`)
+
+| Endpoint | Profile Type | Bottleneck | Flame Graph Signature |
+|----------|--------------|------------|----------------------|
+| `/payment/transfer` | CPU | `MessageDigest.getInstance()` per call | `sha256` → `MessageDigest.getInstance` → `Provider.getService` |
+| `/payment/transfer` | Allocation | `String.format("%02x", b)` in loop | `sha256` → `String.format` → `Formatter.<init>` (32x per hash) |
+| `/payment/payroll` | Mutex | `synchronized` method | `handlePayroll` wide frame — threads queue for lock |
+| `/payment/payroll` | CPU + Alloc | `BigDecimal` operations in loop | `BigDecimal.multiply` + `LinkedHashMap.put` |
+
+### Order Service (`bank-order-service`)
+
+| Endpoint | Profile Type | Bottleneck | Flame Graph Signature |
+|----------|--------------|------------|----------------------|
+| `/order/process` | Mutex | `synchronized` method | `processOrdersSynchronized` wide frame |
+| `/order/process` | Wall | `Thread.sleep` in processing | `processOrdersSynchronized` → `Thread.sleep` (invisible in CPU) |
+| `/order/process` | CPU | `String.split("\\|")` compiles regex | `Pattern.compile` under `processOrdersSynchronized` |
+| `/order/validate` | CPU | `String.matches()` recompiles pattern | `validateOrder` → `Pattern.compile` (1000x per request) |
+| `/order/create` | Allocation | String `+=` concatenation | `buildOrder` → `StringBuilder.<init>` + `String.concat` |
+
+### Notification Service (`bank-notification-service`)
+
+| Endpoint | Profile Type | Bottleneck | Flame Graph Signature |
+|----------|--------------|------------|----------------------|
+| `/notify/bulk` | Allocation | `String.format` in loops | `handleBulk` → `String.format` → `Formatter.<init>` |
+| `/notify/drain` | Wall | Retry backoff with sleep | `handleDrain` → `Thread.sleep` |
+
+### API Gateway (`bank-api-gateway`)
+
+| Endpoint | Profile Type | Bottleneck | Flame Graph Signature |
+|----------|--------------|------------|----------------------|
+| `/cpu` | CPU | Recursive fibonacci | `fibonacci()` nested 30+ levels — O(2^n) |
+
+### Fraud Service (`bank-fraud-service`)
+
+| Endpoint | Profile Type | Bottleneck | Flame Graph Signature |
+|----------|--------------|------------|----------------------|
+| `/fraud/scan` | CPU | (None — good baseline) | `Matcher.matches` but NO `Pattern.compile` — patterns precompiled |
+
+### FaaS Server (`bank-faas-server`)
+
+| Endpoint | Profile Type | Bottleneck | Flame Graph Signature |
+|----------|--------------|------------|----------------------|
+| `/fn/invoke/*` | CPU | Cold-start deploy/undeploy | `deployVerticle` → `DeploymentManager.doDeploy` → `ClassLoader.loadClass` |
+| `/fn/burst/*` | Mutex | Concurrent deployment contention | `VertxImpl.deployVerticle` contention frames |
+| `/fn/invoke/fibonacci` | CPU | Recursive algorithm | Deep recursive stack 30+ levels |
+| `/fn/invoke/contention` | Mutex | Synchronized lock | `synchronized` block wait frames |
+
+### How to Use This Table
+
+1. Open **Pyroscope Java Overview** in Grafana
+2. Select the service from the `application` dropdown
+3. Set the `profile_type` to match the table (CPU, Allocation, Mutex, or Wall)
+4. Look for the flame graph signature listed
+5. To see the fix: run `bash scripts/run.sh optimize`, regenerate load, compare flame graphs
+
+For detailed source code analysis, see [code-to-profiling-guide.md](code-to-profiling-guide.md).
