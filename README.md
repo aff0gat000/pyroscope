@@ -1,6 +1,6 @@
 # Pyroscope + Java Vert.x — Zero-Code Continuous Profiling
 
-A bank enterprise microservices demo with **7 Vert.x services** profiled by the **Pyroscope Java agent** — no application code changes required. Integrates with Prometheus, Grafana (5 dashboards), and alert rules.
+A bank enterprise microservices demo with **9 Vert.x services** profiled by the **Pyroscope Java agent** — no application code changes required. Integrates with Prometheus, Grafana (6 dashboards), and alert rules.
 
 ## TL;DR
 
@@ -19,24 +19,26 @@ bash scripts/run.sh teardown       # clean up
 ```mermaid
 graph TB
     subgraph Bank Microservices
-        GW[API Gateway :8080]
-        OS[Order Service :8081]
-        PS[Payment Service :8082]
-        FS[Fraud Service :8083]
-        AS[Account Service :8084]
-        LS[Loan Service :8085]
-        NS[Notification Service :8086]
+        GW[API Gateway :18080]
+        OS[Order Service :18081]
+        PS[Payment Service :18082]
+        FS[Fraud Service :18083]
+        AS[Account Service :18084]
+        LS[Loan Service :18085]
+        NS[Notification Service :18086]
+        SS[Stream Service :18087]
+        FA[FaaS Server :8088]
     end
     subgraph Observability Stack
         PY[Pyroscope :4040]
         PR[Prometheus :9090]
         GF[Grafana :3000]
     end
-    GW & OS & PS & FS & AS & LS & NS -->|JFR profiles| PY
-    GW & OS & PS & FS & AS & LS & NS -->|/metrics| PR
+    GW & OS & PS & FS & AS & LS & NS & SS & FA -->|JFR profiles| PY
+    GW & OS & PS & FS & AS & LS & NS & SS & FA -->|/metrics| PR
     PY -->|flame graphs| GF
     PR -->|metrics + alerts| GF
-    LG[generate-load.sh] -->|traffic| GW & OS & PS & FS & AS & LS & NS
+    LG[generate-load.sh] -->|traffic| GW & OS & PS & FS & AS & LS & NS & SS & FA
 
     style PY fill:#f59e0b,color:#000
     style GF fill:#3b82f6,color:#fff
@@ -45,24 +47,26 @@ graph TB
 
 ## Bank Services
 
-All 7 services are built from the **same Docker image**. The `VERTICLE` environment variable selects which class runs. Pyroscope profiles each one independently.
+All 9 services are built from the **same Docker image**. The `VERTICLE` environment variable selects which class runs. Pyroscope profiles each one independently.
 
 | Service | Port | Verticle | Pyroscope Name | Profiling Signature |
 |---------|------|----------|----------------|---------------------|
-| **API Gateway** | 8080 | MainVerticle | `bank-api-gateway` | Recursive fibonacci, batch processing, serialization |
-| **Order Service** | 8081 | OrderVerticle | `bank-order-service` | String concatenation, synchronized blocks (lock contention) |
-| **Payment Service** | 8082 | PaymentVerticle | `bank-payment-service` | BigDecimal math, SHA-256 hashing, synchronized ledger |
-| **Fraud Detection** | 8083 | FraudDetectionVerticle | `bank-fraud-service` | Regex rule engine, statistical analysis, sliding window |
-| **Account Service** | 8084 | AccountVerticle | `bank-account-service` | Stream API filtering, BigDecimal interest calc, ConcurrentHashMap |
-| **Loan Service** | 8085 | LoanVerticle | `bank-loan-service` | Amortization schedules, Monte Carlo simulation, portfolio aggregation |
-| **Notification** | 8086 | NotificationVerticle | `bank-notification-service` | Template rendering (String.format), queue drain loops, exponential backoff |
+| **API Gateway** | 18080 | MainVerticle | `bank-api-gateway` | Recursive fibonacci, batch processing, serialization |
+| **Order Service** | 18081 | OrderVerticle | `bank-order-service` | String concatenation, synchronized blocks (lock contention) |
+| **Payment Service** | 18082 | PaymentVerticle | `bank-payment-service` | BigDecimal math, SHA-256 hashing, synchronized ledger |
+| **Fraud Detection** | 18083 | FraudDetectionVerticle | `bank-fraud-service` | Regex rule engine, statistical analysis, sliding window |
+| **Account Service** | 18084 | AccountVerticle | `bank-account-service` | Stream API filtering, BigDecimal interest calc, ConcurrentHashMap |
+| **Loan Service** | 18085 | LoanVerticle | `bank-loan-service` | Amortization schedules, Monte Carlo simulation, portfolio aggregation |
+| **Notification** | 18086 | NotificationVerticle | `bank-notification-service` | Template rendering (String.format), queue drain loops, exponential backoff |
+| **Stream Service** | 18087 | StreamVerticle | `bank-stream-service` | Reactive streams, backpressure handling, event processing |
+| **FaaS Server** | 8088 | FaasVerticle | `bank-faas-server` | Function deploy/undeploy lifecycle, cold starts, warm pools |
 
 Each service has deliberately different CPU, memory, and lock characteristics so flame graphs show distinct patterns when compared side by side.
 
 ### Service Endpoints
 
 <details>
-<summary>API Gateway (:8080) — 17 endpoints</summary>
+<summary>API Gateway (:18080) — 17 endpoints</summary>
 
 | Endpoint | Category |
 |----------|----------|
@@ -79,7 +83,7 @@ Each service has deliberately different CPU, memory, and lock characteristics so
 </details>
 
 <details>
-<summary>Order Service (:8081) — 6 endpoints</summary>
+<summary>Order Service (:18081) — 6 endpoints</summary>
 
 | Endpoint | Category |
 |----------|----------|
@@ -92,7 +96,7 @@ Each service has deliberately different CPU, memory, and lock characteristics so
 </details>
 
 <details>
-<summary>Payment Service (:8082) — 6 endpoints</summary>
+<summary>Payment Service (:18082) — 6 endpoints</summary>
 
 | Endpoint | Category |
 |----------|----------|
@@ -105,7 +109,7 @@ Each service has deliberately different CPU, memory, and lock characteristics so
 </details>
 
 <details>
-<summary>Fraud Service (:8083) — 6 endpoints</summary>
+<summary>Fraud Service (:18083) — 6 endpoints</summary>
 
 | Endpoint | Category |
 |----------|----------|
@@ -118,7 +122,7 @@ Each service has deliberately different CPU, memory, and lock characteristics so
 </details>
 
 <details>
-<summary>Account Service (:8084) — 8 endpoints</summary>
+<summary>Account Service (:18084) — 8 endpoints</summary>
 
 | Endpoint | Category |
 |----------|----------|
@@ -132,7 +136,7 @@ Each service has deliberately different CPU, memory, and lock characteristics so
 </details>
 
 <details>
-<summary>Loan Service (:8085) — 6 endpoints</summary>
+<summary>Loan Service (:18085) — 6 endpoints</summary>
 
 | Endpoint | Category |
 |----------|----------|
@@ -145,7 +149,7 @@ Each service has deliberately different CPU, memory, and lock characteristics so
 </details>
 
 <details>
-<summary>Notification Service (:8086) — 6 endpoints</summary>
+<summary>Notification Service (:18086) — 6 endpoints</summary>
 
 | Endpoint | Category |
 |----------|----------|
@@ -155,6 +159,35 @@ Each service has deliberately different CPU, memory, and lock characteristics so
 | `/notify/render` | Render 200-500 templates (allocation heavy) |
 | `/notify/status` | Delivery status aggregation |
 | `/notify/retry` | Exponential backoff retry of failed messages |
+</details>
+
+<details>
+<summary>Stream Service (:18087) — 5 endpoints</summary>
+
+| Endpoint | Category |
+|----------|----------|
+| `/stream/publish` | Publish events to stream |
+| `/stream/subscribe` | Subscribe to event stream |
+| `/stream/backpressure` | Backpressure handling demo |
+| `/stream/transform` | Stream transformation pipeline |
+| `/stream/aggregate` | Windowed aggregation |
+</details>
+
+<details>
+<summary>FaaS Server (:8088) — 8 endpoints</summary>
+
+| Endpoint | Category |
+|----------|----------|
+| `/fn/invoke/{name}` | Deploy-execute-undeploy single function |
+| `/fn/burst/{name}?count=N` | Concurrent function invocations |
+| `/fn/list` | List available functions |
+| `/fn/stats` | Invocation statistics |
+| `/fn/chain` | Chain multiple functions sequentially |
+| `/fn/warmpool/{name}?size=N` | Pre-deploy warm pool |
+| `DELETE /fn/warmpool/{name}` | Undeploy warm pool |
+| `/health` | Health check |
+
+Built-in functions: `fibonacci`, `transform`, `hash`, `sort`, `sleep`, `matrix`, `regex`, `compress`, `primes`, `contention`, `fanout`
 </details>
 
 ## Quick Start
@@ -209,25 +242,28 @@ for interactive API exploration. See [postman/README.md](postman/README.md).
 | Grafana | http://localhost:3000 | admin / admin |
 | Pyroscope | http://localhost:4040 | |
 | Prometheus | http://localhost:9090 | |
-| API Gateway | http://localhost:8080 | |
-| Order Service | http://localhost:8081 | |
-| Payment Service | http://localhost:8082 | |
-| Fraud Service | http://localhost:8083 | |
-| Account Service | http://localhost:8084 | |
-| Loan Service | http://localhost:8085 | |
-| Notification Service | http://localhost:8086 | |
+| API Gateway | http://localhost:18080 | |
+| Order Service | http://localhost:18081 | |
+| Payment Service | http://localhost:18082 | |
+| Fraud Service | http://localhost:18083 | |
+| Account Service | http://localhost:18084 | |
+| Loan Service | http://localhost:18085 | |
+| Notification Service | http://localhost:18086 | |
+| Stream Service | http://localhost:18087 | |
+| FaaS Server | http://localhost:8088 | |
 
 ## Grafana Dashboards
 
-Five pre-provisioned dashboards:
+Six pre-provisioned dashboards:
 
 | Dashboard | UID | Description |
 |-----------|-----|-------------|
-| **Pyroscope Overview** | `pyroscope-java-overview` | CPU/memory/lock flame graphs with application selector for all 7 services |
+| **Pyroscope Java Overview** | `pyroscope-java-overview` | CPU/memory/lock/wall flame graphs with application selector for all 9 services |
+| **Service Performance** | `verticle-performance` | Per-service CPU, latency, request rate with flame graph correlation |
 | **JVM Metrics Deep Dive** | `jvm-metrics-deep-dive` | CPU gauge, heap/non-heap, GC pauses, threads, memory pool utilization |
 | **HTTP Performance** | `http-performance` | Request rate, p50/p95/p99 latency, error rate, slowest endpoints |
-| **Service Comparison** | `service-comparison` | Side-by-side metrics and flame graphs |
 | **Before vs After Fix** | `before-after-comparison` | Compare flame graphs before/after `OPTIMIZED=true` performance fixes |
+| **FaaS Server** | `faas-server` | FaaS-specific metrics: function invocations, deploy/undeploy lifecycle, warm pools |
 
 ### Before vs After Fix
 
@@ -254,52 +290,106 @@ The default `bash scripts/run.sh` pipeline generates load in two phases — befo
 
 ## Documentation
 
-| Document | Description |
-|----------|-------------|
-| [docs/demo-guide.md](docs/demo-guide.md) | Step-by-step demo script (20-30 min) |
-| [docs/runbook.md](docs/runbook.md) | Operations runbook: deploy, verify, incident response, maintenance |
-| [docs/sample-queries.md](docs/sample-queries.md) | Copy-paste queries for Pyroscope, Grafana, Prometheus |
-| [docs/pipeline.md](docs/pipeline.md) | Pipeline stages, data flow, and configuration |
-| [docs/incident-profiling-runbook.md](docs/incident-profiling-runbook.md) | Incident runbook: find the exact class/method causing CPU, memory, lock, or latency issues |
-| [docs/cli-observability.md](docs/cli-observability.md) | CLI observability: diagnose, monitor, and debug without a browser |
-| [docs/mttr-guide.md](docs/mttr-guide.md) | Reducing MTTR with continuous profiling — incident workflows, bottleneck analysis, observability outcomes |
-| [docs/dashboard-guide.md](docs/dashboard-guide.md) | Dashboard guide, production debugging runbook, and queries |
+### Getting Started
+
+| Document | Audience | Description |
+|----------|----------|-------------|
+| [docs/demo-guide.md](docs/demo-guide.md) | Everyone | Overview of the problem, solution, and what this project demonstrates |
+| [docs/demo-runbook.md](docs/demo-runbook.md) | Presenters | Step-by-step demo agenda with commands and talking points (20-25 min) |
+
+### Using Pyroscope and Grafana
+
+| Document | Audience | Description |
+|----------|----------|-------------|
+| [docs/profiling-scenarios.md](docs/profiling-scenarios.md) | Engineers | 6 hands-on scenarios + quick reference table of all bottlenecks by service |
+| [docs/code-to-profiling-guide.md](docs/code-to-profiling-guide.md) | Engineers | Source code → flame graph mapping for every service and endpoint |
+| [docs/dashboard-guide.md](docs/dashboard-guide.md) | Engineers | Panel-by-panel reference for all 6 Grafana dashboards |
+| [docs/sample-queries.md](docs/sample-queries.md) | Engineers | Copy-paste queries for Pyroscope, Prometheus, and Grafana |
+
+### Operations and Implementation
+
+| Document | Audience | Description |
+|----------|----------|-------------|
+| [docs/continuous-profiling-runbook.md](docs/continuous-profiling-runbook.md) | SREs | Deploying Pyroscope, agent configuration, Grafana setup |
+| [docs/runbook.md](docs/runbook.md) | On-call | Incident response playbooks, operational procedures |
+| [docs/mttr-guide.md](docs/mttr-guide.md) | Managers/SREs | MTTR reduction workflow, bottleneck decision matrix |
+
+### Reference
+
+| Document | Audience | Description |
+|----------|----------|-------------|
+| [docs/architecture.md](docs/architecture.md) | Architects | Service topology, data flow, JVM agent configuration |
+| [docs/faas-server.md](docs/faas-server.md) | Engineers | FaaS runtime with deploy/undeploy lifecycle profiling |
+| [docs/endpoint-reference.md](docs/endpoint-reference.md) | Engineers | Complete endpoint list with curl examples |
+| [docs/pipeline.md](docs/pipeline.md) | Engineers | Pipeline stages, data flow, and configuration |
+| [docs/ai-profiling-roadmap.md](docs/ai-profiling-roadmap.md) | Leadership | Roadmap for AI/ML integration with profiling data |
 
 ## Project Structure
 
 ```
 pyroscope/
 ├── config/
-│   ├── grafana/dashboards/         # 5 Grafana dashboards (JSON)
-│   ├── grafana/provisioning/       # Datasources + dashboard provider
+│   ├── grafana/
+│   │   ├── dashboards/              # 6 Grafana dashboards (JSON)
+│   │   │   ├── pyroscope-overview.json      # Main profiling dashboard
+│   │   │   ├── verticle-performance.json    # Per-service performance
+│   │   │   ├── jvm-metrics.json             # JVM runtime metrics
+│   │   │   ├── http-performance.json        # HTTP traffic analysis
+│   │   │   ├── before-after-comparison.json # Optimization comparison
+│   │   │   └── faas-server.json             # FaaS-specific dashboard
+│   │   └── provisioning/            # Datasources + dashboard provider
 │   ├── prometheus/
-│   │   ├── prometheus.yaml          # Scrape config for 7 services
-│   │   └── alerts.yaml             # 6 alert rules
-│   └── pyroscope/pyroscope.yaml
-├── docs/                           # Demo guide, runbook, sample queries
-├── postman/                        # Postman collection + environment
+│   │   ├── prometheus.yaml          # Scrape config for 9 services (jvm + vertx-apps jobs)
+│   │   └── alerts.yaml              # 6 alert rules
+│   └── pyroscope/pyroscope.yaml     # Pyroscope server config
+│
+├── docs/
+│   ├── demo-guide.md                # Overview and demo framing
+│   ├── demo-runbook.md              # Step-by-step presenter guide
+│   ├── profiling-scenarios.md       # Hands-on investigation scenarios
+│   ├── code-to-profiling-guide.md   # Source code → flame graph mapping
+│   ├── dashboard-guide.md           # Panel-by-panel dashboard reference
+│   ├── sample-queries.md            # Copy-paste Pyroscope/Prometheus queries
+│   ├── continuous-profiling-runbook.md  # Deployment and setup guide
+│   ├── runbook.md                   # Operational runbook
+│   ├── mttr-guide.md                # MTTR reduction workflow
+│   ├── architecture.md              # System architecture
+│   ├── faas-server.md               # FaaS runtime documentation
+│   ├── endpoint-reference.md        # Complete API reference
+│   ├── pipeline.md                  # Pipeline stages documentation
+│   └── ai-profiling-roadmap.md      # AI/ML integration roadmap
+│
+├── postman/                         # Postman collection + environment
+│
 ├── sample-app/
-│   ├── build.gradle                # Gradle build (shadow plugin)
-│   ├── Dockerfile                  # Multi-stage: Gradle → JRE
+│   ├── build.gradle                 # Gradle build (shadow plugin)
+│   ├── Dockerfile                   # Multi-stage: Gradle → JRE
 │   └── src/main/java/com/example/
-│       ├── MainVerticle.java       # API Gateway + verticle router
-│       ├── OrderVerticle.java      # Order/trade processing
-│       ├── PaymentVerticle.java    # Wire transfers, payroll, FX
+│       ├── MainVerticle.java        # API Gateway + verticle router
+│       ├── OrderVerticle.java       # Order processing, synchronized blocks
+│       ├── PaymentVerticle.java     # Transfers, payroll, FX (SHA-256, BigDecimal)
 │       ├── FraudDetectionVerticle.java  # Rule engine, anomaly detection
-│       ├── AccountVerticle.java    # Core banking accounts
-│       ├── LoanVerticle.java       # Loan origination, amortization
-│       ├── NotificationVerticle.java    # Messaging, templates, retries
-│       └── handlers/               # 6 additional workload handlers
+│       ├── AccountVerticle.java     # Core banking, interest calculation
+│       ├── LoanVerticle.java        # Amortization, Monte Carlo simulation
+│       ├── NotificationVerticle.java    # Templates, queue drain, retries
+│       ├── StreamVerticle.java      # Reactive streams, backpressure
+│       ├── FaasVerticle.java        # FaaS runtime, function lifecycle
+│       └── handlers/                # Additional workload handlers
+│
 ├── scripts/
-│   ├── run.sh                      # Unified pipeline runner (quiet mode + ready banner)
-│   ├── diagnose.sh                 # Full diagnostic report (health + HTTP + profiles + alerts)
-│   ├── top-functions.sh            # Top CPU/memory/mutex functions (Pyroscope API)
-│   ├── jvm-health.sh              # Identify problematic JVMs (Prometheus thresholds)
-│   ├── deploy.sh                   # Build + start + health checks
-│   ├── generate-load.sh            # Traffic to all 7 services
-│   ├── validate.sh                 # End-to-end automated check
-│   └── teardown.sh
-├── docker-compose.yaml              # 10 containers (3 infra + 7 services)
+│   ├── run.sh                       # Main entry point — deploy, load, validate, teardown
+│   ├── deploy.sh                    # Build + start containers
+│   ├── generate-load.sh             # Traffic generation to all 9 services
+│   ├── validate.sh                  # Automated health + data verification
+│   ├── teardown.sh                  # Stop and clean up
+│   ├── diagnose.sh                  # Full diagnostic report (CLI)
+│   ├── top-functions.sh             # Top CPU/memory/mutex functions
+│   ├── bottleneck.sh                # Automated root-cause analysis
+│   ├── jvm-health.sh                # JVM health thresholds
+│   ├── benchmark.sh                 # Profiling overhead measurement
+│   └── check-dashboards.sh          # Dashboard validation
+│
+├── docker-compose.yaml              # 12 containers (3 infra + 9 services)
 └── README.md
 ```
 
@@ -321,7 +411,7 @@ environment:
     -Dpyroscope.labels.env=production
 ```
 
-All 7 services use the same Docker image. The `VERTICLE` env var (`order`, `payment`, `fraud`, `account`, `loan`, `notification`) selects which class to run. Default is `MainVerticle`.
+All 9 services use the same Docker image. The `VERTICLE` env var (`order`, `payment`, `fraud`, `account`, `loan`, `notification`, `stream`, `faas`) selects which class to run. Default is `MainVerticle`.
 
 ### Profile Types
 
