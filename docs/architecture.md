@@ -1,285 +1,312 @@
 # Architecture & Technical Design
 
-This document covers the deployment topology, application architecture, and observability data flow for the Pyroscope continuous profiling demo.
+Deployment topology, application architecture, and observability data flow for the continuous profiling demo.
 
-## 1. System Overview
+---
 
-The project deploys a production-realistic JVM topology with continuous profiling, metrics collection, and dashboarding — ten containers on a single Docker Compose network (7 bank services + 3 observability infrastructure).
+## System Overview
 
-```mermaid
-C4Context
-    title System Context — Continuous Profiling Demo
-
-    Person(user, "Developer / SRE", "Explores flame graphs & metrics")
-
-    System_Boundary(compose, "Docker Compose Stack") {
-        Container(s1, "vertx-server-1", "JVM / Vert.x", "main, order, payment, fraud")
-        Container(s2, "vertx-server-2", "JVM / Vert.x", "account, loan, notification")
-        Container(pyroscope, "Pyroscope", "Grafana Pyroscope", "Continuous profiling backend")
-        Container(prometheus, "Prometheus", "v2.53.0", "Metrics TSDB & scraper")
-        Container(grafana, "Grafana", "v11.5.2", "Dashboards & visualization")
-    }
-
-    Rel(s1, pyroscope, "JFR push (cpu, alloc, lock, wall)")
-    Rel(s2, pyroscope, "JFR push (cpu, alloc, lock, wall)")
-    Rel(prometheus, s1, "Scrape /metrics :8080 + JMX :9404")
-    Rel(prometheus, s2, "Scrape /metrics :8080 + JMX :9404")
-    Rel(grafana, pyroscope, "Datasource queries")
-    Rel(grafana, prometheus, "Datasource queries")
-    Rel(user, grafana, "Browse dashboards :3000")
-```
-
-## 2. Application Architecture — Vert.x Shared-JVM Model
-
-### Verticle Dispatch
-
-`MainVerticle.main()` is the single entry point for every server container:
-
-1. Reads the `VERTICLE` env var (e.g. `main,order,payment,fraud`)
-2. Creates a shared Vert.x `Router`
-3. Registers `/health` and `/metrics` on the shared router
-4. Calls `registerRoutes()` on each requested verticle — all routes are mounted on the **same router**
-5. Starts **one HTTP server** on port 8080
-
-All verticles run in the same JVM process, sharing the event loop pool and worker thread pool.
-
-### Internal Structure
+The project deploys 12 containers on a single Docker Compose network: 9 Java microservices + Pyroscope + Prometheus + Grafana.
 
 ```mermaid
-flowchart TD
-    subgraph JVM["JVM Process (one per container)"]
-        EL["Vert.x Event Loop Pool"]
-        WT["Worker Thread Pool"]
-        R["Shared Router :8080"]
-        H["/health"]
-        M["/metrics"]
-
-        subgraph V1["Verticle A routes"]
-            RA["/order/create"]
-            RB["/order/list"]
-            RC["..."]
-        end
-
-        subgraph V2["Verticle B routes"]
-            RD["/payment/transfer"]
-            RE["/payment/payroll"]
-            RF["..."]
-        end
-
-        EL -->|"non-blocking"| R
-        R --> H
-        R --> M
-        R --> V1
-        R --> V2
-        V1 -->|"executeBlocking()"| WT
-        V2 -->|"executeBlocking()"| WT
+graph TB
+    subgraph services["Bank Microservices (9 JVMs)"]
+        GW["API Gateway\n:18080"]
+        OS["Order Service\n:18081"]
+        PS["Payment Service\n:18082"]
+        FS["Fraud Service\n:18083"]
+        AS["Account Service\n:18084"]
+        LS["Loan Service\n:18085"]
+        NS["Notification Service\n:18086"]
+        SS["Stream Service\n:18087"]
+        FA["FaaS Server\n:8088"]
     end
+
+    subgraph infra["Observability Stack"]
+        PY["Pyroscope\n:4040"]
+        PR["Prometheus\n:9090"]
+        GF["Grafana\n:3000"]
+    end
+
+    GW & OS & PS & FS & AS & LS & NS & SS & FA -->|"JFR profiles"| PY
+    GW & OS & PS & FS & AS & LS & NS & SS & FA -->|"metrics :8080 + :9404"| PR
+    PY --> GF
+    PR --> GF
+
+    style PY fill:#f59e0b,color:#000
+    style PR fill:#ef4444,color:#fff
+    style GF fill:#3b82f6,color:#fff
 ```
 
-### Verticle-to-Server Mapping
+---
+
+## Application Stack
+
+### Technology Stack
+
+| Layer | Technology | Version |
+|-------|------------|---------|
+| Runtime | OpenJDK | 21 |
+| Framework | Eclipse Vert.x | 4.5.x |
+| Build | Gradle (shadow plugin) | 8.x |
+| Metrics | Micrometer + JMX Exporter | — |
+| Profiling | Pyroscope Java Agent (async-profiler) | 0.14.x |
+
+### Single Image, Multiple Services
+
+All 9 services are built from the **same Docker image** (`sample-app/Dockerfile`). The `VERTICLE` environment variable selects which verticle class to run:
+
+```yaml
+# docker-compose.yaml excerpt
+api-gateway:
+  build: ./sample-app
+  environment:
+    VERTICLE: main
+
+payment-service:
+  build: ./sample-app
+  environment:
+    VERTICLE: payment
+```
+
+| VERTICLE value | Class | Pyroscope app name |
+|----------------|-------|-------------------|
+| `main` | MainVerticle | `bank-api-gateway` |
+| `order` | OrderVerticle | `bank-order-service` |
+| `payment` | PaymentVerticle | `bank-payment-service` |
+| `fraud` | FraudDetectionVerticle | `bank-fraud-service` |
+| `account` | AccountVerticle | `bank-account-service` |
+| `loan` | LoanVerticle | `bank-loan-service` |
+| `notification` | NotificationVerticle | `bank-notification-service` |
+| `stream` | StreamVerticle | `bank-stream-service` |
+| `faas` | FaasVerticle | `bank-faas-server` |
+
+---
+
+## Service Catalog
+
+Each service has distinct CPU, memory, and lock characteristics to produce different flame graph signatures.
+
+### Core Banking Services
+
+| Service | Port | Profile Characteristics | Key Bottlenecks |
+|---------|------|------------------------|-----------------|
+| **API Gateway** | 18080 | CPU-heavy | Recursive fibonacci O(2^n), batch processing |
+| **Order Service** | 18081 | Lock contention | `synchronized` method, regex compilation per call |
+| **Payment Service** | 18082 | CPU + allocation | `MessageDigest.getInstance()` per call, BigDecimal math |
+| **Fraud Service** | 18083 | CPU (baseline) | Precompiled regex patterns — efficient reference |
+| **Account Service** | 18084 | Mixed | BigDecimal interest loops, ConcurrentHashMap |
+| **Loan Service** | 18085 | CPU-heavy | Monte Carlo simulation, amortization schedules |
+| **Notification Service** | 18086 | Allocation-heavy | `String.format` in loops creates Formatter garbage |
+
+### Specialized Services
+
+| Service | Port | Profile Characteristics | Key Bottlenecks |
+|---------|------|------------------------|-----------------|
+| **Stream Service** | 18087 | Backpressure | Reactive streams, event processing |
+| **FaaS Server** | 8088 | Lifecycle overhead | Deploy/undeploy per invocation, cold starts vs warm pools |
+
+---
+
+## Observability Data Flow
+
+Three telemetry pipelines run simultaneously with zero code changes:
 
 ```mermaid
 flowchart LR
-    subgraph S1["vertx-server-1 :18080"]
-        M1["MainVerticle"]
-        O1["OrderVerticle"]
-        P1["PaymentVerticle"]
-        F1["FraudDetectionVerticle"]
-    end
-
-    subgraph S2["vertx-server-2 :18081"]
-        A2["AccountVerticle"]
-        L2["LoanVerticle"]
-        N2["NotificationVerticle"]
-    end
-```
-
-### Profiling Implications
-
-Pyroscope sees **one application per server**. Flame graphs show mixed code from all verticles on that server — exactly as in production. To identify which verticle owns a hot frame, look at the package/class in the stack:
-
-- `com.example.OrderVerticle` → Order verticle
-- `com.example.PaymentVerticle` → Payment verticle
-- `com.example.handlers.*` → MainVerticle enterprise simulation handlers
-
-## 3. Verticle Catalog
-
-| Verticle | Server | Route Prefix | Key Routes | Profile Characteristics |
-|----------|--------|-------------|------------|------------------------|
-| **MainVerticle** | 1 | `/cpu`, `/alloc`, `/slow`, `/db`, `/mixed`, `/sim/*` | `/cpu` (fibonacci), `/alloc` (buffer churn), `/slow` (sleep), `/sim/redis`, `/sim/db`, `/sim/csv` | CPU, alloc, wall |
-| **OrderVerticle** | 1 | `/order/*` | `/order/create`, `/order/process`, `/order/validate`, `/order/aggregate`, `/order/fulfill` | CPU (string parsing, regex), alloc (HashMap), lock (synchronized) |
-| **PaymentVerticle** | 1 | `/payment/*` | `/payment/transfer`, `/payment/payroll`, `/payment/fx`, `/payment/reconcile` | CPU (BigDecimal, SHA-256), alloc (ledger), lock (synchronized writes), wall (fan-out) |
-| **FraudDetectionVerticle** | 1 | `/fraud/*` | `/fraud/score`, `/fraud/scan`, `/fraud/anomaly`, `/fraud/velocity` | CPU (regex, statistics), alloc (sliding window), wall (large dataset sort) |
-| **AccountVerticle** | 2 | `/account/*` | `/account/open`, `/account/deposit`, `/account/withdraw`, `/account/statement`, `/account/interest` | CPU (BigDecimal loops), alloc (ConcurrentHashMap), lock (synchronized deposit/withdraw) |
-| **LoanVerticle** | 2 | `/loan/*` | `/loan/apply`, `/loan/amortize`, `/loan/risk-sim`, `/loan/portfolio`, `/loan/originate` | CPU (amortization, Monte Carlo), alloc (BigDecimal objects), wall (orchestration) |
-| **NotificationVerticle** | 2 | `/notify/*` | `/notify/send`, `/notify/bulk`, `/notify/drain`, `/notify/render`, `/notify/retry` | CPU (queue drain), alloc (template rendering), wall (exponential backoff) |
-
-## 4. Deployment Architecture
-
-### Docker Compose Topology
-
-```mermaid
-flowchart TB
-    subgraph net["Network: monitoring (bridge)"]
-        subgraph infra["Observability Infrastructure"]
-            PY["pyroscope\n:4040\nmem: 2 GB\nvolume: pyroscope-data"]
-            PR["prometheus\n:9090\nmem: 1 GB\nvolume: prometheus-data"]
-            GR["grafana\n:3000\nmem: 512 MB\nvolume: grafana-data"]
-        end
-
-        subgraph apps["Application Servers"]
-            S1["vertx-server-1\n:18080 → 8080\n:9404 (JMX)\nmem: 768 MB"]
-            S2["vertx-server-2\n:18081 → 8080\n:9404 (JMX)\nmem: 768 MB"]
-        end
-    end
-
-    S1 -->|"depends_on healthy"| PY
-    S2 -->|"depends_on healthy"| PY
-    GR -->|"depends_on healthy"| PR
-    GR -->|"depends_on healthy"| PY
-```
-
-### Port Assignment
-
-All host ports are configurable via environment variables with defaults in `docker-compose.yaml`:
-
-| Service | Host Port Variable | Default | Container Port |
-|---------|-------------------|---------|----------------|
-| Pyroscope | `PYROSCOPE_PORT` | 4040 | 4040 |
-| Prometheus | `PROMETHEUS_PORT` | 9090 | 9090 |
-| Grafana | `GRAFANA_PORT` | 3000 | 3000 |
-| vertx-server-1 | `VERTX_SERVER_1_PORT` | 18080 | 8080 |
-| vertx-server-2 | `VERTX_SERVER_2_PORT` | 18081 | 8080 |
-
-`scripts/deploy.sh` auto-resolves port conflicts by scanning used ports and writing overrides to `.env`.
-
-### Container Configuration
-
-| Service | `mem_limit` | Health Check | `depends_on` |
-|---------|------------|-------------|--------------|
-| pyroscope | 2 GB | `curl /ready` | — |
-| prometheus | 1 GB | `curl /-/ready` | — |
-| grafana | 512 MB | `curl /api/health` | prometheus (healthy), pyroscope (healthy) |
-| vertx-server-1 | 768 MB | `curl /health` | pyroscope (healthy) |
-| vertx-server-2 | 768 MB | `curl /health` | pyroscope (healthy) |
-
-## 5. Observability Data Flow
-
-```mermaid
-flowchart LR
-    subgraph JVM1["vertx-server-1"]
-        PA1["Pyroscope Agent\n(JFR push)"]
-        JMX1["JMX Exporter\n:9404"]
-        MM1["Vert.x Micrometer\n:8080/metrics"]
-    end
-
-    subgraph JVM2["vertx-server-2"]
-        PA2["Pyroscope Agent\n(JFR push)"]
-        JMX2["JMX Exporter\n:9404"]
-        MM2["Vert.x Micrometer\n:8080/metrics"]
+    subgraph jvm["Each JVM (9 total)"]
+        APP["Vert.x App\n:8080"]
+        PA["Pyroscope Agent\n(JFR)"]
+        JMX["JMX Exporter\n:9404"]
     end
 
     PY["Pyroscope\n:4040"]
     PR["Prometheus\n:9090"]
+    GF["Grafana\n:3000"]
 
-    PA1 -->|"push profiles"| PY
-    PA2 -->|"push profiles"| PY
-    PR -->|"scrape /metrics"| MM1
-    PR -->|"scrape /metrics"| MM2
-    PR -->|"scrape :9404"| JMX1
-    PR -->|"scrape :9404"| JMX2
-
-    subgraph GR["Grafana :3000"]
-        DS1["Pyroscope\ndatasource"]
-        DS2["Prometheus\ndatasource"]
-        D1["Pyroscope — Production Debugging"]
-        D2["Service Comparison"]
-        D3["JVM Metrics"]
-        D4["HTTP Performance"]
-        D5["Verticle Performance"]
-        D6["D5: Before vs After Fix"]
-    end
-
-    PY --> DS1
-    PR --> DS2
-    DS1 --> D1
-    DS1 --> D2
-    DS1 --> D5
-    DS2 --> D3
-    DS2 --> D4
-    DS2 --> D5
-    DS1 --> D6
+    PA -->|"push profiles"| PY
+    PR -->|"scrape :8080/metrics"| APP
+    PR -->|"scrape :9404"| JMX
+    PY --> GF
+    PR --> GF
 ```
 
-### Three Telemetry Pipelines
+### Pipeline Details
 
-| Pipeline | Agent | Transport | Backend | What It Captures |
-|----------|-------|-----------|---------|-----------------|
-| **Continuous Profiling** | Pyroscope Java agent (JFR) | Push to `:4040` | Pyroscope | CPU, alloc, lock, wall flame graphs |
-| **JVM Metrics** | JMX Exporter agent (`:9404`) | Prometheus scrape | Prometheus | Heap, GC, threads, CPU, classloading |
-| **Application Metrics** | Vert.x Micrometer (`:8080/metrics`) | Prometheus scrape | Prometheus | HTTP request rate, latency, status codes |
+| Pipeline | Agent | Transport | What It Captures |
+|----------|-------|-----------|-----------------|
+| **Continuous Profiling** | Pyroscope Java agent | Push to Pyroscope :4040 | CPU, allocation, mutex, wall clock flame graphs |
+| **JVM Metrics** | JMX Exporter on :9404 | Prometheus scrape | Heap, GC, threads, CPU, classloading, file descriptors |
+| **HTTP Metrics** | Vert.x Micrometer on :8080/metrics | Prometheus scrape | Request rate, latency percentiles, status codes |
 
-### Reading Mixed Flame Graphs
+### Prometheus Jobs
 
-Since multiple verticles share a JVM, flame graphs show interleaved stacks. To isolate verticle behavior:
+| Job | Port | Metrics |
+|-----|------|---------|
+| `jvm` | 9404 | `jvm_memory_*`, `jvm_gc_*`, `jvm_threads_*`, `process_cpu_*`, `process_open_fds` |
+| `vertx-apps` | 8080 | `http_server_requests_*`, `vertx_http_*`, `vertx_pool_*` |
 
-1. **By class name** — look for `com.example.OrderVerticle`, `com.example.PaymentVerticle`, etc. in the stack
-2. **By route handler** — Vert.x router frames will show the registered path
-3. **By Pyroscope labels** — the `server` label (`vertx-server-1` / `vertx-server-2`) identifies which group of verticles is running
+### Pyroscope Profile Types
 
-## 6. Configuration Reference
+| Profile Type ID | What It Captures |
+|-----------------|-----------------|
+| `process_cpu:cpu:nanoseconds:cpu:nanoseconds` | On-CPU time — computation hotspots |
+| `wall:wall:nanoseconds:wall:nanoseconds` | Wall clock time — includes I/O, sleep, locks |
+| `memory:alloc_in_new_tlab_bytes:bytes:space:bytes` | Allocation bytes — GC pressure sources |
+| `memory:alloc_in_new_tlab_objects:count:space:bytes` | Allocation count — object churn |
+| `mutex:contentions:count:mutex:count` | Lock contention count |
+| `mutex:delay:nanoseconds:mutex:count` | Lock wait time |
 
-### JAVA_TOOL_OPTIONS Breakdown
+---
 
-Each Vert.x server container sets `JAVA_TOOL_OPTIONS` with two Java agents:
+## JVM Agent Configuration
 
-```
-# Pyroscope agent — continuous profiling via JFR
+Each service container sets `JAVA_TOOL_OPTIONS` with two agents:
+
+```bash
+# Pyroscope agent — continuous profiling via JFR/async-profiler
 -javaagent:/opt/pyroscope/pyroscope.jar
--Dpyroscope.application.name=vertx-server-1       # Application name in Pyroscope UI
--Dpyroscope.server.address=http://pyroscope:4040   # Push target
--Dpyroscope.format=jfr                             # JDK Flight Recorder format
--Dpyroscope.profiler.event=itimer                   # CPU profiling event (alloc/lock enabled by their own flags)
--Dpyroscope.profiler.alloc=512k                    # Allocation sampling interval
--Dpyroscope.profiler.lock=10ms                     # Lock contention threshold
--Dpyroscope.labels.env=production                  # Static label
--Dpyroscope.labels.server=vertx-server-1           # Static label for filtering
--Dpyroscope.log.level=info
+-Dpyroscope.application.name=bank-payment-service
+-Dpyroscope.server.address=http://pyroscope:4040
+-Dpyroscope.format=jfr
+-Dpyroscope.profiler.event=itimer      # CPU profiling
+-Dpyroscope.profiler.alloc=512k        # Allocation sampling threshold
+-Dpyroscope.profiler.lock=10ms         # Lock contention threshold
 
 # JMX Exporter — JVM metrics as Prometheus endpoint
 -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
 ```
 
-### OPTIMIZED Environment Variable
+---
 
-Toggles between deliberately slow and optimized code paths for before/after flame graph comparison:
+## Container Configuration
+
+### Resource Limits
+
+| Service | Memory Limit | CPU Limit |
+|---------|--------------|-----------|
+| Pyroscope | 2 GB | — |
+| Prometheus | 1 GB | — |
+| Grafana | 512 MB | — |
+| Each Java service | 768 MB | — |
+
+### Health Checks
+
+| Service | Endpoint | Interval |
+|---------|----------|----------|
+| Pyroscope | `GET /ready` | 10s |
+| Prometheus | `GET /-/ready` | 10s |
+| Grafana | `GET /api/health` | 10s |
+| Java services | `GET /health` | 10s |
+
+### Port Mapping
+
+| Service | Host Port | Container Port |
+|---------|-----------|----------------|
+| API Gateway | 18080 | 8080 |
+| Order Service | 18081 | 8080 |
+| Payment Service | 18082 | 8080 |
+| Fraud Service | 18083 | 8080 |
+| Account Service | 18084 | 8080 |
+| Loan Service | 18085 | 8080 |
+| Notification Service | 18086 | 8080 |
+| Stream Service | 18087 | 8080 |
+| FaaS Server | 8088 | 8080 |
+| Grafana | 3000 | 3000 |
+| Pyroscope | 4040 | 4040 |
+| Prometheus | 9090 | 9090 |
+
+---
+
+## OPTIMIZED Environment Variable
+
+Toggles between slow and optimized code paths for before/after comparison:
 
 | Value | Behavior |
 |-------|----------|
-| `true` | Use optimized implementations (iterative fibonacci, ThreadLocal MessageDigest, lock-free processing, primitive arrays, StringBuilder templates) |
-| unset or other | Use original slow implementations (recursive fibonacci, synchronized blocks, per-call getInstance, boxed collections, String.format) |
+| unset | Original implementations with deliberate bottlenecks |
+| `true` | Optimized implementations — bottlenecks removed |
 
-Set via `docker-compose.fixed.yaml` override or `--fixed` flag in `scripts/run.sh`. The default pipeline runs both phases automatically.
+### What Changes
 
-### VERTICLE Environment Variable
+| Service | Unoptimized | Optimized |
+|---------|-------------|-----------|
+| API Gateway | Recursive fibonacci O(2^n) | Iterative loop O(n) |
+| Payment | `MessageDigest.getInstance()` per call | `ThreadLocal<MessageDigest>` reuse |
+| Payment | `String.format("%02x", b)` per byte | `Character.forDigit()` |
+| Order | `synchronized` method | `ConcurrentHashMap.computeIfPresent()` |
+| Notification | `String.format` in loops | `StringBuilder` |
+| Fraud | `Double` boxing in percentiles | Primitive `double[]` + `Arrays.sort` |
+| FaaS | Deploy/undeploy per invocation | Warm pool reuse |
 
-Comma-separated list of verticle names to deploy on this server:
+Toggle with:
+```bash
+bash scripts/run.sh optimize    # Switch running stack to optimized
+bash scripts/run.sh unoptimize  # Switch back to unoptimized
+bash scripts/run.sh --fixed     # Start fresh with optimized only
+```
 
-| Value | Behavior |
-|-------|----------|
-| `main,order,payment,fraud` | Deploy those four verticles |
-| `account,loan,notification` | Deploy those three verticles |
-| `all` | Deploy all seven verticles |
-| `main` (default) | Deploy MainVerticle only |
+---
 
-Valid names: `main`, `order`, `payment`, `fraud`, `account`, `loan`, `notification`.
+## Grafana Dashboards
 
-### Docker Compose Services
+Six pre-provisioned dashboards:
 
-| Service | Image | Build | Volumes |
-|---------|-------|-------|---------|
-| pyroscope | `grafana/pyroscope:latest` | — | `pyroscope-data:/data`, `config/pyroscope/pyroscope.yaml` |
-| prometheus | `prom/prometheus:v2.53.0` | — | `prometheus-data:/prometheus`, `config/prometheus/prometheus.yaml`, `alerts.yaml` |
-| grafana | `grafana/grafana:11.5.2` | — | `grafana-data:/var/lib/grafana`, provisioning config, dashboard JSONs |
-| vertx-server-1 | — | `./sample-app/Dockerfile` | — |
-| vertx-server-2 | — | `./sample-app/Dockerfile` | — |
+| Dashboard | UID | Primary Data Source |
+|-----------|-----|---------------------|
+| Pyroscope Java Overview | `pyroscope-java-overview` | Pyroscope |
+| Service Performance | `verticle-performance` | Prometheus + Pyroscope |
+| JVM Metrics Deep Dive | `jvm-metrics-deep-dive` | Prometheus |
+| HTTP Performance | `http-performance` | Prometheus |
+| Before vs After Fix | `before-after-comparison` | Pyroscope |
+| FaaS Server | `faas-server` | Prometheus + Pyroscope |
+
+---
+
+## Network Topology
+
+All containers run on the `monitoring` bridge network. Services communicate by container name:
+
+```
+pyroscope:4040      — Profiling backend
+prometheus:9090     — Metrics backend
+grafana:3000        — Dashboards
+api-gateway:8080    — (internal, exposed as 18080)
+payment-service:8080 — (internal, exposed as 18082)
+...
+```
+
+Prometheus scrapes services by internal container name and port (e.g., `payment-service:8080`, `payment-service:9404`).
+
+---
+
+## File Structure Reference
+
+```
+config/
+├── grafana/
+│   ├── dashboards/           # 6 dashboard JSON files
+│   └── provisioning/
+│       ├── dashboards/       # Dashboard provider config
+│       ├── datasources/      # Prometheus + Pyroscope datasources
+│       └── plugins/          # Pyroscope app plugin activation
+├── prometheus/
+│   ├── prometheus.yaml       # Scrape config (jvm + vertx-apps jobs)
+│   └── alerts.yaml           # 6 alert rules
+└── pyroscope/
+    └── pyroscope.yaml        # Pyroscope server config
+
+sample-app/
+├── Dockerfile                # Multi-stage: Gradle build → JRE runtime
+├── build.gradle              # Vert.x + Micrometer + shadow plugin
+└── src/main/java/com/example/
+    ├── MainVerticle.java     # Entry point + API Gateway routes
+    ├── OrderVerticle.java
+    ├── PaymentVerticle.java
+    ├── FraudDetectionVerticle.java
+    ├── AccountVerticle.java
+    ├── LoanVerticle.java
+    ├── NotificationVerticle.java
+    ├── StreamVerticle.java
+    └── FaasVerticle.java
+```
