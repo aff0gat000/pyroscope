@@ -40,9 +40,9 @@
           { "text": "Alloc (objects)", "value": "memory:alloc_in_new_tlab_objects:count:space:bytes", "selected": false },
           { "text": "Mutex (contentions)", "value": "mutex:contentions:count:mutex:count", "selected": false },
           { "text": "Mutex (delay)", "value": "mutex:delay:nanoseconds:mutex:count", "selected": false },
-          { "text": "Wall Clock", "value": "wall:wall:nanoseconds:cpu:nanoseconds", "selected": false }
+          { "text": "Wall Clock", "value": "wall:wall:nanoseconds:wall:nanoseconds", "selected": false }
         ],
-        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,memory:alloc_in_new_tlab_objects:count:space:bytes,mutex:contentions:count:mutex:count,mutex:delay:nanoseconds:mutex:count,wall:wall:nanoseconds:cpu:nanoseconds"
+        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,memory:alloc_in_new_tlab_objects:count:space:bytes,mutex:contentions:count:mutex:count,mutex:delay:nanoseconds:mutex:count,wall:wall:nanoseconds:wall:nanoseconds"
       }
     ]
   },
@@ -216,5 +216,6 @@
   ],
   "schemaVersion": 39,
   "version": 1,
-  "time": { "from": "now-1h", "to": "now" }
+  "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s"
 }

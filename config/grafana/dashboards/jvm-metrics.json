@@ -289,6 +289,7 @@
   "schemaVersion": 39,
   "tags": ["jvm", "java", "vertx", "metrics"],
   "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
   "title": "JVM Metrics Deep Dive",
   "uid": "jvm-metrics-deep-dive"
 }

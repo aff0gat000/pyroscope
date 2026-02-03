@@ -20,7 +20,7 @@
       {
         "name": "profile_type",
         "type": "custom",
-        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,mutex:contentions:count:mutex:count,wall:wall:nanoseconds:cpu:nanoseconds",
+        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_bytes:bytes:space:bytes,mutex:contentions:count:mutex:count,wall:wall:nanoseconds:wall:nanoseconds",
         "current": { "text": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds" },
         "includeAll": false,
         "multi": false,
@@ -183,6 +183,7 @@
   "schemaVersion": 39,
   "tags": ["pyroscope", "java", "vertx", "enterprise"],
   "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
   "title": "Pyroscope Java Overview",
   "uid": "pyroscope-java-overview"
 }

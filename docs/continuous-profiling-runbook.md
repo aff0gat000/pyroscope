@@ -366,6 +366,113 @@ curl -s "http://localhost:4040/pyroscope/render-diff?leftQuery=process_cpu:cpu:n
 
 ---
 
+## JVM Diagnostics: Metrics + Flame Graph Correlation
+
+Each diagnostic procedure combines Prometheus metrics (detect the symptom) with Pyroscope flame graphs (identify the cause).
+
+### Garbage Collection
+
+**Metrics (JVM Metrics Deep Dive dashboard):**
+
+| Metric | PromQL | Healthy Pattern | Problem Pattern |
+|--------|--------|-----------------|-----------------|
+| GC duration rate | `rate(jvm_gc_collection_seconds_sum{job="jvm"}[1m])` | Below 0.05 s/s | Above 0.05 = GC consuming >5% of wall time |
+| GC frequency | `rate(jvm_gc_collection_seconds_count{job="jvm"}[1m])` | Stable minor GC rate | Frequent major GCs = old gen filling up |
+| Heap used | `jvm_memory_used_bytes{job="jvm", area="heap"}` | Sawtooth (rises, GC drops it) | Rising baseline = leak; flat at max = OOM imminent |
+| Heap used vs max | `jvm_memory_used_bytes / jvm_memory_max_bytes` | Below 0.75 | Above 0.80 sustained = resize heap or fix leak |
+| Memory pool utilization | `jvm_memory_pool_used_bytes{job="jvm"} / jvm_memory_pool_max_bytes{job="jvm"} > 0` | Eden full = normal | Old Gen > 80% = investigate |
+
+**Procedure:**
+1. Confirm GC pressure in metrics: high `jvm_gc_collection_seconds_sum` rate or sawtooth heap with rising baseline
+2. Open Pyroscope → select the affected service → switch to **allocation** profile type (`memory:alloc_in_new_tlab_bytes`)
+3. The widest frames show which methods allocate the most bytes — these drive GC pressure
+4. Reduce allocations at those call sites (reuse objects, use `StringBuilder` instead of `String.format`, pre-size collections, use primitives instead of boxed types)
+5. Verify: GC duration rate drops, heap sawtooth baseline stabilizes
+
+**Example:** Allocation profile shows `NotificationVerticle.handleBulk` → `String.format` → `Formatter.<init>` consuming 40% of allocation bytes. Each bulk notification creates thousands of short-lived `Formatter` objects. Fix: replace `String.format` with `StringBuilder`. GC pause rate drops from 0.08 to 0.01.
+
+### Thread Leaks
+
+**Metrics (JVM Metrics Deep Dive dashboard):**
+
+| Metric | PromQL | Healthy Pattern | Problem Pattern |
+|--------|--------|-----------------|-----------------|
+| Live threads | `jvm_threads_current{job="jvm"}` | Plateaus after startup, scales with load | Monotonically increasing regardless of load |
+| Daemon threads | `jvm_threads_daemon{job="jvm"}` | Stable | Rising independently of traffic = leaked daemon threads |
+| Peak threads | `jvm_threads_peak{job="jvm"}` | Reaches a ceiling | Keeps climbing = threads not being cleaned up |
+| Thread delta | `jvm_threads_peak - jvm_threads_current` | Small gap | Zero gap + rising count = every thread stays alive |
+
+**Procedure:**
+1. Confirm thread leak in metrics: `jvm_threads_current` rising over hours regardless of traffic pattern
+2. Open Pyroscope → select the affected service → switch to **wall clock** profile type
+3. Look for `Thread.sleep`, `Object.wait`, `LockSupport.park` frames — these are threads alive but idle (leaked threads often park or sleep indefinitely)
+4. Switch to **mutex** profile type to check if rising thread count correlates with lock contention (threads piling up waiting for a lock)
+5. Trace the wall profile frames to identify which code path creates threads without cleaning them up (missing `ExecutorService.shutdown()`, unbounded `new Thread()` calls, unclosed event bus consumers)
+
+**Thread pool exhaustion variant:** Thread count hits a ceiling (pool max size) + latency spikes. The wall profile shows many threads in `LockSupport.park` inside the pool's work queue. Fix: increase pool size, reduce per-task duration, or fix the upstream bottleneck causing tasks to back up.
+
+### Memory Leaks (Heap and Non-Heap)
+
+**Metrics:**
+
+| Metric | PromQL | What It Detects |
+|--------|--------|-----------------|
+| Heap leak | `jvm_memory_used_bytes{job="jvm", area="heap"}` | Post-GC baseline rising over hours |
+| Non-heap leak | `jvm_memory_used_bytes{job="jvm", area="nonheap"}` | Metaspace + code cache rising = classloader leak |
+| Classloader leak | `jvm_classes_currently_loaded{job="jvm"}` | Should plateau after startup; rising = classes loaded but never unloaded |
+
+**Procedure — heap leak:**
+1. Confirm: heap used trends upward over hours, GC reclaims less each cycle
+2. Open Pyroscope → **allocation** profile for the affected time window
+3. If the dominant allocator is obvious (one method allocating disproportionately), reduce its allocation rate
+4. If allocation profile looks normal but heap still rises, the issue is object retention (references held but never released). This requires a heap dump for further analysis:
+   ```bash
+   docker exec <container> jmap -dump:live,format=b,file=/tmp/heap.hprof 1
+   docker cp <container>:/tmp/heap.hprof ./heap.hprof
+   # Analyze with Eclipse MAT or VisualVM
+   ```
+5. Common retention causes: growing `Map` or `List` used as a cache without eviction, event listeners registered but never removed, static collections accumulating entries
+
+**Procedure — classloader/metaspace leak:**
+1. Confirm: `jvm_classes_currently_loaded` rising beyond startup, `jvm_memory_used_bytes{area="nonheap"}` trending upward
+2. Open Pyroscope → **CPU** profile → search for `ClassLoader.loadClass` or `defineClass`
+3. If classloading frames appear in steady-state (not just startup), something is repeatedly loading classes — common causes: runtime code generation, repeated `Class.forName()`, frameworks creating proxy classes per request
+4. The FaaS server's deploy/undeploy lifecycle intentionally loads classes per invocation (visible as `ClassLoader.loadClass` in the CPU profile). In production FaaS workloads, use warm pools to avoid this.
+
+### File Descriptor Leaks
+
+**Metrics:**
+
+| Metric | PromQL | Healthy Pattern | Problem Pattern |
+|--------|--------|-----------------|-----------------|
+| Open FDs | `process_open_fds{job="jvm"}` | Stable after startup | Rising = unclosed connections, files, or sockets |
+| FD rate of change | `deriv(process_open_fds{job="jvm"}[10m])` | Near zero | Positive = leak rate (FDs/second) |
+
+**Procedure:**
+1. Confirm: `process_open_fds` rising over time in the JVM Metrics Deep Dive dashboard
+2. This is not directly visible in flame graphs — FD leaks are resource handle leaks, not CPU/memory/lock issues
+3. Common causes: HTTP client connections opened but never closed, database connection pool not returning connections, file streams not closed in `finally`/try-with-resources
+4. Correlate timing: if FD count rises proportionally to request rate, the leak is per-request. Check the **wall** profile for I/O-related frames (`SocketInputStream.read`, `FileInputStream.read`) to identify which code paths perform I/O
+5. Verify with `lsof`:
+   ```bash
+   docker exec <container> bash -c "ls -la /proc/1/fd | wc -l"
+   docker exec <container> bash -c "ls -la /proc/1/fd" | sort -k11 | tail -20
+   ```
+
+### Diagnostic Summary
+
+| Problem | Detect With (Metric) | Investigate With (Profile Type) | Flame Graph Signature |
+|---------|---------------------|-------------------------------|----------------------|
+| GC pressure | GC duration rate > 0.05 | **Allocation** | Wide `BigDecimal.<init>`, `String.format`, `HashMap.put` frames |
+| Heap memory leak | Heap baseline rising | **Allocation** + heap dump | Normal allocation profile but heap won't reclaim |
+| Thread leak | `jvm_threads_current` rising | **Wall** + **Mutex** | Idle threads in `Thread.sleep`, `Object.wait`, `LockSupport.park` |
+| Thread pool exhaustion | Thread count at ceiling + latency spike | **Wall** | Threads parked in pool work queue |
+| Classloader leak | `jvm_classes_currently_loaded` rising | **CPU** | `ClassLoader.loadClass` in steady-state |
+| File descriptor leak | `process_open_fds` rising | **Wall** (I/O correlation) | Not directly visible; correlate I/O frames with FD timing |
+| Lock contention | Low CPU + high latency + rising threads | **Mutex** | Wide `synchronized` method frames |
+
+---
+
 ## MTTR Reduction
 
 Continuous profiling eliminates the investigation gap between symptom detection and root cause identification.
@@ -482,6 +589,28 @@ Pyroscope is open source (AGPL-3.0) with no per-host or per-service licensing co
 - **Allocation empty:** Threshold may be too high. Lower `-Dpyroscope.profiler.alloc` (e.g., `256k`).
 - **Mutex empty:** No lock contention above threshold. Lower `-Dpyroscope.profiler.lock` (e.g., `1ms`) or confirm the service uses `synchronized` blocks.
 - **Wall empty:** Same as CPU — requires active threads.
+
+### Grafana dashboards show "No data" or display stale panels
+
+The Grafana Docker volume caches dashboard state. After modifying dashboard JSON files, the volume may serve old versions.
+
+1. Tear down and redeploy to clear the volume:
+   ```bash
+   bash scripts/run.sh teardown
+   bash scripts/run.sh
+   ```
+2. Verify dashboards loaded correctly:
+   ```bash
+   for uid in pyroscope-java-overview jvm-metrics-deep-dive http-performance verticle-performance before-after-comparison faas-server; do
+     title=$(curl -sf -u admin:admin "http://localhost:3000/api/dashboards/uid/$uid" | python3 -c "import json,sys; print(json.load(sys.stdin)['dashboard']['title'])" 2>/dev/null)
+     echo "  $uid: ${title:-MISSING}"
+   done
+   ```
+3. If specific panels show "No data" but others work:
+   - Check the time range picker (top right) covers the period when load was running
+   - Verify the template variable dropdowns have a value selected (not empty)
+   - For Prometheus panels: confirm the `job` label matches (`jvm` for JMX metrics, `vertx-apps` for HTTP metrics)
+   - For Pyroscope panels: confirm load has been running for at least 30 seconds
 
 ### High overhead observed
 

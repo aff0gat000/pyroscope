@@ -5,7 +5,9 @@ providers:
     orgId: 1
     folder: "Pyroscope"
     type: file
-    disableDeletion: false
+    disableDeletion: true
+    updateIntervalSeconds: 10
+    allowUiUpdates: true
     editable: true
     options:
       path: /var/lib/grafana/dashboards

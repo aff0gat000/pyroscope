@@ -208,6 +208,7 @@
   "schemaVersion": 39,
   "tags": ["http", "vertx", "latency", "performance"],
   "time": { "from": "now-1h", "to": "now" },
+  "refresh": "10s",
   "title": "HTTP Performance",
   "uid": "http-performance"
 }

@@ -22,9 +22,9 @@
           { "text": "cpu", "value": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "selected": true },
           { "text": "alloc (memory)", "value": "memory:alloc_in_new_tlab_objects:count:space:bytes", "selected": false },
           { "text": "mutex (lock)", "value": "mutex:contentions:count:mutex:count", "selected": false },
-          { "text": "wall", "value": "wall:wall:nanoseconds:cpu:nanoseconds", "selected": false }
+          { "text": "wall", "value": "wall:wall:nanoseconds:wall:nanoseconds", "selected": false }
         ],
-        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_objects:count:space:bytes,mutex:contentions:count:mutex:count,wall:wall:nanoseconds:cpu:nanoseconds"
+        "query": "process_cpu:cpu:nanoseconds:cpu:nanoseconds,memory:alloc_in_new_tlab_objects:count:space:bytes,mutex:contentions:count:mutex:count,wall:wall:nanoseconds:wall:nanoseconds"
       }
     ]
   },
