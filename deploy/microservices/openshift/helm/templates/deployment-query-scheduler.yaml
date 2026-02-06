@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pyroscope.fullname" . }}-query-scheduler
+  labels:
+    {{- include "pyroscope.componentLabels" (dict "ctx" . "component" "query-scheduler") | nindent 4 }}
+spec:
+  replicas: {{ .Values.queryScheduler.replicas }}
+  selector:
+    matchLabels:
+      {{- include "pyroscope.selectorLabels" (dict "ctx" . "component" "query-scheduler") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pyroscope.componentLabels" (dict "ctx" . "component" "query-scheduler") | nindent 8 }}
+    spec:
+      containers:
+        - name: query-scheduler
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -target=query-scheduler
+            - -config.file=/etc/pyroscope/config.yaml
+          ports:
+            - name: http
+              containerPort: 4040
+            - name: memberlist
+              containerPort: 7946
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pyroscope
+            - name: data
+              mountPath: /data/pyroscope
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "pyroscope.fullname" . }}-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "pyroscope.fullname" . }}-data

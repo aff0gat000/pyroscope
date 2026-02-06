@@ -705,13 +705,13 @@ done
 | Pyroscope | grafana/pyroscope:latest | 4040 | `config/pyroscope/pyroscope.yaml` |
 | Prometheus | prom/prometheus:v2.53.0 | 9090 | `config/prometheus/prometheus.yaml` |
 | Grafana | grafana/grafana:11.5.2 | 3000 | `config/grafana/provisioning/` |
-| API Gateway | built from `sample-app/` | 8080 | `JAVA_TOOL_OPTIONS` env var |
-| Order Service | built from `sample-app/` | 8081 | Batch processing + synchronized blocks |
-| Payment Service | built from `sample-app/` | 8082 | Payment processing simulation |
-| Fraud Service | built from `sample-app/` | 8083 | Fraud detection algorithms |
-| Account Service | built from `sample-app/` | 8084 | Account lookups and balance management |
-| Loan Service | built from `sample-app/` | 8085 | Loan calculation and amortization |
-| Notification Service | built from `sample-app/` | 8086 | Notification dispatch and templating |
+| API Gateway | built from `app/` | 8080 | `JAVA_TOOL_OPTIONS` env var |
+| Order Service | built from `app/` | 8081 | Batch processing + synchronized blocks |
+| Payment Service | built from `app/` | 8082 | Payment processing simulation |
+| Fraud Service | built from `app/` | 8083 | Fraud detection algorithms |
+| Account Service | built from `app/` | 8084 | Account lookups and balance management |
+| Loan Service | built from `app/` | 8085 | Loan calculation and amortization |
+| Notification Service | built from `app/` | 8086 | Notification dispatch and templating |
 
 Host-side ports are configured in `.env` and may differ from internal ports. The run script banner shows the actual URLs.
 

@@ -173,7 +173,7 @@ check_dashboard() {
 
       # Extract service_name value from selector like {service_name="bank-api-gateway"}
       local service_name
-      service_name=$(echo "$substituted" | grep -oP 'service_name="[^"]*"' | head -1 | sed 's/service_name="//;s/"$//')
+      service_name=$(echo "$substituted" | sed -n 's/.*service_name="\([^"]*\)".*/\1/p' | head -1)
 
       if [ -z "$service_name" ] || [ "$service_name" = '.*' ]; then
         echo "  [PASS] $panel_title — Pyroscope (wildcard/dynamic)"

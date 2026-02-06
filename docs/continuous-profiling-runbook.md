@@ -132,7 +132,7 @@ Add the Pyroscope agent to each Java service via `JAVA_TOOL_OPTIONS`. No code ch
 ```yaml
   order-service:
     build:
-      context: ./sample-app
+      context: ./app
       dockerfile: Dockerfile
     container_name: order-service
     ports:

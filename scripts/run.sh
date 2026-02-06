@@ -277,7 +277,7 @@ print_ready_banner() {
 restart_with_optimized() {
   echo "  Restarting all services with OPTIMIZED=true..."
   cd "$PROJECT_DIR"
-  docker compose -f docker-compose.yaml -f docker-compose.fixed.yaml up -d --no-deps --build \
+  docker compose -f docker-compose.yaml -f docker-compose.optimized.yaml up -d --no-deps --build \
     api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service faas-server
   wait_for_services
 }
@@ -337,7 +337,7 @@ stage_deploy() {
   echo "===== [$1] Deploying ====="
   echo ""
   if [ "$FIXED" -eq 1 ]; then
-    COMPOSE_EXTRA_FILES="docker-compose.fixed.yaml" bash "$SCRIPT_DIR/deploy.sh"
+    COMPOSE_EXTRA_FILES="docker-compose.optimized.yaml" bash "$SCRIPT_DIR/deploy.sh"
   else
     bash "$SCRIPT_DIR/deploy.sh"
   fi
@@ -475,7 +475,7 @@ case "$COMMAND" in
       echo ""
       if [ "$FIXED" -eq 1 ]; then
         run_stage "1/4" "Deploying (optimized)" "deploy" \
-          env COMPOSE_EXTRA_FILES=docker-compose.fixed.yaml bash "$SCRIPT_DIR/deploy.sh"
+          env COMPOSE_EXTRA_FILES=docker-compose.optimized.yaml bash "$SCRIPT_DIR/deploy.sh"
       else
         run_stage "1/4" "Deploying" "deploy" \
           bash "$SCRIPT_DIR/deploy.sh"

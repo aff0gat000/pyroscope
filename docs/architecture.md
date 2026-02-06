@@ -54,17 +54,17 @@ graph TB
 
 ### Single Image, Multiple Services
 
-All 9 services are built from the **same Docker image** (`sample-app/Dockerfile`). The `VERTICLE` environment variable selects which verticle class to run:
+All 9 services are built from the **same Docker image** (`app/Dockerfile`). The `VERTICLE` environment variable selects which verticle class to run:
 
 ```yaml
 # docker-compose.yaml excerpt
 api-gateway:
-  build: ./sample-app
+  build: ./app
   environment:
     VERTICLE: main
 
 payment-service:
-  build: ./sample-app
+  build: ./app
   environment:
     VERTICLE: payment
 ```
@@ -296,7 +296,7 @@ config/
 └── pyroscope/
     └── pyroscope.yaml        # Pyroscope server config
 
-sample-app/
+app/
 ├── Dockerfile                # Multi-stage: Gradle build → JRE runtime
 ├── build.gradle              # Vert.x + Micrometer + shadow plugin
 └── src/main/java/com/example/

@@ -1,0 +1,19 @@
+# Pyroscope shared configuration — microservices mode (NFS filesystem storage)
+# Docs: https://grafana.com/docs/pyroscope/latest/configure-server/
+
+server:
+  http_listen_port: 4040
+
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /mnt/pyroscope-data
+
+memberlist:
+  join_members:
+    - ingester-1:7946
+    - ingester-2:7946
+    - ingester-3:7946
+
+self_profiling:
+  disable_push: true

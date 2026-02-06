@@ -328,40 +328,7 @@ The default `bash scripts/run.sh` pipeline generates load in two phases — befo
 
 ```
 pyroscope/
-├── config/
-│   ├── grafana/
-│   │   ├── dashboards/              # 6 Grafana dashboards (JSON)
-│   │   │   ├── pyroscope-overview.json      # Main profiling dashboard
-│   │   │   ├── verticle-performance.json    # Per-service performance
-│   │   │   ├── jvm-metrics.json             # JVM runtime metrics
-│   │   │   ├── http-performance.json        # HTTP traffic analysis
-│   │   │   ├── before-after-comparison.json # Optimization comparison
-│   │   │   └── faas-server.json             # FaaS-specific dashboard
-│   │   └── provisioning/            # Datasources + dashboard provider
-│   ├── prometheus/
-│   │   ├── prometheus.yaml          # Scrape config for 9 services (jvm + vertx-apps jobs)
-│   │   └── alerts.yaml              # 6 alert rules
-│   └── pyroscope/pyroscope.yaml     # Pyroscope server config
-│
-├── docs/
-│   ├── demo-guide.md                # Overview and demo framing
-│   ├── demo-runbook.md              # Step-by-step presenter guide
-│   ├── profiling-scenarios.md       # Hands-on investigation scenarios
-│   ├── code-to-profiling-guide.md   # Source code → flame graph mapping
-│   ├── dashboard-guide.md           # Panel-by-panel dashboard reference
-│   ├── sample-queries.md            # Copy-paste Pyroscope/Prometheus queries
-│   ├── continuous-profiling-runbook.md  # Deployment and setup guide
-│   ├── runbook.md                   # Operational runbook
-│   ├── mttr-guide.md                # MTTR reduction workflow
-│   ├── architecture.md              # System architecture
-│   ├── faas-server.md               # FaaS runtime documentation
-│   ├── endpoint-reference.md        # Complete API reference
-│   ├── pipeline.md                  # Pipeline stages documentation
-│   └── ai-profiling-roadmap.md      # AI/ML integration roadmap
-│
-├── postman/                         # Postman collection + environment
-│
-├── sample-app/
+├── app/                             # Bank microservices application (Java/Vert.x)
 │   ├── build.gradle                 # Gradle build (shadow plugin)
 │   ├── Dockerfile                   # Multi-stage: Gradle → JRE
 │   └── src/main/java/com/example/
@@ -376,6 +343,25 @@ pyroscope/
 │       ├── FaasVerticle.java        # FaaS runtime, function lifecycle
 │       └── handlers/                # Additional workload handlers
 │
+├── config/
+│   ├── grafana/
+│   │   ├── dashboards/              # 6 Grafana dashboards (JSON)
+│   │   └── provisioning/            # Datasources + dashboard provider
+│   ├── prometheus/
+│   │   ├── prometheus.yaml          # Scrape config for 9 services
+│   │   └── alerts.yaml              # 6 alert rules
+│   └── pyroscope/pyroscope.yaml     # Pyroscope server config
+│
+├── deploy/                          # Production deployment configs
+│   ├── monolithic/                  # Single-node Pyroscope server
+│   └── microservices/               # Distributed Pyroscope deployment
+│       ├── vm/                      # Docker Compose + NFS (for VMs/EC2)
+│       └── openshift/               # Helm chart (for OpenShift 4.x)
+│
+├── docs/                            # 14 guides (demos, runbooks, architecture)
+│
+├── postman/                         # Postman collection + environment
+│
 ├── scripts/
 │   ├── run.sh                       # Main entry point — deploy, load, validate, teardown
 │   ├── deploy.sh                    # Build + start containers
@@ -387,9 +373,12 @@ pyroscope/
 │   ├── bottleneck.sh                # Automated root-cause analysis
 │   ├── jvm-health.sh                # JVM health thresholds
 │   ├── benchmark.sh                 # Profiling overhead measurement
-│   └── check-dashboards.sh          # Dashboard validation
+│   ├── check-dashboards.sh          # Dashboard validation
+│   └── lib/                         # Python analysis modules
 │
 ├── docker-compose.yaml              # 12 containers (3 infra + 9 services)
+├── docker-compose.optimized.yaml    # Overlay: enable OPTIMIZED=true
+├── docker-compose.no-pyroscope.yaml # Overlay: disable profiling agent
 └── README.md
 ```
 

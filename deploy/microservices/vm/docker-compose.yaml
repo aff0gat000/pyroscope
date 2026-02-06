@@ -1,0 +1,120 @@
+# Pyroscope microservices deployment (NFS filesystem storage)
+# Runs each Pyroscope component as a separate service for HA/scalability.
+# Requires PYROSCOPE_DATA_DIR (default: /mnt/pyroscope-data) to be an NFS mount
+# shared across all VMs.
+#
+# Usage:
+#   docker compose up -d
+#   docker compose down
+
+services:
+
+  # -- Write path --------------------------------------------------------------
+
+  distributor:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=distributor
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    ports:
+      - "4040:4040"    # Push endpoint for SDKs
+
+  ingester-1:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=ingester
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-2:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+
+  ingester-2:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=ingester
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+
+  ingester-3:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=ingester
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+
+  # -- Read path ---------------------------------------------------------------
+
+  query-frontend:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=query-frontend
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    ports:
+      - "4041:4040"    # Query endpoint (Grafana data source)
+
+  query-scheduler:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=query-scheduler
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+
+  querier-1:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=querier
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+
+  querier-2:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=querier
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+
+  # -- Background --------------------------------------------------------------
+
+  compactor:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=compactor
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+
+  store-gateway:
+    image: grafana/pyroscope:latest
+    command:
+      - -target=store-gateway
+      - -config.file=/etc/pyroscope/config.yaml
+      - -memberlist.join=ingester-1:7946
+    volumes:
+      - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
+      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
