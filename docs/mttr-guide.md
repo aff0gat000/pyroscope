@@ -130,9 +130,9 @@ bash scripts/top-functions.sh mutex $SERVICE    # what's contending?
 
 ---
 
-## Observability Outcomes
+## Usage Examples
 
-### Outcome 1: Identify the Exact Method Causing an Alert
+### Example 1: Find the method behind a CPU alert
 
 **Scenario:** `HighCpuUsage` alert fires for `bank-api-gateway`.
 
@@ -143,7 +143,7 @@ bash scripts/bottleneck.sh --service bank-api-gateway
 
 Metrics indicate high CPU. Profiling identifies `fibonacci()` as recursive O(2^n), indicating it should be iterative.
 
-### Outcome 2: Distinguish Real Bottlenecks from Noise
+### Example 2: Distinguish real bottlenecks from noise
 
 **Scenario:** Latency increased across all services after a deploy.
 
@@ -153,7 +153,7 @@ bash scripts/run.sh bottleneck
 
 If all services report **HEALTHY** with slightly elevated latency, the cause is likely infrastructure (network, DNS, load balancer) rather than application code. If one service reports **CPU-BOUND** or **LOCK-BOUND**, investigation targets that service.
 
-### Outcome 3: Prove a Fix Worked
+### Example 3: Prove a fix worked
 
 **Scenario:** You optimized `processOrders()` to remove the `synchronized` block.
 
@@ -166,9 +166,9 @@ The Before vs After dashboard shows:
 - **After:** mutex flame graph is flat — contention eliminated
 - **HTTP latency panel:** p99 dropped from 800ms to 120ms
 
-This data serves as evidence for PR review and incident postmortem.
+Attach this to the PR review and incident postmortem.
 
-### Outcome 4: Capacity Planning from Profile Data
+### Example 4: Capacity planning from profile data
 
 ```bash
 bash scripts/diagnose.sh --json | python3 -c "
@@ -184,9 +184,9 @@ for s in data.get('profiles', []):
 
 Services where application code dominates CPU (vs JVM internals) are candidates for code optimization. Services where JVM internals dominate may need more resources or JVM tuning.
 
-### Outcome 5: Onboarding New Team Members
+### Example 5: Onboarding new team members
 
-New engineers can understand service behavior without reading all the code:
+New engineers can learn service behavior without reading all the code:
 
 ```bash
 bash scripts/run.sh top cpu            # "what does each service spend CPU on?"
@@ -194,7 +194,7 @@ bash scripts/run.sh top memory         # "what allocates the most?"
 bash scripts/run.sh top mutex          # "where are the locks?"
 ```
 
-Flame graphs provide an accurate, current map of runtime behavior.
+Flame graphs show what the service actually does at runtime.
 
 ---
 
@@ -221,7 +221,7 @@ Before deploying profiling to production, verify:
 | **Verification** | Redeploy + wait + hope | Before/after flame graph diff | Before vs After dashboard |
 | **Total MTTR** | 30-90 min | 5-15 min | — |
 
-Profiling data is **already captured** when the incident occurs. Reproduction is unnecessary — the flame graph for the incident time window is available immediately.
+The profiling data exists from before the incident. No reproduction step — the flame graph for that time window is already there.
 
 ---
 
@@ -230,7 +230,7 @@ Profiling data is **already captured** when the incident occurs. Reproduction is
 | Command | What it does | When to use |
 |---------|-------------|-------------|
 | `bash scripts/run.sh bottleneck` | Automated root-cause per service | First response to any alert |
-| `bash scripts/run.sh diagnose` | Full diagnostic (health + HTTP + profiles + alerts) | Comprehensive incident report |
+| `bash scripts/run.sh diagnose` | Full diagnostic (health + HTTP + profiles + alerts) | Full incident report |
 | `bash scripts/run.sh top cpu` | Top CPU functions across all services | Identify CPU hotspots |
 | `bash scripts/run.sh top memory` | Top allocators | Investigate GC pressure |
 | `bash scripts/run.sh top mutex` | Top contended locks | Investigate lock contention |

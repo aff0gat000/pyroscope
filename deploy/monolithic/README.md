@@ -14,8 +14,8 @@ graph LR
         end
     end
 
-    SDK1[Java SDK] -->|push profiles<br/>:4040/ingest| P
-    SDK2[Go SDK] -->|push profiles<br/>:4040/ingest| P
+    JVM1[JVM Service 1] -->|push profiles<br/>:4040/ingest| P
+    JVM2[JVM Service 2] -->|push profiles<br/>:4040/ingest| P
     G[Grafana] -->|query<br/>:4040| P
 ```
 

@@ -1,8 +1,6 @@
 # Profiling Scenarios
 
-Use Pyroscope in Grafana to identify performance issues across CPU, memory, and lock contention.
-
-Each scenario follows the same pattern: observe a symptom in metrics panels, then switch to a Pyroscope flame graph to find the root cause.
+Hands-on scenarios for identifying performance issues using Pyroscope flame graphs in Grafana. Each scenario: observe a symptom in metrics, then switch to a flame graph to find the cause.
 
 ## Prerequisites
 
@@ -42,7 +40,7 @@ The `fibonacci()` frame dominates CPU time. The recursion is visible as nested c
 
 **Root cause:** Recursive Fibonacci implementation. Each call spawns two additional calls.
 
-**Verification:** Deploy with `OPTIMIZED=true` (uses an iterative version), then compare the flame graph. The `fibonacci` frame shrinks dramatically. Use the **Before vs After Fix** dashboard to view both side by side.
+**Verification:** Deploy with `OPTIMIZED=true` (uses an iterative version), then compare the flame graph. The `fibonacci` frame shrinks to near-zero. Use the **Before vs After Fix** dashboard to view both side by side.
 
 ## Scenario 2: Hidden per-request overhead from a crypto provider lookup
 
@@ -68,7 +66,7 @@ PaymentVerticle.handleTransfer()
 
 **Root cause:** Per-request provider lookup combined with autoboxing in a tight loop. Neither issue is obvious from code review alone.
 
-Flame graphs expose overhead hidden inside JDK library calls. The application code did not implement `MessageDigest.getInstance()`, but it pays for the cost on every request.
+Flame graphs expose overhead hidden inside JDK library calls. Your code didn't write `MessageDigest.getInstance()`, but it pays the cost on every request.
 
 ## Scenario 3: Memory allocation pressure from String.format
 
@@ -164,7 +162,7 @@ The **Before vs After Fix** dashboard is already provisioned in Grafana. No addi
 5. Note the start and end time (Phase 2: optimized).
 6. To switch back to unoptimized: `bash scripts/run.sh unoptimize`.
 
-The `optimize` and `unoptimize` commands restart the Java services with or without the `OPTIMIZED=true` flag. This allows repeated toggling between modes on a running stack without a full redeploy.
+The `optimize` and `unoptimize` commands restart the Java services with or without the `OPTIMIZED=true` flag — you can toggle between modes on a running stack without a full redeploy.
 
 **View results in Grafana:**
 
@@ -193,7 +191,7 @@ The CPU and Heap metrics panels below show the aggregate impact across all seven
 | Fraud Service | Percentile sort replaced with primitive `double[]` + `Arrays.sort` | `Double.compareTo` boxing eliminated |
 | Notification Service | `renderTemplate()` replaced with StringBuilder + `indexOf` | `Formatter.format` frames disappear |
 
-Before-and-after flame graph screenshots provide evidence for pull request reviews, incident postmortems, and stakeholder communication. The data shows that a specific function went from 18% CPU to 0%.
+Before/after flame graph screenshots work as evidence for PR reviews, postmortems, and stakeholder updates — showing that a specific function went from 18% CPU to 0%.
 
 ## Scenario 6: Cross-referencing profile types
 
@@ -221,7 +219,7 @@ Before-and-after flame graph screenshots provide evidence for pull request revie
 | Hot | Hot | Flat | Computation creating temporary objects. Optimize both. |
 | Flat | Flat | Flat | Off-CPU bottleneck. Check for network I/O, external service calls, or `Thread.sleep`. |
 
-This is the core profiling workflow: triangulate across profile types to classify the bottleneck before attempting a fix.
+This is the core workflow: check all profile types to classify the bottleneck before attempting a fix.
 
 ## Reference: Reading flame graphs
 

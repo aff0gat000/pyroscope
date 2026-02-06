@@ -300,7 +300,7 @@ bash scripts/run.sh unoptimize
 bash scripts/run.sh load 60
 ```
 
-This allows repeated A/B comparison. Use the **Before vs After Fix** dashboard in Grafana to compare flame graphs from each phase.
+You can toggle back and forth for A/B comparison. Use the **Before vs After Fix** dashboard in Grafana to compare flame graphs from each phase.
 
 ## Recommended investigation sequences
 

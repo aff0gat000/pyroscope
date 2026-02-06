@@ -590,7 +590,7 @@ jq '.profiles[] | select(.service == "bank-payment-service") | .cpu_top5' after.
 
 ## Measuring Profiling Overhead
 
-Run the benchmark to verify the Pyroscope agent does not materially impact service performance. The script tests every service endpoint twice — with and without the agent — and compares latency and throughput.
+Verify the Pyroscope agent doesn't noticeably affect service performance. Tests every endpoint twice — with and without the agent — and compares latency and throughput.
 
 ### Running the benchmark
 
@@ -626,7 +626,7 @@ After the run, CSV files are saved to `benchmark-results/` with timestamp prefix
 
 ### Expected overhead
 
-The Pyroscope JFR agent is designed for production use. Expected ranges with the current configuration:
+The Pyroscope JFR agent is production-safe. Expected ranges with the current configuration:
 
 | Profile Type | Agent Flag | Overhead |
 |---|---|---|

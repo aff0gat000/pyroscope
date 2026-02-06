@@ -1,6 +1,6 @@
 # Code-to-Profiling Correlation Guide
 
-How Java source code maps to Pyroscope flame graphs, and how to use profiling data to find and fix performance issues in production.
+Maps Java source code to Pyroscope flame graph frames. Use this to correlate code with profiling data when debugging performance issues.
 
 ## How Pyroscope Works With This Codebase
 
@@ -235,7 +235,7 @@ The `deployVerticle` and `undeploy` frames disappear when using warm pools (`OPT
 
 ## Reducing MTTR With Profiling Data
 
-Continuous profiling reduces MTTR (Mean Time to Resolve) by eliminating the investigation gap between symptom detection and root cause identification.
+Continuous profiling reduces MTTR by cutting out the investigation gap between detecting a symptom and finding the root cause.
 
 ### Detection → Diagnosis
 

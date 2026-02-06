@@ -6,7 +6,7 @@ Deploys Pyroscope in microservices mode on OpenShift 4.x using a Helm chart. Sto
 
 ```mermaid
 graph TB
-    SDK[Application SDKs] -->|push profiles<br/>Route / :4040| DIST
+    SDK[JVM Services] -->|push profiles<br/>Route / :4040| DIST
     G[Grafana] -->|query<br/>Route / :4040| QF
 
     subgraph OpenShift Project

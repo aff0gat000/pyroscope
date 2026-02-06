@@ -62,13 +62,13 @@ No application code changes. No bytecode modification. No recompilation. The age
 | Verification | Redeploy, wait, check metrics | Compare before/after flame graphs side by side |
 | **Total MTTR** | **30-90 min** | **5-15 min** |
 
-Profiling data is already captured when the incident occurs. Reproduction is unnecessary.
+The profiling data exists from before the incident. No reproduction needed.
 
 ---
 
 ## What This Repository Demonstrates
 
-A self-contained demo environment that deploys a microservices architecture with continuous profiling enabled from the start. Runs locally with Docker Compose.
+Self-contained demo environment: microservices with continuous profiling enabled from the start. Runs locally with Docker Compose.
 
 ### Architecture
 
@@ -153,10 +153,10 @@ A request spans multiple services. Distributed tracing identifies the slow servi
 Metrics, logs, and traces answer **what** is happening and **where** in the request path. Profiling answers **why**: which function, which line, which resource consumption pattern. The difference between "payment-service is slow" and "`PaymentVerticle.sha256()` calls `MessageDigest.getInstance()` on every request, spending 40% of CPU on object creation."
 
 In practice:
-- Data exists before the incident. No reproduction needed.
-- 3-8% overhead makes it safe for production, not just staging.
-- Function-level granularity eliminates the guess-and-iterate cycle.
-- Before/after comparison replaces "it seems better" with "the frame is 80% narrower."
+- Data exists before the incident — no reproduction step.
+- 3-8% overhead is fine for production, not just staging.
+- Function-level granularity kills the guess-and-iterate cycle.
+- Before/after flame graph comparison replaces "it seems better" with "the frame is 80% narrower."
 
 ---
 
@@ -192,7 +192,7 @@ Overhead is bounded: a service handling 100 req/s and one handling 10,000 req/s 
 | On-demand profiling (attach debugger) | 0% when off, 20-50% when on | Full detail, but only during reproduction | Free, but requires incident reproduction |
 | **Continuous profiling (Pyroscope)** | **3-8%** | **Function-level CPU/memory/lock data, always-on** | **Free (open source, AGPL-3.0)** |
 
-Pyroscope is open source with no per-host licensing. Grafana Cloud offers a managed Pyroscope service for teams that prefer not to self-host.
+Pyroscope is open source — no per-host licensing. Grafana Cloud has a managed Pyroscope service if you don't want to self-host.
 
 ### When to implement
 

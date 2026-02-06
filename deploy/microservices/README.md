@@ -6,7 +6,7 @@ Runs Pyroscope as separate, independently scalable components for high-availabil
 
 ```mermaid
 graph TB
-    SDK[Application SDKs] -->|push profiles| DIST[Distributor]
+    SDK[JVM Services] -->|push profiles| DIST[Distributor]
     G[Grafana] -->|query| QF[Query Frontend]
 
     subgraph Write Path

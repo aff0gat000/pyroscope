@@ -1,6 +1,6 @@
 # Continuous Profiling with Pyroscope — Implementation Runbook
 
-A step-by-step guide to implementing Pyroscope for continuous profiling of Java services, using the Java agent (zero code changes). Covers deployment, configuration, UI usage, production use cases, MTTR reduction, and operational cost.
+Step-by-step guide for deploying Pyroscope continuous profiling on Java services using the Java agent (no code changes). Covers deployment, configuration, UI usage, production use cases, MTTR reduction, and overhead.
 
 ---
 
@@ -485,7 +485,7 @@ Continuous profiling eliminates the investigation gap between symptom detection 
 | **Verification** | Redeploy, wait, check metrics | Compare before/after flame graphs |
 | **Total** | 30-90 min | 5-15 min |
 
-Profiling data is already captured when the incident occurs. No reproduction, no debugger, no logging changes — the flame graph for the incident time window is available immediately.
+The profiling data already exists when the incident fires. No reproduction, no debugger, no logging changes — the flame graph for that time window is there.
 
 ### Triage workflow
 
@@ -569,7 +569,7 @@ The overhead should be stable over time. If CPU usage per request increases over
 | Continuous profiling (Pyroscope) | Function-level CPU/memory/lock data | 3-8% | Exact method and line consuming the resource |
 | Profiling + Metrics (this project) | Both | 3-8% (profiling) + <1% (metrics) | Full picture: resource rates + code-level root cause |
 
-Pyroscope is open source (AGPL-3.0) with no per-host or per-service licensing cost. Grafana Cloud offers a managed Pyroscope service with usage-based pricing for teams that prefer not to self-host.
+Pyroscope is open source (AGPL-3.0), no per-host or per-service licensing. Grafana Cloud has a managed Pyroscope service with usage-based pricing for teams that don't want to self-host.
 
 ---
 

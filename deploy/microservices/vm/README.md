@@ -6,8 +6,8 @@ Runs Pyroscope as separate, independently scalable components on VMs using NFS-b
 
 ```mermaid
 graph TB
-    SDK1[Java SDK] -->|push profiles<br/>:4040| DIST
-    SDK2[Go SDK] -->|push profiles<br/>:4040| DIST
+    JVM1[JVM Service 1] -->|push profiles<br/>:4040| DIST
+    JVM2[JVM Service 2] -->|push profiles<br/>:4040| DIST
     G[Grafana] -->|query<br/>:4041| QF
 
     subgraph VM 1
@@ -52,7 +52,7 @@ graph TB
 
 ```mermaid
 sequenceDiagram
-    participant SDK as Application SDK
+    participant SDK as JVM Service
     participant D as Distributor
     participant I as Ingester (x3)
     participant NFS as NFS Share

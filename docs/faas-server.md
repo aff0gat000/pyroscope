@@ -1,6 +1,6 @@
 # FaaS Server
 
-A lightweight Function-as-a-Service runtime built as a Vert.x verticle. The FaaS server dynamically deploys and undeploys short-lived verticle "functions" on demand via HTTP, producing a profiling signature distinct from long-running services: classloader activity, deployment lifecycle overhead, short-burst compute, and concurrent deploy/undeploy contention.
+Lightweight FaaS runtime built as a Vert.x verticle. Deploys and undeploys short-lived verticle "functions" on demand via HTTP. Produces a different profiling signature than long-running services: classloader activity, deployment lifecycle overhead, short-burst compute, and concurrent deploy/undeploy contention.
 
 ## Quick Start
 
@@ -220,7 +220,7 @@ The overhead percentage stays within the same 3-8% range because the sampling ra
 
 ### Production feasibility
 
-**Sampling-based continuous profiling is standard practice in production.** Grafana, Datadog, Netflix (with their JVM profiler), and Google (Cloud Profiler) all recommend always-on profiling in production at similar sampling rates.
+Sampling-based continuous profiling is standard practice in production. Grafana, Datadog, Netflix, and Google (Cloud Profiler) all run always-on profiling at similar sampling rates.
 
 Why it is safe:
 

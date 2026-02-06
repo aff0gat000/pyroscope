@@ -1,6 +1,6 @@
 # AI-Assisted Continuous Profiling Roadmap
 
-AI/ML applied to continuous profiling data enables automated anomaly detection, root cause analysis, and optimization recommendations. This document outlines integration phases from foundational data pipelines to autonomous remediation.
+Phases for applying ML to continuous profiling data: anomaly detection, automated root cause analysis, optimization recommendations, and CI/CD regression gates.
 
 ---
 

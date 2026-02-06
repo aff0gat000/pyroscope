@@ -1,14 +1,5 @@
 # Continuous Profiling with Grafana Pyroscope — Engineering Primer
 
-| Field | Value |
-|-------|-------|
-| **Status** | Approved |
-| **Author** | Platform Engineering |
-| **Last Updated** | 2026-02-06 |
-| **Audience** | Backend engineers, SREs, incident responders, engineering managers |
-
----
-
 ## Table of Contents
 
 1. [What Problem Does This Solve](#what-problem-does-this-solve)
@@ -40,7 +31,7 @@ When a production service is slow, the standard investigation looks like this:
 
 The gap is between steps 3 and 4. Metrics tell you **what** resource is saturated. Traces tell you **where** in the call chain the time is spent between services. But neither tells you **which function inside the service** is responsible.
 
-Continuous profiling fills this gap. It records which functions are consuming CPU, allocating memory, and contending on locks — at all times, with negligible overhead — so when an incident occurs, the answer is already there.
+Continuous profiling fills this gap. It records which functions consume CPU, allocate memory, and contend on locks — always on, low overhead — so when an incident occurs, the data is already there.
 
 ---
 
@@ -66,14 +57,14 @@ graph LR
     style E fill:#22c55e,color:#fff
 ```
 
-The key differences from traditional profiling:
+Differences from traditional profiling:
 
 | Aspect | Traditional | Continuous |
 |--------|------------|------------|
 | When it runs | Manually attached during debugging | Always on, in production |
 | Where it runs | Staging, developer laptop | Production |
 | Data availability | Only while attached | Historical — query any past time window |
-| Overhead | 5-20% (too high for production) | < 1% (designed for production) |
+| Overhead | 5-20% (too high for production) | < 1% (production-safe) |
 | Comparison | Single snapshot | Compare any two time ranges (before/after deploy) |
 
 The output is a **flame graph** — a visualization where the x-axis is proportional to time spent and the y-axis shows the call stack. Wide bars mean that function (and everything it calls) is consuming significant resources.
@@ -97,7 +88,7 @@ Example flame graph (text representation):
 
 ## How It Differs from Metrics, Logs, and Traces
 
-Modern observability is built on "three pillars." Continuous profiling is the emerging fourth:
+Standard observability covers metrics, logs, and traces. Profiling adds a fourth signal:
 
 ```mermaid
 graph TB
@@ -130,13 +121,13 @@ graph TB
 | **Traces** | Where is time spent across services? | Per-request call chain | "200ms in payment-service, 50ms in fraud-service" |
 | **Profiles** | Why is this specific code slow? | Per-function CPU/memory/lock usage | "PaymentVerticle.computeHash() takes 73% of CPU due to SHA-256 in a loop" |
 
-Without profiling, you know the payment service is slow (metrics) and you know the request spent 200ms there (traces), but you don't know whether it's the hash computation, the database query, or the serialization. With profiling, you open the flame graph and see exactly which function.
+Without profiling, you know the payment service is slow (metrics) and the request spent 200ms there (traces), but not whether it's the hash computation, the database query, or the serialization. With profiling, you open the flame graph and see which function.
 
 ---
 
 ## What is Grafana Pyroscope
 
-Grafana Pyroscope is an **open-source continuous profiling database**. It stores profiling data from your applications, lets you query it over any time range, and integrates with Grafana for visualization alongside your metrics and traces.
+Grafana Pyroscope is an open-source continuous profiling database. It stores profiling data, lets you query any time range, and integrates with Grafana for visualization alongside metrics and traces.
 
 ```mermaid
 graph TB
@@ -162,16 +153,16 @@ graph TB
     ENG[Engineer] -->|"open dashboard<br/>during incident"| GF
 ```
 
-Pyroscope was acquired by Grafana Labs in 2023 and is now part of the Grafana observability stack (alongside Prometheus/Mimir for metrics, Loki for logs, and Tempo for traces). This matters because it means native Grafana integration — flame graphs appear in the same dashboards as your metrics panels.
+Grafana Labs acquired Pyroscope in 2023. It's part of the same stack as Prometheus/Mimir, Loki, and Tempo, so flame graphs render natively in Grafana dashboards alongside metrics panels.
 
-### Key capabilities
+### Capabilities
 
-- **Multi-language support**: Java, Go, Python, .NET, Ruby, Node.js, Rust, eBPF (Linux kernel)
-- **Multiple profile types**: CPU time, memory allocations, lock contention, wall clock time, goroutines (Go), exceptions
-- **Diff view**: Compare two time ranges side by side to see what changed after a deploy or config change
-- **Label-based querying**: Filter by service, environment, version, or any custom label
-- **Grafana-native**: Flame graph panel type, Pyroscope data source plugin, correlate with metrics/traces in the same dashboard
-- **Low overhead**: < 1% CPU overhead in production (async-profiler based for Java)
+- Multi-language: Java, Go, Python, .NET, Ruby, Node.js, Rust, eBPF
+- Profile types: CPU, allocation, lock contention, wall clock, goroutines (Go)
+- Diff view: compare two time ranges to see what changed after a deploy
+- Label-based querying: filter by service, environment, version, custom labels
+- Grafana-native: flame graph panel type, Pyroscope datasource plugin
+- Low overhead: < 1% CPU (async-profiler for Java)
 
 ---
 
@@ -204,10 +195,10 @@ sequenceDiagram
 ```
 
 The Pyroscope Java agent wraps async-profiler and handles:
-- Attaching to the JVM at startup (via `JAVA_TOOL_OPTIONS` — no code changes)
+- Attaching at startup via `JAVA_TOOL_OPTIONS` (no code changes)
 - Collecting samples on a schedule
-- Labeling the data (service name, environment, custom tags)
-- Sending data to the Pyroscope server
+- Labeling data (service name, environment, custom tags)
+- Shipping data to the Pyroscope server
 
 ### Profile types for Java
 
@@ -234,7 +225,7 @@ environment:
     -Dpyroscope.profiler.lock=10ms
 ```
 
-This means you can enable profiling in production without a code change or new build — just set the environment variable and restart.
+No code change or rebuild needed — set the environment variable and restart.
 
 ### JVM version compatibility
 
@@ -272,7 +263,7 @@ This means you can enable profiling in production without a code change or new b
 **Choose Pyroscope when:**
 - You need on-premises deployment (air-gapped, regulated, private cloud)
 - You already use the Grafana stack (Prometheus, Loki, Tempo)
-- You want a single pane of glass — flame graphs next to metrics and traces in the same dashboard
+- You want flame graphs next to metrics and traces in the same Grafana dashboard
 - Budget is constrained — it's free and open source
 - You need to keep profiling data on your own infrastructure (data sovereignty)
 
@@ -314,7 +305,7 @@ This is the most common comparison for enterprise Java shops:
 | **Vendor lock-in** | None — open source, standard data formats | High — proprietary agent, API, and data format |
 | **PCI/SOX compliance** | You own the audit trail | Dynatrace provides compliance certifications for their cloud |
 
-The typical enterprise pattern: organizations with existing Dynatrace contracts use Dynatrace. Organizations building a new observability stack, operating on-prem, or optimizing cost choose Pyroscope + Grafana.
+In practice: shops with existing Dynatrace contracts keep using Dynatrace. Teams building a new stack, running on-prem, or watching costs go with Pyroscope + Grafana.
 
 ---
 
@@ -367,7 +358,7 @@ graph TB
 | Operational complexity | Minimal — one process | Higher — 9 services, shared storage |
 | Suitable for | Dev, staging, small-to-medium production | Large-scale production |
 
-For our current fleet size, monolithic mode is sufficient and dramatically simpler to operate. If we scale beyond its limits, the microservices deployment (documented separately in the repo) distributes the same components across multiple processes.
+For our current fleet size, monolithic mode works and is simpler to run. If we outgrow it, the microservices deployment (documented in the repo) splits the same components across multiple processes.
 
 ### Storage sizing
 
@@ -407,7 +398,7 @@ graph TD
     style H fill:#ef4444,color:#fff
 ```
 
-Each cycle of "add logging → redeploy → wait → read" takes 30 minutes to several hours. Many incidents require 2-4 cycles before the root cause is identified. The "wait for recurrence" step is especially costly for intermittent issues.
+Each "add logging → redeploy → wait → read" cycle takes 30 minutes to hours. Most incidents need 2-4 cycles. The "wait for recurrence" step is the worst for intermittent issues.
 
 ### The profiling-informed workflow
 
@@ -423,7 +414,7 @@ graph TD
     style D fill:#22c55e,color:#fff
 ```
 
-There is no "add logging" step. The profiling data is already there because the agent was running the whole time. You query the time range of the incident and the flame graph shows you the answer.
+No "add logging" step. The agent was running the whole time. Query the incident's time range and the flame graph shows you the answer.
 
 ### MTTR impact by incident type
 
@@ -449,38 +440,38 @@ There is no "add logging" step. The profiling data is already there because the 
 - Flame graph shows `processPayroll()` → `computeHash()` → `MessageDigest.getInstance()` consuming 73% of CPU
 - Fix: cache the MessageDigest instance
 
-Same root cause, same fix. The difference is 3 days vs 15 minutes.
+Same root cause, same fix. 3 days vs 15 minutes.
 
 ---
 
 ## Business Value
 
-### Direct engineering cost savings
+### Engineering time savings
 
-| Metric | Before | After | Impact |
-|--------|--------|-------|--------|
-| Average MTTR for performance incidents | 3-6 hours | 15-45 minutes | 4-8x faster resolution |
-| Debug cycles per incident (add logging → redeploy → wait) | 2-4 cycles | 0 cycles | Eliminates the most time-consuming investigation pattern |
-| Incidents requiring staging reproduction | ~40% | < 5% | Profile data makes staging reproduction unnecessary |
-| Engineering hours spent on performance debugging per quarter | ~200 hours (estimated) | ~40 hours | ~160 hours returned to feature development |
+| Metric | Before | After |
+|--------|--------|-------|
+| MTTR for performance incidents | 3-6 hours | 15-45 minutes |
+| Debug cycles per incident (add logging → redeploy → wait) | 2-4 cycles | 0 |
+| Incidents requiring staging reproduction | ~40% | < 5% |
+| Engineering hours on performance debugging per quarter | ~200 hours (est.) | ~40 hours |
 
 ### Infrastructure cost optimization
 
-Continuous profiling shows you exactly where CPU cycles are spent. This lets you make targeted optimizations rather than scaling horizontally:
+Profiling shows where CPU cycles go, so you can optimize code instead of adding pods:
 
-- "Payment service needs 8 pods" → profile reveals 60% of CPU is in an unoptimized hash function → fix the function → now 3 pods are sufficient → save 5 pods of compute
-- "We need bigger instances for the loan service" → profile reveals Monte Carlo simulation allocates excessive temporary objects, causing GC pressure → reduce allocations → same instance size is fine
+- "Payment service needs 8 pods" → profile shows 60% of CPU in an unoptimized hash function → fix it → 3 pods is enough
+- "We need bigger instances for the loan service" → profile shows Monte Carlo sim allocates too many temp objects → reduce allocations → same instance size works
 
 ### Risk reduction
 
-- **Faster incident resolution** = shorter customer-facing impact
-- **Retroactive data** = no more "we need to wait for it to happen again"
-- **Before/after deploy comparison** = catch regressions before they cause incidents
-- **No code changes required** = can be rolled out to any Java service immediately
+- Faster resolution = shorter customer-facing impact
+- Retroactive data = no "we need to wait for it to happen again"
+- Before/after deploy comparison = catch regressions before they hit production
+- No code changes = can roll out to any Java service immediately
 
 ---
 
-## Security and Compliance Considerations
+## Security and Compliance
 
 | Concern | Assessment |
 |---------|------------|
