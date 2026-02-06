@@ -364,9 +364,75 @@ Start with monolithic mode to evaluate Pyroscope and validate the integration. W
 
 ### Integration steps
 
-1. **Deploy Pyroscope server on a VM** — use the scripts in [deploy/monolithic/](https://github.com/aff0gat000/pyroscope/tree/main/deploy/monolithic) for dev/POC
+1. **Deploy Pyroscope server on a VM** — use the scripts in [deploy/monolithic/](https://github.com/aff0gat000/pyroscope/tree/main/deploy/monolithic) for dev/POC. Minimal server configuration:
+
+   ```yaml
+   # pyroscope-config.yaml
+   target: all                 # monolithic mode — runs all components in one process
+   server:
+     http_listen_port: 4040
+
+   storage:
+     backend: filesystem
+     filesystem:
+       data_path: /data/pyroscope
+
+   limits:
+     max_query_lookback: 30d   # how far back queries can reach
+     ingestion_rate_mb: 100    # per-tenant ingestion limit
+
+   # Optional: enable self-monitoring metrics
+   self_profiling:
+     disable_push: false
+   ```
+
+   Start the server:
+   ```bash
+   pyroscope -config.file=pyroscope-config.yaml
+   ```
+
 2. **Upload the Pyroscope Java agent JAR to Artifactory** — download from [Grafana Pyroscope releases](https://github.com/grafana/pyroscope-java/releases) and publish to your internal artifact repository so builds can pull it without external access
-3. **Update the Docker image** — add a `COPY` or dependency-fetch step in the Dockerfile to include the agent JAR at a known path (e.g., `/opt/pyroscope/pyroscope.jar`). Alternatively, mount the JAR into the container via a Docker volume at runtime.
+
+3. **Update the Docker image** — add the agent JAR to your application image:
+
+   ```dockerfile
+   # Option A: COPY into the image at build time
+   FROM eclipse-temurin:17-jre
+   COPY pyroscope.jar /opt/pyroscope/pyroscope.jar
+   COPY app.jar /app/app.jar
+
+   ENV JAVA_TOOL_OPTIONS="-javaagent:/opt/pyroscope/pyroscope.jar \
+     -Dpyroscope.application.name=my-service \
+     -Dpyroscope.server.address=http://pyroscope:4040 \
+     -Dpyroscope.format=jfr \
+     -Dpyroscope.profiler.event=itimer \
+     -Dpyroscope.profiler.alloc=512k \
+     -Dpyroscope.profiler.lock=10ms"
+
+   ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+   ```
+
+   ```yaml
+   # Option B: Mount at runtime via docker-compose
+   services:
+     my-service:
+       image: my-service:latest
+       volumes:
+         - ./pyroscope.jar:/opt/pyroscope/pyroscope.jar:ro
+       environment:
+         JAVA_TOOL_OPTIONS: >-
+           -javaagent:/opt/pyroscope/pyroscope.jar
+           -Dpyroscope.application.name=my-service
+           -Dpyroscope.server.address=http://pyroscope:4040
+           -Dpyroscope.format=jfr
+           -Dpyroscope.profiler.event=itimer
+           -Dpyroscope.profiler.alloc=512k
+           -Dpyroscope.profiler.lock=10ms
+       # Required for async-profiler to access perf events
+       cap_add:
+         - SYS_PTRACE
+   ```
+
 4. **Add the agent to your application startup command** — set `-javaagent:/opt/pyroscope/pyroscope.jar` and the required system properties in `JAVA_TOOL_OPTIONS` or your entrypoint:
    ```
    -javaagent:/opt/pyroscope/pyroscope.jar
@@ -377,7 +443,30 @@ Start with monolithic mode to evaluate Pyroscope and validate the integration. W
    -Dpyroscope.profiler.alloc=512k
    -Dpyroscope.profiler.lock=10ms
    ```
-5. **Add Pyroscope as a data source in Grafana** — point Grafana at `http://<pyroscope-host>:4040` and use the built-in flame graph panel
+
+5. **Add Pyroscope as a data source in Grafana** — point Grafana at `http://<pyroscope-host>:4040` and use the built-in flame graph panel.
+
+   Provisioning via YAML (add to `grafana/provisioning/datasources/`):
+   ```yaml
+   # pyroscope-datasource.yaml
+   apiVersion: 1
+   datasources:
+     - name: Pyroscope
+       type: grafana-pyroscope-datasource
+       access: proxy
+       url: http://<pyroscope-host>:4040
+       isDefault: false
+       editable: true
+   ```
+
+   Or configure manually in the Grafana UI: **Configuration > Data Sources > Add data source > Pyroscope** and set the URL to `http://<pyroscope-host>:4040`.
+
+   To add a flame graph panel to a dashboard, create a new panel, select the **Pyroscope** data source, and choose the **Flame Graph** visualization. Filter by service name and profile type:
+
+   ```
+   Query: process_cpu{service_name="my-service"}
+   Profile type: process_cpu
+   ```
 
 ### Storage sizing
 
@@ -391,6 +480,31 @@ Pyroscope's storage needs depend on the number of services profiled, the number 
 | Daily storage | ~7 GB |
 | 30-day retention | ~210 GB |
 | Recommended disk | 500 GB (with headroom for compaction) |
+
+### Monitoring Pyroscope with Prometheus
+
+Pyroscope exposes a `/metrics` endpoint for monitoring the server itself. Add a scrape target to your existing Prometheus configuration:
+
+```yaml
+# prometheus.yml — add to scrape_configs
+scrape_configs:
+  # ... existing scrape configs ...
+
+  - job_name: pyroscope
+    static_configs:
+      - targets: ['<pyroscope-host>:4040']
+    metrics_path: /metrics
+    scrape_interval: 15s
+```
+
+Key metrics to monitor:
+
+| Metric | What it tells you |
+|---|---|
+| `pyroscope_ingestion_received_bytes_total` | Ingestion throughput — is data flowing? |
+| `pyroscope_storage_disk_bytes` | Disk usage — approaching capacity? |
+| `pyroscope_query_duration_seconds` | Query latency — are flame graph loads slow? |
+| `pyroscope_ingester_ingested_sample_count` | Sample count — are all services reporting? |
 
 ---
 
@@ -512,7 +626,30 @@ Profiling shows where CPU cycles go, so you can optimize code instead of adding 
 
 - Pyroscope server in monolithic mode is a single point of failure. If it goes down, profile data is not collected until it recovers. Applications are not affected (the agent silently drops data if the server is unreachable).
 - Storage grows linearly with the number of services and profile types. Plan disk capacity accordingly.
-- The Pyroscope Java agent is based on async-profiler, which requires the `perf_event_open` syscall. In containerized environments, the container must have the `SYS_PTRACE` capability or the host must set `kernel.perf_event_paranoid <= 1`.
+- The Pyroscope Java agent is based on async-profiler, which requires the `perf_event_open` syscall. In containerized environments, you need one of the following:
+
+  **Option A: Add `SYS_PTRACE` capability to the container** (docker-compose):
+  ```yaml
+  services:
+    my-service:
+      cap_add:
+        - SYS_PTRACE
+  ```
+
+  **Option A: Add `SYS_PTRACE` capability to the container** (Kubernetes):
+  ```yaml
+  securityContext:
+    capabilities:
+      add:
+        - SYS_PTRACE
+  ```
+
+  **Option B: Set the kernel parameter on the host** (no container changes needed):
+  ```bash
+  # Allow unprivileged perf event access (persistent across reboots)
+  echo 'kernel.perf_event_paranoid = 1' >> /etc/sysctl.d/99-pyroscope.conf
+  sysctl --system
+  ```
 
 ---
 
