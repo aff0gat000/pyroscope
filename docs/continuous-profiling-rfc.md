@@ -1,5 +1,25 @@
 # RFC: Adopting Continuous Profiling with Grafana Pyroscope
 
+| Field | Value |
+|-------|-------|
+| **Status** | Draft |
+| **Authors** | *[your name]* |
+| **Created** | *[date]* |
+| **Last updated** | *[date]* |
+| **Reviewers** | *[engineering leads, architects, SRE/platform team]* |
+| **Approvers** | *[VP Engineering / CTO / Architecture Review Board]* |
+| **Target decision date** | *[date]* |
+
+---
+
+## Abstract
+
+We propose adopting **Grafana Pyroscope** for continuous profiling across our production services. Today, when a service is slow, engineers cycle through adding debug logging, redeploying, and waiting for recurrence — a process that takes hours to days per incident. Continuous profiling eliminates this cycle by recording function-level CPU, memory, and lock usage at all times with < 3% overhead and zero code changes. When an incident occurs, the data is already there.
+
+Pyroscope is open source, integrates natively with our existing Grafana stack, and uses OS-level sampling that never modifies application bytecode — making it fundamentally safer for production than instrumentation-based alternatives like Dynatrace. We estimate a reduction in mean time to resolution for performance incidents from 3-6 hours to 15-45 minutes, and a reduction in quarterly engineering hours spent on performance debugging from ~200 to ~40.
+
+This RFC covers the problem, proposed solution, alternatives considered, production safety analysis, deployment plan, and success criteria. We are requesting approval to begin a phased rollout starting with a pilot on 2-3 non-critical services.
+
 ---
 
 ## Problem Statement
@@ -271,11 +291,37 @@ Same root cause, same fix. 3 days vs 15 minutes.
 
 ---
 
-## Why Pyroscope over Dynatrace
+## Alternatives Considered
 
-Dynatrace is the incumbent in many enterprise environments, so this comparison comes up immediately. While Dynatrace is a capable platform, its agent model carries well-documented production risks that make Pyroscope the stronger choice for continuous profiling specifically.
+### Alternative 1: Do nothing (status quo)
 
-**Why we recommend Pyroscope:**
+Continue debugging performance issues with metrics, logs, and traces only.
+
+- **Pros**: No new tooling to deploy, no new overhead on production services, no operational burden
+- **Cons**: Engineers continue spending 3-6 hours per performance incident in the "add logging → redeploy → wait" cycle. Intermittent issues can take days. Estimated ~200 engineering hours per quarter spent on performance debugging that profiling would reduce to ~40.
+- **Verdict**: Rejected — the cost of the status quo is measurable and significant.
+
+### Alternative 2: JDK Flight Recorder (JFR) standalone
+
+Use the JVM's built-in JFR to capture profiles on-demand or continuously, without a centralized server.
+
+- **Pros**: Built into the JVM (no external agent), zero licensing cost, captures rich JVM events beyond profiling (GC details, class loading, thread states)
+- **Cons**: No centralized storage — profiles live as local `.jfr` files on each container, making retroactive querying across services impossible. No Grafana integration. No diff view across time ranges. Engineers must SSH into containers and download files manually. No label-based querying. Does not scale to fleet-wide profiling.
+- **Verdict**: Rejected — JFR is a good profiling engine (Pyroscope uses it under the hood via async-profiler), but without centralized storage and Grafana integration, it doesn't solve the workflow problem. Ad-hoc file-based profiling is what we're trying to move away from.
+
+### Alternative 3: Parca (eBPF-based profiling)
+
+Parca is an open-source continuous profiling tool that uses eBPF to capture profiles at the kernel level rather than per-language agents.
+
+- **Pros**: Language-agnostic (profiles any process without per-language agents), lower per-service overhead since eBPF runs in the kernel, no JVM agent to manage
+- **Cons**: eBPF profiling captures kernel-level stack traces which have limited visibility into JVM internals (no method names without additional DWARF/debug info). Java stack unwinding through eBPF is still maturing — frame pointer omission on the JVM makes eBPF-based stack walking unreliable for Java workloads. Less mature than Pyroscope, smaller community, no native Grafana datasource plugin.
+- **Verdict**: Rejected for now — promising technology but not production-ready for Java-heavy workloads. Worth revisiting as eBPF Java support matures.
+
+### Alternative 4: Dynatrace
+
+Dynatrace is the incumbent APM platform in many enterprise environments. It includes profiling capabilities as part of its broader observability suite.
+
+**Why we recommend Pyroscope over Dynatrace:**
 - **No production risk from bytecode instrumentation** — Dynatrace OneAgent rewrites application bytecode at class load time, which has a documented history of causing performance degradation, increased GC pressure, and in edge cases `ClassFormatError` or `VerifyError` exceptions. Pyroscope's sampling-based approach never touches application code.
 - **Predictable, minimal overhead** — Pyroscope's 1-3% CPU overhead is consistent and well-understood. Dynatrace overhead varies with instrumentation depth and transaction volume, and can spike during agent updates or class retransformation events.
 - **On-premises deployment** — air-gapped, regulated, private cloud environments fully supported
@@ -289,7 +335,7 @@ Dynatrace is the incumbent in many enterprise environments, so this comparison c
 - Organizations with existing Dynatrace contracts often keep it for distributed tracing and APM, but add Pyroscope specifically for continuous profiling because the overhead model is fundamentally safer
 - Dynatrace's managed/SaaS model reduces operational burden, but at the cost of data residency control and significant licensing fees
 
-### Dynatrace vs Pyroscope — deep comparison
+#### Dynatrace vs Pyroscope — deep comparison
 
 | Dimension | Pyroscope | Dynatrace |
 |-----------|-----------|-----------|
@@ -303,7 +349,7 @@ Dynatrace is the incumbent in many enterprise environments, so this comparison c
 | **Vendor lock-in** | None — open source, standard data formats | High — proprietary agent, API, and data format |
 | **PCI/SOX compliance** | You own the audit trail | Dynatrace provides compliance certifications for their cloud |
 
-In practice: teams with existing Dynatrace contracts often keep Dynatrace for APM and distributed tracing, but deploy Pyroscope alongside it specifically for continuous profiling — getting the function-level visibility without adding more bytecode instrumentation risk to production.
+**Verdict**: Rejected — Dynatrace's bytecode instrumentation model carries unacceptable production risk for an always-on profiling agent. Teams with existing Dynatrace contracts often keep Dynatrace for APM and distributed tracing, but deploy Pyroscope alongside it specifically for continuous profiling — getting the function-level visibility without adding more bytecode instrumentation risk to production.
 
 ---
 
@@ -613,43 +659,138 @@ Profiling shows where CPU cycles go, so you can optimize code instead of adding 
 
 ---
 
-## Limitations
+## Risks and Mitigations
 
-**What continuous profiling does NOT do:**
+| # | Risk | Likelihood | Impact | Mitigation |
+|---|------|-----------|--------|------------|
+| 1 | **Pyroscope server goes down — profile data lost** | Medium | Low (applications unaffected — agent silently drops data) | Deploy in microservices mode for HA in production. Monolithic mode is acceptable for POC. Monitor server health via Prometheus metrics. |
+| 2 | **Storage capacity exceeded** | Low | Medium (ingestion stops until space is freed) | Storage grows linearly and predictably (~7 GB/day for 9 services). Set retention policies, configure disk usage alerts, provision with headroom (see storage sizing table). |
+| 3 | **`SYS_PTRACE` capability required in containers** | High (will definitely come up) | Low (one-time config change) | See config snippets below. Alternatively, set `kernel.perf_event_paranoid <= 1` at the host level to avoid per-container changes. |
+| 4 | **Team unfamiliarity with flame graphs** | Medium | Medium (tool goes unused) | Include flame graph reading in the pilot onboarding. The demo runbook and profiling scenarios docs provide hands-on exercises. |
+| 5 | **Profiling overhead impacts production performance** | Low | High | Worst case is 1-3% CPU with all four profile types enabled. Start the pilot with CPU profiling only (< 1%) and add profile types incrementally. Overhead is tunable via sampling thresholds. |
+| 6 | **Scope confusion — teams expect profiling to replace tracing** | Medium | Low (misaligned expectations) | Profiling and tracing are complementary. Profiling shows function-level detail *within* one service; traces show the call chain *across* services. This RFC recommends both. |
+| 7 | **Per-request visibility gap** | Low | Low | Profiling is statistical sampling — it shows "this function uses 30% of CPU across all requests," not per-request attribution. For per-request analysis, continue using distributed tracing. |
+| 8 | **Database query performance not captured** | Low | Low | If a service is slow because the database is slow, the flame graph shows time in the JDBC driver's `read()` call, pointing you to the right direction. Pair with database monitoring for query-level detail. |
 
-- It does not replace APM distributed tracing — profiling shows function-level detail within one service, traces show the call chain across services. They're complementary.
-- It does not capture per-request profiles — it's statistical sampling. You see "this function uses 30% of CPU across all requests," not "this specific request was slow because of this function."
-- It does not profile database queries — if your service is slow because the database is slow, the flame graph shows time in the JDBC driver's `read()` call. You still need database monitoring to understand why the query is slow.
-- It does not automatically fix anything — it shows you the problem. A human still needs to understand the code and write the fix.
+### Container security context for async-profiler
 
-**Operational considerations:**
+The Pyroscope Java agent requires the `perf_event_open` syscall. In containerized environments, use one of the following:
 
-- Pyroscope server in monolithic mode is a single point of failure. If it goes down, profile data is not collected until it recovers. Applications are not affected (the agent silently drops data if the server is unreachable).
-- Storage grows linearly with the number of services and profile types. Plan disk capacity accordingly.
-- The Pyroscope Java agent is based on async-profiler, which requires the `perf_event_open` syscall. In containerized environments, you need one of the following:
+**Docker Compose:**
+```yaml
+services:
+  my-service:
+    cap_add:
+      - SYS_PTRACE
+```
 
-  **Option A: Add `SYS_PTRACE` capability to the container** (docker-compose):
-  ```yaml
-  services:
-    my-service:
-      cap_add:
-        - SYS_PTRACE
-  ```
+**Kubernetes:**
+```yaml
+securityContext:
+  capabilities:
+    add:
+      - SYS_PTRACE
+```
 
-  **Option A: Add `SYS_PTRACE` capability to the container** (Kubernetes):
-  ```yaml
-  securityContext:
-    capabilities:
-      add:
-        - SYS_PTRACE
-  ```
+**Host-level alternative** (no container changes needed):
+```bash
+# Allow unprivileged perf event access (persistent across reboots)
+echo 'kernel.perf_event_paranoid = 1' >> /etc/sysctl.d/99-pyroscope.conf
+sysctl --system
+```
 
-  **Option B: Set the kernel parameter on the host** (no container changes needed):
-  ```bash
-  # Allow unprivileged perf event access (persistent across reboots)
-  echo 'kernel.perf_event_paranoid = 1' >> /etc/sysctl.d/99-pyroscope.conf
-  sysctl --system
-  ```
+---
+
+## Rollout Plan
+
+Adoption follows three phases. Each phase has a clear gate before proceeding to the next.
+
+### Phase 1: Pilot (Weeks 1-2)
+
+| Item | Detail |
+|------|--------|
+| **Scope** | 2-3 non-critical services, single team |
+| **Deployment mode** | Monolithic (single VM) |
+| **Profile types** | CPU only (< 1% overhead) |
+| **Goal** | Validate integration, confirm overhead is within tolerance, train the pilot team on flame graph reading |
+| **Gate to Phase 2** | No measurable latency impact at p99, at least one incident or investigation where profiling data was useful, team confirms workflow improvement |
+
+**Phase 1 actions:**
+1. Deploy Pyroscope server in monolithic mode on a dedicated VM
+2. Add Pyroscope datasource to Grafana
+3. Attach the agent to 2-3 pilot services with CPU profiling only
+4. Monitor service latency p50/p99/p999 for regressions over 1 week
+5. Walk the pilot team through one flame graph investigation
+
+### Phase 2: Expand (Weeks 3-6)
+
+| Item | Detail |
+|------|--------|
+| **Scope** | All services owned by the pilot team, expand to 1-2 additional teams |
+| **Deployment mode** | Monolithic (evaluate capacity for microservices migration) |
+| **Profile types** | Add allocation and lock profiling |
+| **Goal** | Validate at broader scale, collect MTTR data, establish Grafana dashboards and team runbooks |
+| **Gate to Phase 3** | Stable operation for 3+ weeks, MTTR improvement data collected, no production incidents caused by profiling, storage growth matches projections |
+
+**Phase 2 actions:**
+1. Enable allocation profiling (`alloc=512k`) and lock profiling (`lock=10ms`) on pilot services
+2. Roll out agent to remaining services on the pilot team
+3. Onboard 1-2 additional teams — provide flame graph reading training
+4. Create shared Grafana dashboards with flame graph panels per service
+5. Begin tracking MTTR before/after metrics
+
+### Phase 3: Production (Weeks 7+)
+
+| Item | Detail |
+|------|--------|
+| **Scope** | All production services |
+| **Deployment mode** | Migrate to microservices mode for high availability |
+| **Profile types** | All four (CPU, allocation, lock, wall clock) |
+| **Goal** | Full fleet coverage, HA deployment, established operational runbooks |
+| **Gate** | Architecture review board approval for microservices deployment |
+
+**Phase 3 actions:**
+1. Deploy Pyroscope in microservices mode with shared object storage (NFS or S3)
+2. Roll out agent to all remaining production services
+3. Enable wall clock profiling for I/O-bound services
+4. Set up retention policies and storage alerting
+5. Publish internal runbooks and add profiling to the incident management workflow
+
+### Rollback plan
+
+At any phase, rollback is a single change: remove the `JAVA_TOOL_OPTIONS` environment variable and restart the service. The Pyroscope agent is opt-in per service — removing it has no side effects.
+
+---
+
+## Success Criteria
+
+These are the measurable outcomes that determine whether this initiative is successful.
+
+| Metric | Baseline (current) | Target (6 months post-rollout) | How we measure |
+|--------|-------------------|-------------------------------|----------------|
+| MTTR for performance incidents | 3-6 hours | < 45 minutes | Track in incident management system — time from alert to resolution for performance-related incidents |
+| Debug cycles per incident | 2-4 (add logging → redeploy → wait) | 0 | Count of production redeploys during incident investigation |
+| Incidents requiring staging reproduction | ~40% | < 5% | Track in incident retrospectives |
+| Engineering hours on performance debugging per quarter | ~200 hours (est.) | < 50 hours | Team time tracking / retrospective estimates |
+| Production services with profiling enabled | 0 | 100% of Java services | Pyroscope ingestion metrics |
+| Profiling-related production incidents | N/A | 0 | Any incident where the profiling agent was a contributing cause |
+| CPU overhead per service | 0% | < 3% (all profile types) | Compare service CPU metrics before/after agent attachment |
+
+---
+
+## Open Questions
+
+These items need input from reviewers before this RFC can be approved.
+
+| # | Question | Owner | Status |
+|---|----------|-------|--------|
+| 1 | **Retention policy**: How long should we retain profiling data? 7 days covers most incident investigations; 30 days covers deploy-over-deploy comparison. Longer retention increases storage costs. | Platform team | Open |
+| 2 | **Multi-tenancy**: If multiple teams share one Pyroscope instance, do we need tenant isolation (separate datasources per team in Grafana, per-tenant ingestion limits)? | Architecture | Open |
+| 3 | **Backup and disaster recovery**: Profile data is diagnostic, not transactional. Is backup required, or is loss of historical profiles during a DR event acceptable? | SRE | Open |
+| 4 | **Security review**: Does granting `SYS_PTRACE` to containers require a security exception? Should we prefer the host-level `perf_event_paranoid` approach instead? | Security | Open |
+| 5 | **Budget for production deployment**: Microservices mode requires additional compute and shared storage (NFS or S3). What's the infrastructure budget for Phase 3? | Management | Open |
+| 6 | **Integration with alerting**: Should we set up Grafana alerts on profiling data (e.g., "allocation rate for Service X exceeded 2x baseline")? This is possible but adds operational complexity. | SRE | Open |
+| 7 | **Scope beyond Java**: Several services run Go and Python. Pyroscope supports these languages. Should the pilot include non-Java services, or focus on Java first? | Engineering leads | Open |
 
 ---
 
@@ -685,3 +826,18 @@ For hands-on setup, deployment scripts, and operational runbooks, refer to the p
 | **Retention** | How long profile data is kept before being deleted. Typically 7-30 days. |
 | **MTTR** | Mean Time to Resolution — the average time from alert firing to incident resolution. |
 | **Continuous profiling** | Always-on profiling in production, as opposed to ad-hoc profiling during debugging sessions. |
+
+---
+
+## References
+
+| Resource | Link |
+|----------|------|
+| Grafana Pyroscope documentation | https://grafana.com/docs/pyroscope/latest/ |
+| async-profiler (profiling engine) | https://github.com/async-profiler/async-profiler |
+| Pyroscope Java agent releases | https://github.com/grafana/pyroscope-java/releases |
+| Grafana flame graph panel documentation | https://grafana.com/docs/grafana/latest/panels-visualizations/visualizations/flame-graph/ |
+| Google-Wide Profiling (research paper) | https://research.google/pubs/pub36575/ |
+| Brendan Gregg — Flame Graphs | https://www.brendangregg.com/flamegraphs.html |
+| async-profiler: JVM profiling without safepoint bias | https://github.com/async-profiler/async-profiler/wiki |
+| Pyroscope architecture overview | https://grafana.com/docs/pyroscope/latest/reference-pyroscope-architecture/ |
