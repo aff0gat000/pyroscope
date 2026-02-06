@@ -309,16 +309,52 @@ Git/Deploy Events ──→ Event Ingester ────→──┤
 
 ---
 
-## Implementation Priorities
+## Business Justification
 
-| Priority | Phase | Prerequisite | Effort |
-|----------|-------|-------------|--------|
-| 1 | Data Pipeline | Pyroscope + Prometheus running | Low |
-| 2 | CI/CD Gates | Data Pipeline + CI infrastructure | Medium |
-| 3 | Anomaly Detection | Data Pipeline + baseline data | Medium |
-| 4 | Root Cause Analysis | Anomaly Detection + deploy tracking | High |
-| 5 | Optimization Recommendations | Root Cause Analysis + pattern library | High |
-| 6 | Autonomous Remediation | All above + canary infrastructure | Very High |
+### Cost of the status quo
+
+Without automation on top of profiling data, the following costs persist even after Pyroscope adoption:
+
+- **Reactive detection only** — regressions that do not immediately breach alert thresholds degrade customer experience for hours or days before a human notices. A function increasing from 11% to 38% CPU is a serious regression trending toward an outage, but threshold-based metric alerts remain silent until overall CPU reaches 80%.
+- **Manual investigation per incident** — even with flame graphs available, an engineer must open Grafana, find the right service, select the right time window, diff against baseline, correlate with deploys, and read the git log. This takes 30-60 minutes per incident.
+- **No prevention** — without CI/CD profile gates, every performance regression reaches production. The cost is incurred *after* customers are impacted: engineering time, postmortems, SLA risk, and reputation.
+
+### Value by phase
+
+| Phase | Business value | Effort | Annual impact estimate |
+|-------|---------------|--------|----------------------|
+| **1+2: Data Pipeline + Anomaly Detection** | Catch regressions before they breach alert thresholds or impact customers. Detect profile shape changes that metric-only alerting misses. | 1-2 weeks | 5-10 avoided incidents/year at ~15 eng hours per incident = **75-150 engineering hours saved** + avoided customer impact and SLA risk |
+| **5: CI/CD Regression Gates** | Prevent regressions at the source. Performance regressions are caught in the PR pipeline before merge, the same way unit tests catch functional bugs. | 3-4 weeks | 50% reduction in production performance incidents. **100+ engineering hours/year** saved. Zero customer impact from prevented incidents. |
+| **3: Root Cause Analysis** | Reduce investigation time from 30-60 minutes to seconds. Structured reports posted to incident channels eliminate the manual diff-and-correlate workflow. | 2-3 weeks | Value scales with incident volume. **20-40 engineering hours/year** for teams with moderate incident load. |
+| **4: Optimization Recommendations** | Automated code-level fix suggestions for known anti-patterns. Useful at scale with many services and junior engineers. | 4-6 weeks | Incremental. Experienced engineers recognize most patterns without automation. Justified only for organizations profiling 50+ services. |
+| **6: Autonomous Remediation** | Self-healing for well-understood operational patterns (pool sizing, JVM flags, cache TTLs). Reduces after-hours paging. | 8-12 weeks | Narrow scope of safe autonomous actions. Risk of automated production changes requires significant guardrail investment. Justified only at large scale (100+ services). |
+
+### Recommendation
+
+Phases 1, 2, and 5 deliver the highest return on investment and are recommended for implementation:
+
+| Investment | Return |
+|-----------|--------|
+| 4-6 weeks of engineering effort | Estimated 175-250+ engineering hours saved per year |
+| | Majority of performance regressions caught before production |
+| | Remaining regressions detected within minutes, not hours |
+| | Reduced SLA breach risk and customer-facing impact |
+| | Lower on-call burden for performance-related incidents |
+
+Phase 3 (Root Cause Analysis) is a worthwhile follow-on investment for organizations with high incident volume (5+ performance incidents per month). The incremental effort is 2-3 weeks and reduces per-incident investigation time from 30-60 minutes to seconds.
+
+Phases 4 and 6 are not recommended for initial implementation. Phase 4 automates a task that experienced engineers complete in minutes, and the effort to build and maintain a pattern library exceeds the time savings for most organizations. Phase 6 requires significant infrastructure investment (canary deployments, rollback automation, safety guardrails) and carries inherent risk from automated production changes. Both phases may be revisited once the organization reaches a scale where the volume of services and incidents justifies the investment.
+
+### Implementation priorities
+
+| Priority | Phase | Prerequisite | Effort | Recommendation |
+|----------|-------|-------------|--------|----------------|
+| 1 | Data Pipeline | Pyroscope + Prometheus running | Low | **Build** |
+| 2 | Anomaly Detection | Data Pipeline + baseline data | Low | **Build** |
+| 3 | CI/CD Regression Gates | Data Pipeline + CI infrastructure | Medium | **Build** |
+| 4 | Root Cause Analysis | Anomaly Detection + deploy tracking | Medium | Build if incident volume justifies |
+| 5 | Optimization Recommendations | Root Cause Analysis + pattern library | High | Defer |
+| 6 | Autonomous Remediation | All above + canary infrastructure | Very High | Defer |
 
 ---
 
