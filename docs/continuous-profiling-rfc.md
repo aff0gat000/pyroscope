@@ -1,8 +1,8 @@
-# Continuous Profiling with Grafana Pyroscope — Engineering Primer
+# RFC: Adopting Continuous Profiling with Grafana Pyroscope
 
 ---
 
-## What Problem Does This Solve
+## Problem Statement
 
 When a production service is slow, the standard investigation looks like this:
 
@@ -19,60 +19,9 @@ Continuous profiling fills this gap. It records which functions consume CPU, all
 
 ---
 
-## What is Continuous Profiling
+## Proposed Solution
 
-Continuous profiling is the practice of **always-on, low-overhead sampling** of what code is executing in production. At regular intervals (typically every 10ms), the profiler captures a stack trace — the chain of function calls currently on the CPU. Over millions of samples, this produces a statistical picture of where time and resources are spent.
-
-```mermaid
-graph LR
-    subgraph Traditional Profiling
-        A[Developer attaches profiler] --> B[Reproduce issue in staging]
-        B --> C[Collect samples for 5 minutes]
-        C --> D[Analyze locally]
-    end
-
-    subgraph Continuous Profiling
-        E[Agent runs in production 24/7] --> F[Samples sent to server every 10s]
-        F --> G[Query any time range retroactively]
-        G --> H[Compare before vs after any change]
-    end
-
-    style A fill:#ef4444,color:#fff
-    style E fill:#22c55e,color:#fff
-```
-
-Differences from traditional profiling:
-
-| Aspect | Traditional | Continuous |
-|--------|------------|------------|
-| When it runs | Manually attached during debugging | Always on, in production |
-| Where it runs | Staging, developer laptop | Production |
-| Data availability | Only while attached | Historical — query any past time window |
-| Overhead | 5-20% (too high for production) | < 1% (production-safe) |
-| Comparison | Single snapshot | Compare any two time ranges (before/after deploy) |
-
-The output is a **flame graph** — a visualization where the x-axis is proportional to time spent and the y-axis shows the call stack. Wide bars mean that function (and everything it calls) is consuming significant resources.
-
-```
-Example flame graph (text representation):
-
-  ┌──────────────────────────────────────────────────────────┐
-  │                     main()                                │
-  ├────────────────────────────┬─────────────────────────────┤
-  │     handleRequest()        │      processQueue()          │
-  ├──────────┬─────────────────┤                              │
-  │ validate │  computeHash()  │                              │
-  │  Input() │  ████████████   │                              │
-  │          │  (THIS is your  │                              │
-  │          │   bottleneck)   │                              │
-  └──────────┴─────────────────┴─────────────────────────────┘
-```
-
----
-
-## How It Differs from Metrics, Logs, and Traces
-
-Standard observability covers metrics, logs, and traces. Profiling adds a fourth signal:
+Continuous profiling is always-on, low-overhead sampling that shows which functions consume CPU, memory, and locks in production. At regular intervals (typically every 10ms), the profiler captures a stack trace — the chain of function calls currently on the CPU. Over millions of samples, this produces a statistical picture of where time and resources are spent. This is the fourth observability signal alongside metrics, logs, and traces.
 
 ```mermaid
 graph TB
@@ -107,11 +56,7 @@ graph TB
 
 Without profiling, you know the service is slow (metrics) and the request spent 200ms there (traces), but not whether it's the hash computation, the database query, or the serialization. With profiling, you open the flame graph and see which function.
 
----
-
-## What is Grafana Pyroscope
-
-Grafana Pyroscope is an open-source continuous profiling database. It stores profiling data, lets you query any time range, and integrates with Grafana for visualization alongside metrics and traces.
+We recommend **Grafana Pyroscope** specifically: it's open source, Grafana-native, and part of the LGTM stack (Loki, Grafana, Tempo, Mimir). Grafana Labs acquired Pyroscope in 2023, so flame graphs render natively in Grafana dashboards alongside metrics panels — no separate UI or integration work required.
 
 ```mermaid
 graph TB
@@ -123,21 +68,32 @@ graph TB
 
     subgraph Pyroscope
         PUSH[Push API<br/>:4040/ingest]
-        STORE[(Block Storage<br/>filesystem or S3)]
-        QUERY[Query API]
+        PSTORE[(Block Storage<br/>filesystem or S3)]
+        PQUERY[Query API]
+    end
+
+    subgraph Prometheus
+        SCRAPE[Scrape Targets<br/>:9090]
+        MSTORE[(TSDB)]
+        MQUERY[PromQL API]
     end
 
     APP1 -->|"profiles every 10s"| PUSH
     APP2 -->|"profiles every 10s"| PUSH
     APP3 -->|"profiles every 10s"| PUSH
-    PUSH --> STORE
-    QUERY --> STORE
+    PUSH --> PSTORE
+    PQUERY --> PSTORE
 
-    GF[Grafana] -->|"render flame graph<br/>for time range"| QUERY
+    SCRAPE -->|"scrape /metrics"| APP1
+    SCRAPE -->|"scrape /metrics"| APP2
+    SCRAPE -->|"scrape /metrics"| APP3
+    SCRAPE --> MSTORE
+    MQUERY --> MSTORE
+
+    GF[Grafana] -->|"flame graphs"| PQUERY
+    GF -->|"metrics dashboards"| MQUERY
     ENG[Engineer] -->|"open dashboard<br/>during incident"| GF
 ```
-
-Grafana Labs acquired Pyroscope in 2023. It's part of the same stack as Prometheus/Mimir, Loki, and Tempo, so flame graphs render natively in Grafana dashboards alongside metrics panels.
 
 ### Capabilities
 
@@ -150,76 +106,81 @@ Grafana Labs acquired Pyroscope in 2023. It's part of the same stack as Promethe
 
 ---
 
-## Java-Specific Continuous Profiling
+## Operational Impact
 
-### How Java profiling works under the hood
-
-Java profiling uses **async-profiler**, an open-source sampling profiler for the JVM. It works by using OS-level signals (`SIGPROF` on Linux) and the JVM's `AsyncGetCallTrace` API to capture stack traces without stop-the-world pauses.
+### The traditional incident workflow
 
 ```mermaid
-sequenceDiagram
-    participant OS as Linux Kernel
-    participant AP as async-profiler<br/>(native agent)
-    participant JVM as JVM
-    participant PJ as Pyroscope Java Agent
-    participant PS as Pyroscope Server
+graph TD
+    A[Alert: p99 > 2s] --> B[Check Grafana dashboards]
+    B --> C{Obvious from metrics?}
+    C -->|No| D[Check logs for errors]
+    D --> E{Error found?}
+    E -->|No| F[Add debug logging]
+    F --> G[Redeploy to production]
+    G --> H[Wait for recurrence]
+    H --> I[Read new logs]
+    I --> J{Root cause found?}
+    J -->|No| F
+    J -->|Yes| K[Fix and deploy]
 
-    loop Every 10ms
-        OS->>AP: SIGPROF signal (timer interrupt)
-        AP->>JVM: AsyncGetCallTrace()
-        JVM-->>AP: Current stack trace
-        AP->>AP: Accumulate in ring buffer
-    end
-
-    loop Every 10 seconds
-        PJ->>AP: Collect accumulated samples
-        AP-->>PJ: Folded stack traces
-        PJ->>PS: POST /ingest (compressed protobuf)
-    end
+    style F fill:#ef4444,color:#fff
+    style G fill:#ef4444,color:#fff
+    style H fill:#ef4444,color:#fff
 ```
 
-The Pyroscope Java agent wraps async-profiler and handles:
-- Attaching at startup via `JAVA_TOOL_OPTIONS` (no code changes)
-- Collecting samples on a schedule
-- Labeling data (service name, environment, custom tags)
-- Shipping data to the Pyroscope server
+Each "add logging → redeploy → wait → read" cycle takes 30 minutes to hours. Most incidents need 2-4 cycles. The "wait for recurrence" step is the worst for intermittent issues.
 
-### Profile types for Java
+### The profiling-informed workflow
 
-| Profile Type | What It Measures | When To Use | Common Findings |
-|-------------|-----------------|-------------|-----------------|
-| **CPU** (`itimer`) | Time spent on-CPU executing instructions | Service is CPU-bound, high CPU usage | Hot loops, expensive computations, regex, serialization |
-| **Allocation** (`alloc`) | Heap memory allocated per stack trace | High GC pressure, frequent GC pauses | Object churn, unnecessary copies, boxing/unboxing |
-| **Lock** (`lock`) | Time spent waiting to acquire locks | Thread contention, synchronized blocks | `synchronized` methods, `ReentrantLock` waits, connection pool contention |
-| **Wall clock** (`wall`) | Real elapsed time including I/O waits | Service is slow but CPU is low | Network I/O, database waits, `Thread.sleep`, file I/O |
+```mermaid
+graph TD
+    A[Alert: p99 > 2s] --> B[Check Grafana dashboards]
+    B --> C[Open flame graph for affected service<br/>filter to alert time window]
+    C --> D[Identify widest frame = biggest CPU consumer]
+    D --> E[Read the function name and source location]
+    E --> F[Fix and deploy]
 
-### Zero-code attachment
-
-The profiler is attached via an environment variable. No application code, no dependency changes, no rebuild required:
-
-```yaml
-environment:
-  JAVA_TOOL_OPTIONS: >-
-    -javaagent:/opt/pyroscope/pyroscope.jar
-    -Dpyroscope.application.name=app-service-1
-    -Dpyroscope.server.address=http://pyroscope:4040
-    -Dpyroscope.format=jfr
-    -Dpyroscope.profiler.event=itimer
-    -Dpyroscope.profiler.alloc=512k
-    -Dpyroscope.profiler.lock=10ms
+    style C fill:#22c55e,color:#fff
+    style D fill:#22c55e,color:#fff
 ```
 
-No code change or rebuild needed — set the environment variable and restart.
+No "add logging" step. The agent was running the whole time. Query the incident's time range and the flame graph shows you the answer.
 
-### JVM version compatibility
+### Resolution time by incident type
 
-| JVM | Support | Notes |
-|-----|---------|-------|
-| OpenJDK 8+ | Full | Most common in enterprise |
-| Oracle JDK 8+ | Full | Same internals as OpenJDK |
-| Eclipse Temurin 11+ | Full | Adoptium distribution of OpenJDK |
-| GraalVM | Partial | CPU profiling works, allocation profiling limited |
-| IBM J9 / Semeru | Limited | Different JVM internals, some profile types unavailable |
+| Incident Type | Without Profiling | With Profiling | Why |
+|--------------|:-:|:-:|---|
+| **CPU spike** | 1-4 hours (guess which code path) | 5-15 minutes (flame graph shows the function) | No guessing — the hot function is the widest bar |
+| **Memory leak / GC pressure** | 2-8 hours (add heap dumps, wait for recurrence) | 15-30 minutes (allocation flame graph shows which function allocates most) | Allocation profile is always on — no need to reproduce |
+| **Lock contention** | 2-6 hours (thread dumps, timing analysis) | 10-20 minutes (lock flame graph shows the contended lock) | Lock profiling captures contention continuously |
+| **Latency regression after deploy** | 1-4 hours (compare logs, bisect commits) | 5-10 minutes (diff flame graph: before deploy vs after) | Diff view highlights exactly what changed |
+| **Intermittent slowness** | Days (wait for recurrence with logging enabled) | Minutes (query the time window when it happened) | Data is retroactive — the profile was captured when the issue occurred |
+
+### Engineering time savings
+
+| Metric | Before | After |
+|--------|--------|-------|
+| MTTR for performance incidents | 3-6 hours | 15-45 minutes |
+| Debug cycles per incident (add logging → redeploy → wait) | 2-4 cycles | 0 |
+| Incidents requiring staging reproduction | ~40% | < 5% |
+| Engineering hours on performance debugging per quarter | ~200 hours (est.) | ~40 hours |
+
+### Concrete example
+
+**Scenario**: A service's p99 spikes from 200ms to 3s every day around 2pm.
+
+**Without profiling** (3 days to resolve):
+- Day 1: Notice the pattern in metrics. Add timing logs around the main code paths. Redeploy.
+- Day 2: Logs show time is spent in `processBatch()` but not which part. Add more granular logging inside that method. Redeploy.
+- Day 3: Finally see that `computeHash()` is called 500 times per batch, each doing `MessageDigest.getInstance("SHA-256")` which is expensive. Fix: cache the MessageDigest instance.
+
+**With profiling** (15 minutes to resolve):
+- Open Grafana, filter to the affected service, CPU profile, 1:50pm-2:10pm today
+- Flame graph shows `processBatch()` → `computeHash()` → `MessageDigest.getInstance()` consuming 73% of CPU
+- Fix: cache the MessageDigest instance
+
+Same root cause, same fix. 3 days vs 15 minutes.
 
 ---
 
@@ -257,7 +218,7 @@ In practice: teams with existing Dynatrace contracts keep using Dynatrace. Teams
 
 ---
 
-## Deployment Modes
+## Deployment and Integration
 
 Pyroscope supports two deployment modes. Use monolithic mode for development, POC, and evaluation. Plan on microservices mode for production.
 
@@ -344,85 +305,80 @@ Pyroscope's storage needs depend on the number of services profiled, the number 
 
 ---
 
-## Improving Incident Response and MTTR
+## Java Integration Details
 
-### The traditional incident workflow
+### How Java profiling works under the hood
 
-```mermaid
-graph TD
-    A[Alert: p99 > 2s] --> B[Check Grafana dashboards]
-    B --> C{Obvious from metrics?}
-    C -->|No| D[Check logs for errors]
-    D --> E{Error found?}
-    E -->|No| F[Add debug logging]
-    F --> G[Redeploy to production]
-    G --> H[Wait for recurrence]
-    H --> I[Read new logs]
-    I --> J{Root cause found?}
-    J -->|No| F
-    J -->|Yes| K[Fix and deploy]
-
-    style F fill:#ef4444,color:#fff
-    style G fill:#ef4444,color:#fff
-    style H fill:#ef4444,color:#fff
-```
-
-Each "add logging → redeploy → wait → read" cycle takes 30 minutes to hours. Most incidents need 2-4 cycles. The "wait for recurrence" step is the worst for intermittent issues.
-
-### The profiling-informed workflow
+Java profiling uses **async-profiler**, an open-source sampling profiler for the JVM. It works by using OS-level signals (`SIGPROF` on Linux) and the JVM's `AsyncGetCallTrace` API to capture stack traces without stop-the-world pauses.
 
 ```mermaid
-graph TD
-    A[Alert: p99 > 2s] --> B[Check Grafana dashboards]
-    B --> C[Open flame graph for affected service<br/>filter to alert time window]
-    C --> D[Identify widest frame = biggest CPU consumer]
-    D --> E[Read the function name and source location]
-    E --> F[Fix and deploy]
+sequenceDiagram
+    participant OS as Linux Kernel
+    participant AP as async-profiler<br/>(native agent)
+    participant JVM as JVM
+    participant PJ as Pyroscope Java Agent
+    participant PS as Pyroscope Server
 
-    style C fill:#22c55e,color:#fff
-    style D fill:#22c55e,color:#fff
+    loop Every 10ms
+        OS->>AP: SIGPROF signal (timer interrupt)
+        AP->>JVM: AsyncGetCallTrace()
+        JVM-->>AP: Current stack trace
+        AP->>AP: Accumulate in ring buffer
+    end
+
+    loop Every 10 seconds
+        PJ->>AP: Collect accumulated samples
+        AP-->>PJ: Folded stack traces
+        PJ->>PS: POST /ingest (compressed protobuf)
+    end
 ```
 
-No "add logging" step. The agent was running the whole time. Query the incident's time range and the flame graph shows you the answer.
+The Pyroscope Java agent wraps async-profiler and handles:
+- Attaching at startup via `JAVA_TOOL_OPTIONS` (no code changes)
+- Collecting samples on a schedule
+- Labeling data (service name, environment, custom tags)
+- Shipping data to the Pyroscope server
 
-### MTTR impact by incident type
+### Profile types for Java
 
-| Incident Type | Without Profiling | With Profiling | Why |
-|--------------|:-:|:-:|---|
-| **CPU spike** | 1-4 hours (guess which code path) | 5-15 minutes (flame graph shows the function) | No guessing — the hot function is the widest bar |
-| **Memory leak / GC pressure** | 2-8 hours (add heap dumps, wait for recurrence) | 15-30 minutes (allocation flame graph shows which function allocates most) | Allocation profile is always on — no need to reproduce |
-| **Lock contention** | 2-6 hours (thread dumps, timing analysis) | 10-20 minutes (lock flame graph shows the contended lock) | Lock profiling captures contention continuously |
-| **Latency regression after deploy** | 1-4 hours (compare logs, bisect commits) | 5-10 minutes (diff flame graph: before deploy vs after) | Diff view highlights exactly what changed |
-| **Intermittent slowness** | Days (wait for recurrence with logging enabled) | Minutes (query the time window when it happened) | Data is retroactive — the profile was captured when the issue occurred |
+| Profile Type | What It Measures | When To Use | Common Findings |
+|-------------|-----------------|-------------|-----------------|
+| **CPU** (`itimer`) | Time spent on-CPU executing instructions | Service is CPU-bound, high CPU usage | Hot loops, expensive computations, regex, serialization |
+| **Allocation** (`alloc`) | Heap memory allocated per stack trace | High GC pressure, frequent GC pauses | Object churn, unnecessary copies, boxing/unboxing |
+| **Lock** (`lock`) | Time spent waiting to acquire locks | Thread contention, synchronized blocks | `synchronized` methods, `ReentrantLock` waits, connection pool contention |
+| **Wall clock** (`wall`) | Real elapsed time including I/O waits | Service is slow but CPU is low | Network I/O, database waits, `Thread.sleep`, file I/O |
 
-### Concrete example
+### Zero-code attachment
 
-**Scenario**: A service's p99 spikes from 200ms to 3s every day around 2pm.
+The profiler is attached via an environment variable. No application code, no dependency changes, no rebuild required:
 
-**Without profiling** (3 days to resolve):
-- Day 1: Notice the pattern in metrics. Add timing logs around the main code paths. Redeploy.
-- Day 2: Logs show time is spent in `processBatch()` but not which part. Add more granular logging inside that method. Redeploy.
-- Day 3: Finally see that `computeHash()` is called 500 times per batch, each doing `MessageDigest.getInstance("SHA-256")` which is expensive. Fix: cache the MessageDigest instance.
+```yaml
+environment:
+  JAVA_TOOL_OPTIONS: >-
+    -javaagent:/opt/pyroscope/pyroscope.jar
+    -Dpyroscope.application.name=app-service-1
+    -Dpyroscope.server.address=http://pyroscope:4040
+    -Dpyroscope.format=jfr
+    -Dpyroscope.profiler.event=itimer
+    -Dpyroscope.profiler.alloc=512k
+    -Dpyroscope.profiler.lock=10ms
+```
 
-**With profiling** (15 minutes to resolve):
-- Open Grafana, filter to the affected service, CPU profile, 1:50pm-2:10pm today
-- Flame graph shows `processBatch()` → `computeHash()` → `MessageDigest.getInstance()` consuming 73% of CPU
-- Fix: cache the MessageDigest instance
+No code change or rebuild needed — set the environment variable and restart.
 
-Same root cause, same fix. 3 days vs 15 minutes.
+### JVM version compatibility
+
+| JVM | Support | Notes |
+|-----|---------|-------|
+| OpenJDK 8+ | Full | Most common in enterprise |
+| Oracle JDK 8+ | Full | Same internals as OpenJDK |
+| Eclipse Temurin 11+ | Full | Adoptium distribution of OpenJDK |
+| GraalVM | Partial | CPU profiling works, allocation profiling limited |
+| IBM J9 / Semeru | Limited | Different JVM internals, some profile types unavailable |
 
 ---
 
 ## Business Value
-
-### Engineering time savings
-
-| Metric | Before | After |
-|--------|--------|-------|
-| MTTR for performance incidents | 3-6 hours | 15-45 minutes |
-| Debug cycles per incident (add logging → redeploy → wait) | 2-4 cycles | 0 |
-| Incidents requiring staging reproduction | ~40% | < 5% |
-| Engineering hours on performance debugging per quarter | ~200 hours (est.) | ~40 hours |
 
 ### Infrastructure cost optimization
 
@@ -454,7 +410,7 @@ Profiling shows where CPU cycles go, so you can optimize code instead of adding 
 
 ---
 
-## Limitations and Trade-offs
+## Limitations
 
 **What continuous profiling does NOT do:**
 
@@ -471,7 +427,7 @@ Profiling shows where CPU cycles go, so you can optimize code instead of adding 
 
 ---
 
-## Getting Started
+## Next Steps
 
 For hands-on setup, deployment scripts, and operational runbooks, refer to the project repository:
 
@@ -485,7 +441,7 @@ For hands-on setup, deployment scripts, and operational runbooks, refer to the p
 | Grafana dashboard reference | `docs/dashboard-guide.md` |
 | Deploy Pyroscope server to a VM | `deploy/monolithic/README.md` |
 | Deploy Pyroscope microservices (NFS) | `deploy/microservices/README.md` |
-| Incident response playbooks | `docs/runbook.md` |
+| Incident management playbooks | `docs/runbook.md` |
 | MTTR reduction workflow | `docs/mttr-guide.md` |
 
 ---
