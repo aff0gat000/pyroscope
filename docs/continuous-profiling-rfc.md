@@ -394,7 +394,7 @@ graph TB
 
 ### Microservices mode (production)
 
-For production workloads, Pyroscope's components (distributor, ingester, compactor, store-gateway, query-frontend, query-scheduler, querier, overrides-exporter, and optional ruler) run as separate processes with shared object storage. This provides high availability, horizontal scalability, and independent scaling of read and write paths. See [deploy/microservices/README.md](https://github.com/aff0gat000/pyroscope/blob/main/deploy/microservices/README.md) for the full production deployment guide.
+For production workloads, Pyroscope's components (distributor, ingester, compactor, store-gateway, query-frontend, query-scheduler, querier, overrides-exporter, and optional ruler) run as separate processes with shared object storage. This provides high availability, horizontal scalability, and independent scaling of read and write paths. See [deploy/microservices/README.md](../deploy/microservices/README.md) for the full production deployment guide.
 
 ### Choosing a mode
 
@@ -410,7 +410,7 @@ Start with monolithic mode to evaluate Pyroscope and validate the integration. W
 
 ### Integration steps
 
-1. **Deploy Pyroscope server on a VM** — use the scripts in [deploy/monolithic/](https://github.com/aff0gat000/pyroscope/tree/main/deploy/monolithic) for dev/POC. Minimal server configuration:
+1. **Deploy Pyroscope server on a VM** — use the scripts in [deploy/monolithic/](../deploy/monolithic) for dev/POC. Minimal server configuration:
 
    ```yaml
    # pyroscope-config.yaml
@@ -655,7 +655,7 @@ Profiling shows where CPU cycles go, so you can optimize code instead of adding 
 | **Network communication** | Agent pushes data to Pyroscope over HTTP. Can be configured for HTTPS. All traffic stays within the enterprise network (no external calls). |
 | **Data at rest** | Profile data is stored on the Pyroscope server's filesystem. Encryption at rest depends on the underlying storage (encrypted NFS, encrypted EBS, etc.). |
 | **Access control** | Grafana's role-based access control governs who can view flame graphs. Pyroscope itself does not have built-in auth — it relies on network-level access control or a reverse proxy. |
-| **Overhead** | < 1% CPU, negligible memory. Benchmarked with our services — see the [benchmark.sh](https://github.com/aff0gat000/pyroscope/blob/main/benchmark.sh) script in the repo. |
+| **Overhead** | < 1% CPU, negligible memory. Benchmarked with our services — see the [benchmark.sh](../benchmark.sh) script in the repo. |
 
 ---
 
