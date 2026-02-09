@@ -552,7 +552,7 @@ make test-bor                                        # All BOR tests (no Docker 
 
 ## Upgrading to Phase 2
 
-When PostgreSQL is approved, see [function-phase2.md](function-phase2.md). The upgrade:
+When PostgreSQL is approved, see [profiling-functions-phase2.md](profiling-functions-phase2.md). The upgrade:
 
 1. Deploy 4 new PostgreSQL-backed SORs (Baseline, History, Registry, AlertRule)
 2. Switch BOR `FUNCTION` env vars from v1 → v2

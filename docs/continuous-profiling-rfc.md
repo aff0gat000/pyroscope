@@ -704,7 +704,7 @@ graph TB
     AR --> PG
 ```
 
-Solid lines = Phase 1 (no database). Dashed lines = Phase 2 (PostgreSQL). See [function-architecture-phase1.md](function-architecture-phase1.md) and [function-architecture-phase2.md](function-architecture-phase2.md) for detailed architecture, and [function-reference-phase1.md](function-reference-phase1.md) and [function-reference-phase2.md](function-reference-phase2.md) for API specs.
+Solid lines = Phase 1 (no database). Dashed lines = Phase 2 (PostgreSQL). See [profiling-functions-phase1.md](profiling-functions-phase1.md) and [profiling-functions-phase2.md](profiling-functions-phase2.md) for detailed architecture and API specs.
 
 ### Relationship to Pyroscope rollout phases
 

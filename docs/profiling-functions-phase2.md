@@ -1,6 +1,6 @@
 # Pyroscope Functions — Phase 2 (With PostgreSQL)
 
-Adds 4 PostgreSQL-backed SOR functions and upgrades the 3 BOR functions from v1 to v2. Builds on top of [Phase 1](function-phase1.md).
+Adds 4 PostgreSQL-backed SOR functions and upgrades the 3 BOR functions from v1 to v2. Builds on top of [Phase 1](profiling-functions-phase1.md).
 
 ---
 
