@@ -28,14 +28,14 @@ public class BaselineVerticle extends AbstractFunctionVerticle {
 
     private void create(RoutingContext ctx) {
         JsonObject body = ctx.body().asJsonObject();
-        if (body == null) { error(ctx, 400, "JSON body required"); return; }
+        if (body == null) { sendError(ctx, 400, "JSON body required"); return; }
 
         String appName = body.getString("appName");
         String profileType = body.getString("profileType");
         String functionName = body.getString("functionName");
         Double maxSelfPercent = body.getDouble("maxSelfPercent");
         if (appName == null || profileType == null || functionName == null || maxSelfPercent == null) {
-            error(ctx, 400, "appName, profileType, functionName, maxSelfPercent are required");
+            sendError(ctx, 400, "appName, profileType, functionName, maxSelfPercent are required");
             return;
         }
 
@@ -66,7 +66,7 @@ public class BaselineVerticle extends AbstractFunctionVerticle {
                             .put("createdAt", row.getLocalDateTime("created_at").toString())
                             .put("updatedAt", row.getLocalDateTime("updated_at").toString())
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void listByApp(RoutingContext ctx) {
@@ -82,7 +82,7 @@ public class BaselineVerticle extends AbstractFunctionVerticle {
                             .put("appName", appName)
                             .put("baselines", arr)
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void listByAppAndType(RoutingContext ctx) {
@@ -100,18 +100,18 @@ public class BaselineVerticle extends AbstractFunctionVerticle {
                             .put("profileType", type)
                             .put("baselines", arr)
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void update(RoutingContext ctx) {
         int id = Integer.parseInt(ctx.pathParam("id"));
         JsonObject body = ctx.body().asJsonObject();
-        if (body == null) { error(ctx, 400, "JSON body required"); return; }
+        if (body == null) { sendError(ctx, 400, "JSON body required"); return; }
 
         Double maxSelfPercent = body.getDouble("maxSelfPercent");
         String severity = body.getString("severity");
         if (maxSelfPercent == null && severity == null) {
-            error(ctx, 400, "at least one of maxSelfPercent or severity is required");
+            sendError(ctx, 400, "at least one of maxSelfPercent or severity is required");
             return;
         }
 
@@ -133,13 +133,13 @@ public class BaselineVerticle extends AbstractFunctionVerticle {
         db.queryWithRetry(sql.toString(), Tuple.from(params), 3)
                 .onSuccess(rows -> {
                     if (rows.rowCount() == 0) {
-                        error(ctx, 404, "baseline not found");
+                        sendError(ctx, 404, "baseline not found");
                     } else {
                         ctx.response().putHeader("content-type", "application/json")
                                 .end(rowToJson(rows.iterator().next()).encodePrettily());
                     }
                 })
-                .onFailure(err -> error(ctx, 500, err.getMessage()));
+                .onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void delete(RoutingContext ctx) {
@@ -148,11 +148,11 @@ public class BaselineVerticle extends AbstractFunctionVerticle {
                 "DELETE FROM performance_baseline WHERE id = $1", Tuple.of(id), 3
         ).onSuccess(rows -> {
             if (rows.rowCount() == 0) {
-                error(ctx, 404, "baseline not found");
+                sendError(ctx, 404, "baseline not found");
             } else {
                 ctx.response().setStatusCode(204).end();
             }
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private JsonObject rowToJson(Row row) {
@@ -168,9 +168,4 @@ public class BaselineVerticle extends AbstractFunctionVerticle {
                 .put("updatedAt", row.getLocalDateTime("updated_at").toString());
     }
 
-    private static void error(RoutingContext ctx, int status, String message) {
-        ctx.response().setStatusCode(status)
-                .putHeader("content-type", "application/json")
-                .end(new JsonObject().put("error", message).encodePrettily());
-    }
 }

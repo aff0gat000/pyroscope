@@ -1,10 +1,10 @@
 # Pyroscope BOR Function Reference
 
-Business functions built on Pyroscope for incident response, deployment validation, and fleet-wide performance visibility.
+Three functions on top of Pyroscope: triage (incident diagnosis), diff report (deploy comparison), fleet search (cross-service hotspots).
 
 ## Architecture
 
-All functions follow the BOR/SOR layering pattern. BORs contain business logic and never access data stores directly. The Profile Data SOR wraps Pyroscope and provides a clean JSON API.
+BOR/SOR layering — BORs have the business logic, SORs handle data access. BORs never talk to Pyroscope or PostgreSQL directly.
 
 ```mermaid
 graph LR
@@ -183,18 +183,6 @@ flowchart TD
     G -->|cpu_bound| K[Profile algorithmic hotspots]
 ```
 
-### Platform Capabilities Questionnaire
-
-| Capability | Required? |
-|-----------|:---------:|
-| HTTP request/response | Yes |
-| Cron / scheduled trigger | No |
-| Kafka consumer | No |
-| Kafka producer | No |
-| File upload | No |
-| File download | No |
-| Protobuf | No |
-
 ---
 
 ## 2. Diff Report
@@ -343,18 +331,6 @@ flowchart TD
     F -->|Yes| G[Consider rollback<br/>Investigate regressed functions]
     F -->|No| H[Monitor — minor regression<br/>Track in next sprint]
 ```
-
-### Platform Capabilities Questionnaire
-
-| Capability | Required? |
-|-----------|:---------:|
-| HTTP request/response | Yes |
-| Cron / scheduled trigger | No |
-| Kafka consumer | No |
-| Kafka producer | No |
-| File upload | No |
-| File download | No |
-| Protobuf | No |
 
 ---
 
@@ -558,18 +534,6 @@ flowchart TD
     G -->|No| I[Cross-cutting pattern<br/>Publish optimization guidance]
 ```
 
-### Platform Capabilities Questionnaire
-
-| Capability | Required? |
-|-----------|:---------:|
-| HTTP request/response | Yes |
-| Cron / scheduled trigger | No |
-| Kafka consumer | No |
-| Kafka producer | No |
-| File upload | No |
-| File download | No |
-| Protobuf | No |
-
 ---
 
 ## Full Versions
@@ -730,26 +694,18 @@ sequenceDiagram
 
 ---
 
-## Platform Capabilities Summary
-
-| Capability | Triage | Diff Report | Fleet Search |
-|-----------|:------:|:-----------:|:------------:|
-| HTTP request/response | Yes | Yes | Yes |
-| Cron / scheduled trigger | No | No | No |
-| Kafka consumer | No | No | No |
-| Kafka producer | No | No | No |
-| File upload | No | No | No |
-| File download | No | No | No |
-| Protobuf | No | No | No |
+All three functions use HTTP request/response only. No cron, Kafka, file upload/download, or protobuf.
 
 ---
 
 ## Deployment Reference
 
-### Lite (Pyroscope only)
+### Phase 1 — No Database (3 BOR + 1 SOR)
+
+Requires only Pyroscope (already deployed). No PostgreSQL.
 
 ```
-# Profile Data SOR — wraps Pyroscope
+# Profile Data SOR — wraps Pyroscope API, no database
 FUNCTION=ReadPyroscopeProfile.sor.v1
 PYROSCOPE_URL=http://pyroscope:4040
 PORT=8082
@@ -770,53 +726,69 @@ PROFILE_DATA_URL=http://profile-data-sor:8082
 PORT=8080
 ```
 
-### Full (Pyroscope + PostgreSQL)
+### Phase 2 — With PostgreSQL (3 BOR + 5 SOR)
+
+Add database-backed SORs, then upgrade BOR functions from v1 → v2 by setting the additional SOR URLs. No code changes — config only.
 
 ```
-# Profile Data SOR (same as lite)
+# Profile Data SOR (unchanged from Phase 1)
 FUNCTION=ReadPyroscopeProfile.sor.v1
 PYROSCOPE_URL=http://pyroscope:4040
 PORT=8082
 
-# PostgreSQL SORs
-FUNCTION=ReadPyroscopeBaseline.sor.v1     # or CreatePyroscopeTriageHistory.sor.v1, ReadPyroscopeServiceRegistry.sor.v1, ReadPyroscopeAlertRule.sor.v1
-PG_HOST=postgres      PG_PORT=5432
-PG_DATABASE=pyroscope PG_USER=pyroscope  PG_PASSWORD=...
+# Baseline SOR (PostgreSQL)
+FUNCTION=ReadPyroscopeBaseline.sor.v1
+DB_HOST=postgres  DB_PORT=5432  DB_NAME=pyroscope  DB_USER=pyroscope  DB_PASSWORD=...
 PORT=8081
 
-# Triage Full BOR
+# Triage History SOR (PostgreSQL)
+FUNCTION=CreatePyroscopeTriageHistory.sor.v1
+DB_HOST=postgres  DB_PORT=5432  DB_NAME=pyroscope  DB_USER=pyroscope  DB_PASSWORD=...
+PORT=8081
+
+# Service Registry SOR (PostgreSQL)
+FUNCTION=ReadPyroscopeServiceRegistry.sor.v1
+DB_HOST=postgres  DB_PORT=5432  DB_NAME=pyroscope  DB_USER=pyroscope  DB_PASSWORD=...
+PORT=8081
+
+# Alert Rule SOR (PostgreSQL)
+FUNCTION=ReadPyroscopeAlertRule.sor.v1
+DB_HOST=postgres  DB_PORT=5432  DB_NAME=pyroscope  DB_USER=pyroscope  DB_PASSWORD=...
+PORT=8081
+
+# Triage Full BOR (v2 — adds baseline comparison + audit trail)
 FUNCTION=ReadPyroscopeTriageAssessment.v2
 PROFILE_DATA_URL=http://profile-data-sor:8082
 BASELINE_URL=http://baseline-sor:8081
 HISTORY_URL=http://history-sor:8081
 PORT=8080
 
-# Diff Report Full BOR
+# Diff Report Full BOR (v2 — adds threshold context + audit trail)
 FUNCTION=ReadPyroscopeDiffReport.v2
 PROFILE_DATA_URL=http://profile-data-sor:8082
 BASELINE_URL=http://baseline-sor:8081
 HISTORY_URL=http://history-sor:8081
 PORT=8080
 
-# Fleet Search Full BOR
+# Fleet Search Full BOR (v2 — adds service ownership enrichment)
 FUNCTION=ReadPyroscopeFleetSearch.v2
 PROFILE_DATA_URL=http://profile-data-sor:8082
 REGISTRY_URL=http://registry-sor:8081
 PORT=8080
 ```
 
-### All FUNCTION values
+### All FUNCTION Values
 
-| Value | Project | Requires | Description |
-|-------|---------|----------|-------------|
-| `ReadPyroscopeTriageAssessment.v1` | pyroscope-bor | Profile Data SOR | Automated profile diagnosis |
-| `ReadPyroscopeDiffReport.v1` | pyroscope-bor | Profile Data SOR | Deployment comparison reports |
-| `ReadPyroscopeFleetSearch.v1` | pyroscope-bor | Profile Data SOR | Cross-service function search and hotspots |
-| `ReadPyroscopeTriageAssessment.v2` | pyroscope-bor | Profile Data SOR + Baseline SOR + History SOR | Triage with baseline comparison and audit trail |
-| `ReadPyroscopeDiffReport.v2` | pyroscope-bor | Profile Data SOR + Baseline SOR + History SOR | Diff with threshold context and audit trail |
-| `ReadPyroscopeFleetSearch.v2` | pyroscope-bor | Profile Data SOR + Registry SOR | Fleet search with service ownership enrichment |
-| `ReadPyroscopeProfile.sor.v1` | pyroscope-sor | Pyroscope | Pyroscope API wrapper — parses flamebearer format |
-| `ReadPyroscopeBaseline.sor.v1` | pyroscope-sor | PostgreSQL | CRUD for performance thresholds |
-| `CreatePyroscopeTriageHistory.sor.v1` | pyroscope-sor | PostgreSQL | CRUD for triage assessment audit trail |
-| `ReadPyroscopeServiceRegistry.sor.v1` | pyroscope-sor | PostgreSQL | CRUD for service metadata and ownership |
-| `ReadPyroscopeAlertRule.sor.v1` | pyroscope-sor | PostgreSQL | CRUD for profiling-based alert rules |
+| Value | Layer | Phase | Requires | Description |
+|-------|-------|:-----:|----------|-------------|
+| `ReadPyroscopeProfile.sor.v1` | SOR | 1 | Pyroscope | Pyroscope API wrapper — parses flamebearer format |
+| `ReadPyroscopeTriageAssessment.v1` | BOR | 1 | Profile Data SOR | Automated profile diagnosis |
+| `ReadPyroscopeDiffReport.v1` | BOR | 1 | Profile Data SOR | Deployment comparison reports |
+| `ReadPyroscopeFleetSearch.v1` | BOR | 1 | Profile Data SOR | Cross-service function search and hotspots |
+| `ReadPyroscopeBaseline.sor.v1` | SOR | 2 | PostgreSQL | CRUD for performance thresholds |
+| `CreatePyroscopeTriageHistory.sor.v1` | SOR | 2 | PostgreSQL | CRUD for triage assessment audit trail |
+| `ReadPyroscopeServiceRegistry.sor.v1` | SOR | 2 | PostgreSQL | CRUD for service metadata and ownership |
+| `ReadPyroscopeAlertRule.sor.v1` | SOR | 2 | PostgreSQL | CRUD for profiling-based alert rules |
+| `ReadPyroscopeTriageAssessment.v2` | BOR | 2 | Profile Data + Baseline + History | Triage with baseline comparison and audit trail |
+| `ReadPyroscopeDiffReport.v2` | BOR | 2 | Profile Data + Baseline + History | Diff with threshold context and audit trail |
+| `ReadPyroscopeFleetSearch.v2` | BOR | 2 | Profile Data + Registry | Fleet search with service ownership enrichment |

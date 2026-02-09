@@ -31,14 +31,14 @@ public class TriageHistoryVerticle extends AbstractFunctionVerticle {
 
     private void create(RoutingContext ctx) {
         JsonObject body = ctx.body().asJsonObject();
-        if (body == null) { error(ctx, 400, "JSON body required"); return; }
+        if (body == null) { sendError(ctx, 400, "JSON body required"); return; }
 
         String appName = body.getString("appName");
         String profileTypes = body.getString("profileTypes");
         String diagnosis = body.getString("diagnosis");
         String severity = body.getString("severity");
         if (appName == null || diagnosis == null || severity == null) {
-            error(ctx, 400, "appName, diagnosis, severity are required");
+            sendError(ctx, 400, "appName, diagnosis, severity are required");
             return;
         }
 
@@ -68,7 +68,7 @@ public class TriageHistoryVerticle extends AbstractFunctionVerticle {
                             .put("severity", severity)
                             .put("createdAt", row.getLocalDateTime("created_at").toString())
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void listByApp(RoutingContext ctx) {
@@ -106,7 +106,7 @@ public class TriageHistoryVerticle extends AbstractFunctionVerticle {
                             .put("count", arr.size())
                             .put("history", arr)
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void latest(RoutingContext ctx) {
@@ -116,12 +116,12 @@ public class TriageHistoryVerticle extends AbstractFunctionVerticle {
                 Tuple.of(appName), 3
         ).onSuccess(rows -> {
             if (rows.rowCount() == 0) {
-                error(ctx, 404, "no triage history for " + appName);
+                sendError(ctx, 404, "no triage history for " + appName);
             } else {
                 ctx.response().putHeader("content-type", "application/json")
                         .end(rowToJson(rows.iterator().next()).encodePrettily());
             }
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void delete(RoutingContext ctx) {
@@ -130,11 +130,11 @@ public class TriageHistoryVerticle extends AbstractFunctionVerticle {
                 "DELETE FROM triage_history WHERE id = $1", Tuple.of(id), 3
         ).onSuccess(rows -> {
             if (rows.rowCount() == 0) {
-                error(ctx, 404, "record not found");
+                sendError(ctx, 404, "record not found");
             } else {
                 ctx.response().setStatusCode(204).end();
             }
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private JsonObject rowToJson(Row row) {
@@ -154,14 +154,4 @@ public class TriageHistoryVerticle extends AbstractFunctionVerticle {
         return json;
     }
 
-    private static int paramInt(RoutingContext ctx, String name, int defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null ? Integer.parseInt(val) : defaultValue;
-    }
-
-    private static void error(RoutingContext ctx, int status, String message) {
-        ctx.response().setStatusCode(status)
-                .putHeader("content-type", "application/json")
-                .end(new JsonObject().put("error", message).encodePrettily());
-    }
 }

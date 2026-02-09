@@ -1,12 +1,12 @@
-# Function Architecture — Pyroscope BOR/SOR Services
+# Function Architecture — Pyroscope BOR/SOR
 
-Technical architecture, project structure, design patterns, and build infrastructure for the Pyroscope BOR and SOR function services.
+Project structure, design patterns, and build setup for the BOR and SOR services.
 
 ---
 
 ## Project Overview
 
-The Pyroscope functions are implemented as four independent Gradle projects under `services/`. Each project produces a single fat JAR (via the Shadow plugin) that can be deployed as a standalone service.
+Four independent Gradle projects under `services/`. Each produces a fat JAR (Shadow plugin) deployable as a standalone service.
 
 | Project | Layer | Java Target | Description |
 |---------|-------|-------------|-------------|
@@ -15,7 +15,7 @@ The Pyroscope functions are implemented as four independent Gradle projects unde
 | `pyroscope-sor` | SOR | 17 | Data access: Pyroscope API wrapper + PostgreSQL CRUD |
 | `pyroscope-sor-java11` | SOR | 11 | Same functionality, Java 11 compatible |
 
-Both Java versions are maintained in parallel. The Java 17 versions use records and switch expressions; the Java 11 versions use equivalent manual POJOs and traditional switch statements with identical accessor method signatures (`.name()`, `.selfSamples()`, etc.).
+Java 17 versions use records and switch expressions; Java 11 versions use manual POJOs and traditional switch. Both expose the same accessor signatures (`.name()`, `.selfSamples()`).
 
 ---
 
@@ -37,13 +37,16 @@ Both Java versions are maintained in parallel. The Java 17 versions use records 
 
 ```mermaid
 graph TB
-    subgraph "BOR Layer (Business Logic)"
-        TV[TriageVerticle]
-        TVF[TriageFullVerticle]
-        DV[DiffReportVerticle]
-        DVF[DiffReportFullVerticle]
-        FV[FleetSearchVerticle]
-        FVF[FleetSearchFullVerticle]
+    subgraph "BOR Layer — Phase 1 (v1, no database)"
+        TV[TriageVerticle v1]
+        DV[DiffReportVerticle v1]
+        FV[FleetSearchVerticle v1]
+    end
+
+    subgraph "BOR Layer — Phase 2 (v2, full features)"
+        TVF[TriageFullVerticle v2]
+        DVF[DiffReportFullVerticle v2]
+        FVF[FleetSearchFullVerticle v2]
     end
 
     subgraph "BOR Helpers"
@@ -53,15 +56,18 @@ graph TB
         SC[SorClient]
     end
 
-    subgraph "SOR Layer (Data Access)"
+    subgraph "SOR Layer — Phase 1 (no database)"
         PD[ProfileDataVerticle]
+    end
+
+    subgraph "SOR Layer — Phase 2 (PostgreSQL)"
         BL[BaselineVerticle]
         TH[TriageHistoryVerticle]
         SR[ServiceRegistryVerticle]
         AR[AlertRuleVerticle]
     end
 
-    subgraph "SOR Infrastructure"
+    subgraph "Infrastructure"
         PC[PyroscopeClient]
         DB[DbClient]
     end
@@ -86,9 +92,9 @@ graph TB
     FVF --> SC
 
     SC -->|HTTP| PD
-    SC -->|HTTP| BL
-    SC -->|HTTP| TH
-    SC -->|HTTP| SR
+    SC -.->|HTTP, Phase 2| BL
+    SC -.->|HTTP, Phase 2| TH
+    SC -.->|HTTP, Phase 2| SR
 
     PD --> PC
     PC --> PY
@@ -100,36 +106,101 @@ graph TB
     DB --> PG
 ```
 
-**Lite deployment** uses only `TriageVerticle`, `DiffReportVerticle`, `FleetSearchVerticle` + `ProfileDataVerticle`. No database required.
+---
 
-**Full deployment** uses the Full verticle variants, adding baseline comparison, audit trails, and service registry enrichment via the PostgreSQL-backed SOR verticles.
+## Deployment Phases
+
+### Phase 1 — No Database (4 functions)
+
+Deploy to validate core profiling value before requesting PostgreSQL infrastructure. Only requires Pyroscope (already deployed).
+
+| Function | Layer | FUNCTION env var | Depends on |
+|----------|-------|-----------------|------------|
+| Profile Data | SOR | `ReadPyroscopeProfile.sor.v1` | Pyroscope HTTP API |
+| Triage | BOR | `ReadPyroscopeTriageAssessment.v1` | Profile Data SOR |
+| Diff Report | BOR | `ReadPyroscopeDiffReport.v1` | Profile Data SOR |
+| Fleet Search | BOR | `ReadPyroscopeFleetSearch.v1` | Profile Data SOR |
+
+```
+                  ┌──────────────────────────────────────────────┐
+  Phase 1         │              BOR (1 JAR)                     │
+                  │  Triage    DiffReport    FleetSearch          │
+                  └──────────────┬───────────────────────────────┘
+                                 │ HTTP
+                  ┌──────────────▼───────────────────────────────┐
+                  │              SOR (1 JAR)                     │
+                  │           ProfileData                        │
+                  └──────────────┬───────────────────────────────┘
+                                 │ HTTP
+                  ┌──────────────▼───────────────────────────────┐
+                  │           Pyroscope                          │
+                  └─────────────────────────────────────────────┘
+```
+
+### Phase 2 — With PostgreSQL (8 functions)
+
+Add database-backed SORs for baseline thresholds, audit trails, service ownership, and alert rules. Upgrade BOR functions from v1 to v2 (full) by setting additional SOR URLs in config — no code changes needed.
+
+| Function | Layer | FUNCTION env var | Depends on | PostgreSQL |
+|----------|-------|-----------------|------------|:----------:|
+| Profile Data | SOR | `ReadPyroscopeProfile.sor.v1` | Pyroscope | No |
+| Baseline | SOR | `ReadPyroscopeBaseline.sor.v1` | — | Yes |
+| Triage History | SOR | `CreatePyroscopeTriageHistory.sor.v1` | — | Yes |
+| Service Registry | SOR | `ReadPyroscopeServiceRegistry.sor.v1` | — | Yes |
+| Alert Rule | SOR | `ReadPyroscopeAlertRule.sor.v1` | — | Yes |
+| Triage | BOR | `ReadPyroscopeTriageAssessment.v2` | Profile Data + Baseline + History | — |
+| Diff Report | BOR | `ReadPyroscopeDiffReport.v2` | Profile Data + Baseline + History | — |
+| Fleet Search | BOR | `ReadPyroscopeFleetSearch.v2` | Profile Data + Registry | — |
+
+The full BOR variants (v2) handle missing SOR URLs gracefully — if `BASELINE_URL`, `HISTORY_URL`, or `REGISTRY_URL` is unset, those features are silently disabled. This means Phase 1 → Phase 2 is incremental: add SORs one at a time, set the URL, and the BOR picks it up.
+
+### What Each Phase Adds
+
+| Capability | Phase 1 | Phase 2 |
+|-----------|:-------:|:-------:|
+| Profile diagnosis | Yes | Yes |
+| Deploy comparison | Yes | Yes |
+| Fleet-wide hotspots | Yes | Yes |
+| Baseline threshold comparison | — | Yes |
+| Triage audit trail | — | Yes |
+| Service ownership enrichment | — | Yes |
+| Alerting rules | — | Yes |
 
 ---
 
-## Design Patterns
+## Architecture and Design Patterns
+
+### BOR/SOR Separation
+
+Follows the enterprise service layer pattern: BOR (Business Object Rules) owns business logic, SOR (System of Record) owns data access. Each layer deploys independently from a single fat JAR — the `FUNCTION` env var selects which verticle runs.
+
+Why this matters: BOR engineers write diagnosis rules and scoring logic without touching SQL or HTTP client code. SOR changes (switching from Pyroscope to another profiler, changing the DB schema) don't require BOR redeployment.
+
+### Anti-Corruption Layer
+
+The Profile Data SOR translates Pyroscope's raw flamebearer format (4-int-stride level arrays, numTicks denominators) into a clean domain model: ranked functions with names, self-sample counts, and percentages. BOR verticles never parse Pyroscope wire format.
+
+### Graceful Degradation
+
+`SorClient` null-checks optional SOR clients before making calls. If a URL isn't configured, the client returns an empty result instead of failing:
+
+```java
+if (baseline == null) return Future.succeededFuture(
+    new JsonObject().put("baselines", new JsonArray()));
+```
+
+This enables phased rollout — deploy full BOR verticles (v2) with only `PROFILE_DATA_URL` set, and they behave identically to lite versions until the other SOR URLs are added.
+
+### Single Artifact, Multiple Deployments
+
+One JAR per layer. `Main.java` reads the `FUNCTION` env var and instantiates the matching verticle. Four deployments of the same BOR JAR (with different `FUNCTION` values) run four different functions. Reduces build artifacts from 11 to 2.
 
 ### AbstractFunctionVerticle
 
-All verticles extend `AbstractFunctionVerticle`, which consolidates common HTTP server lifecycle:
-
-```
-AbstractFunctionVerticle (abstract)
-├── Creates Router with BodyHandler
-├── Registers GET /health endpoint
-├── Starts HTTP server on configured port
-├── Calls abstract initFunction() for subclass routes
-└── Manages graceful shutdown
-```
-
-Subclasses only implement `initFunction()` to register their routes:
+All verticles extend `AbstractFunctionVerticle`. Subclasses only implement `initFunction()` to register their routes:
 
 ```java
 public class TriageVerticle extends AbstractFunctionVerticle {
-    public TriageVerticle(String profileDataUrl, int port) {
-        super(port);
-        this.profileDataUrl = profileDataUrl;
-    }
-
     @Override
     protected void initFunction() {
         sor = new SorClient(vertx, profileDataUrl);
@@ -138,9 +209,23 @@ public class TriageVerticle extends AbstractFunctionVerticle {
 }
 ```
 
+The base class also provides shared parameter extraction and error response helpers used across all verticles:
+
+- `paramLong(ctx, name, default)` / `paramInt(ctx, name, default)` / `paramStr(ctx, name, default)` — extract query parameters with defaults
+- `sendError(ctx, status, message)` — send a JSON error response (`{"error": "..."}`)
+
+```
+AbstractFunctionVerticle (abstract)
+├── HTTP server lifecycle (start/stop, health endpoint)
+├── Router with BodyHandler
+├── Parameter helpers (paramLong, paramInt, paramStr)
+├── Error response helper (sendError)
+└── abstract initFunction() — subclass routes
+```
+
 ### Business Logic Extraction
 
-Business logic is extracted into stateless utility classes with `static` methods, making them independently testable without deploying verticles or starting HTTP servers:
+Business logic lives in stateless utility classes with `static` methods — testable without deploying verticles:
 
 | Class | Package | Responsibility |
 |-------|---------|---------------|
@@ -148,9 +233,9 @@ Business logic is extracted into stateless utility classes with `static` methods
 | `DiffComputation` | `com.pyroscope.bor.diffreport` | Per-function delta calculation between baseline and current profiles, threshold comparison |
 | `HotspotScorer` | `com.pyroscope.bor.fleetsearch` | Fleet-wide hotspot ranking by impact score (serviceCount x maxSelfPercent) |
 
-### SorClient (BOR-side HTTP client)
+### SorClient (BOR HTTP client)
 
-`SorClient` is the BOR's HTTP client for communicating with SOR services. It wraps Vert.x `WebClient` and provides typed methods:
+Wraps Vert.x `WebClient` for BOR → SOR communication:
 
 | Method | SOR Called | Returns |
 |--------|----------|---------|
@@ -161,21 +246,13 @@ Business logic is extracted into stateless utility classes with `static` methods
 | `getServices()` | Service Registry | `JsonObject` with service metadata |
 | `saveHistory(assessment)` | Triage History | Fire-and-forget POST |
 
-### DbClient (SOR-side PostgreSQL client)
+### DbClient (SOR PostgreSQL client)
 
-`DbClient` wraps Vert.x's reactive `PgPool` and provides:
+Wraps Vert.x `PgPool` with connection pooling and `queryWithRetry()` (exponential backoff, max 3 retries, 5s cap). Accepts `PgConnectOptions` directly for test injection. Config via env vars: `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, `DB_POOL_SIZE`.
 
-- Connection pool management with configurable pool size
-- `queryWithRetry(sql, params, maxRetries)` with exponential backoff
-- Constructor overload accepting `PgConnectOptions` for Testcontainers injection in tests
-- Environment variable-based configuration (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`)
+### PyroscopeClient (SOR Pyroscope parser)
 
-### PyroscopeClient (SOR-side Pyroscope parser)
-
-`PyroscopeClient` wraps the Pyroscope HTTP API and parses the flamebearer response format:
-
-- `extractTopFunctions(renderResponse, limit)` — Parses the 4-int-stride flamebearer format (offset, total, self, nameIdx), aggregates self-samples across stack levels, calculates percentages, sorts by self-samples descending, and returns a ranked list of `FunctionSample` objects.
-- `ProfileType` enum maps user-friendly type names (cpu, alloc, lock, wall) to Pyroscope query syntax (e.g., `myapp.cpu{}`, `myapp.alloc_in_new_tlab_bytes{}`).
+Wraps the Pyroscope HTTP API. `extractTopFunctions()` parses the 4-int-stride flamebearer format, aggregates self-samples across stack levels, and returns ranked `FunctionSample` objects. `ProfileType` enum maps friendly names (cpu, alloc, lock, wall) to Pyroscope query syntax.
 
 ---
 
@@ -361,7 +438,7 @@ Key constraints:
 
 ## Java 11 vs Java 17 Differences
 
-The Java 11 versions maintain identical functionality and API contracts. The differences are purely syntactic:
+Same functionality and API contracts. Differences are syntactic only:
 
 | Feature | Java 17 Version | Java 11 Version |
 |---------|----------------|-----------------|
@@ -372,30 +449,19 @@ The Java 11 versions maintain identical functionality and API contracts. The dif
 | Text blocks | `"""..."""` | String concatenation |
 | `var` keyword | Yes (Java 10+) | Yes (Java 10+) |
 
-Both versions use the same test class names and the same assertion logic. Tests reference accessor methods (`.name()`, `.selfSamples()`) that are consistent across both versions.
+Tests use the same class names and assertions across both versions.
 
 ---
 
 ## Build and Test Infrastructure
 
-### Gradle Wrapper
+### Gradle
 
-Each project has its own Gradle Wrapper (`gradlew`) configured for Gradle 7.6.4. No global Gradle installation required.
-
-### Build Commands
-
-```bash
-# From any project directory
-./gradlew compileJava          # Compile main sources
-./gradlew compileTestJava      # Compile test sources
-./gradlew test                 # Run all tests
-./gradlew shadowJar            # Build fat JAR for deployment
-./gradlew clean                # Clean build artifacts
-```
+Each project has its own `gradlew` (Gradle 7.6.4). Standard commands: `./gradlew test`, `./gradlew shadowJar`, `./gradlew clean`.
 
 ### Makefile
 
-The `services/Makefile` provides top-level targets for all four projects:
+`services/Makefile` runs Gradle across all four projects:
 
 | Target | Description | Docker Required |
 |--------|-------------|:-:|
@@ -449,31 +515,27 @@ graph TB
     TC --> DOCKER[Docker Daemon]
 ```
 
-**Unit tests** test extracted business logic classes directly. No Vert.x, no HTTP, no database.
-
-**BOR integration tests** deploy real verticles and use mock HTTP servers (Vert.x `HttpServer` + `Router`) to simulate SOR responses. No Docker required.
-
-**SOR integration tests** deploy real verticles against a real PostgreSQL instance managed by Testcontainers. Docker daemon required.
+Unit tests hit the extracted business logic directly — no Vert.x, no HTTP, no database. BOR integration tests deploy real verticles against mock HTTP servers. SOR integration tests use Testcontainers with real PostgreSQL (Docker required).
 
 ---
 
 ## Deployment Configuration
 
-Each verticle is selected at startup via the `FUNCTION` environment variable. `Main.java` maps the value to the corresponding verticle class:
+`FUNCTION` env var selects the verticle at startup. One JAR, multiple deployments.
 
-| FUNCTION Value | Verticle Class | Layer |
-|---------------|---------------|-------|
-| `ReadPyroscopeTriageAssessment.v1` | TriageVerticle | BOR |
-| `ReadPyroscopeTriageAssessment.v2` | TriageFullVerticle | BOR |
-| `ReadPyroscopeDiffReport.v1` | DiffReportVerticle | BOR |
-| `ReadPyroscopeDiffReport.v2` | DiffReportFullVerticle | BOR |
-| `ReadPyroscopeFleetSearch.v1` | FleetSearchVerticle | BOR |
-| `ReadPyroscopeFleetSearch.v2` | FleetSearchFullVerticle | BOR |
-| `ReadPyroscopeProfile.sor.v1` | ProfileDataVerticle | SOR |
-| `ReadPyroscopeBaseline.sor.v1` | BaselineVerticle | SOR |
-| `CreatePyroscopeTriageHistory.sor.v1` | TriageHistoryVerticle | SOR |
-| `ReadPyroscopeServiceRegistry.sor.v1` | ServiceRegistryVerticle | SOR |
-| `ReadPyroscopeAlertRule.sor.v1` | AlertRuleVerticle | SOR |
+| FUNCTION Value | Verticle Class | Layer | Phase | PostgreSQL |
+|---------------|---------------|-------|:-----:|:----------:|
+| `ReadPyroscopeProfile.sor.v1` | ProfileDataVerticle | SOR | 1 | No |
+| `ReadPyroscopeTriageAssessment.v1` | TriageVerticle | BOR | 1 | No |
+| `ReadPyroscopeDiffReport.v1` | DiffReportVerticle | BOR | 1 | No |
+| `ReadPyroscopeFleetSearch.v1` | FleetSearchVerticle | BOR | 1 | No |
+| `ReadPyroscopeBaseline.sor.v1` | BaselineVerticle | SOR | 2 | Yes |
+| `CreatePyroscopeTriageHistory.sor.v1` | TriageHistoryVerticle | SOR | 2 | Yes |
+| `ReadPyroscopeServiceRegistry.sor.v1` | ServiceRegistryVerticle | SOR | 2 | Yes |
+| `ReadPyroscopeAlertRule.sor.v1` | AlertRuleVerticle | SOR | 2 | Yes |
+| `ReadPyroscopeTriageAssessment.v2` | TriageFullVerticle | BOR | 2 | No |
+| `ReadPyroscopeDiffReport.v2` | DiffReportFullVerticle | BOR | 2 | No |
+| `ReadPyroscopeFleetSearch.v2` | FleetSearchFullVerticle | BOR | 2 | No |
 
 ### Environment Variables
 
@@ -484,11 +546,19 @@ Each verticle is selected at startup via the `FUNCTION` environment variable. `M
 | `FUNCTION` | Yes | Verticle selector (see table above) |
 | `PORT` | No | HTTP listen port (default: 8080) |
 | `PROFILE_DATA_URL` | Yes | URL of Profile Data SOR |
-| `BASELINE_URL` | Full only | URL of Baseline SOR |
-| `HISTORY_URL` | Full only | URL of Triage History SOR |
-| `REGISTRY_URL` | Full only | URL of Service Registry SOR |
+| `BASELINE_URL` | v2 only | URL of Baseline SOR (omit to disable) |
+| `HISTORY_URL` | v2 only | URL of Triage History SOR (omit to disable) |
+| `REGISTRY_URL` | v2 only | URL of Service Registry SOR (omit to disable) |
 
-**SOR verticles (PostgreSQL):**
+**SOR verticle — Profile Data (no database):**
+
+| Variable | Required | Description |
+|----------|:--------:|-------------|
+| `FUNCTION` | Yes | `ReadPyroscopeProfile.sor.v1` |
+| `PORT` | No | HTTP listen port (default: 8080) |
+| `PYROSCOPE_URL` | Yes | Pyroscope server URL (e.g., `http://pyroscope:4040`) |
+
+**SOR verticles — PostgreSQL-backed (Phase 2):**
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|
@@ -500,11 +570,3 @@ Each verticle is selected at startup via the `FUNCTION` environment variable. `M
 | `DB_USER` | Yes | Database username |
 | `DB_PASSWORD` | Yes | Database password |
 | `DB_POOL_SIZE` | No | Connection pool size (default: 5) |
-
-**SOR verticle (Profile Data):**
-
-| Variable | Required | Description |
-|----------|:--------:|-------------|
-| `FUNCTION` | Yes | `ReadPyroscopeProfile.sor.v1` |
-| `PORT` | No | HTTP listen port (default: 8080) |
-| `PYROSCOPE_URL` | Yes | Pyroscope server URL (e.g., `http://pyroscope:4040`) |

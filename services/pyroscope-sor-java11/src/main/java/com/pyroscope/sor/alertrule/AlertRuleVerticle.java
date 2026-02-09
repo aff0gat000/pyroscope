@@ -29,13 +29,13 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
 
     private void create(RoutingContext ctx) {
         JsonObject body = ctx.body().asJsonObject();
-        if (body == null) { error(ctx, 400, "JSON body required"); return; }
+        if (body == null) { sendError(ctx, 400, "JSON body required"); return; }
 
         String appName = body.getString("appName");
         String profileType = body.getString("profileType");
         Double thresholdPercent = body.getDouble("thresholdPercent");
         if (appName == null || profileType == null || thresholdPercent == null) {
-            error(ctx, 400, "appName, profileType, thresholdPercent are required");
+            sendError(ctx, 400, "appName, profileType, thresholdPercent are required");
             return;
         }
 
@@ -58,7 +58,7 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
             ctx.response().setStatusCode(201)
                     .putHeader("content-type", "application/json")
                     .end(rowToJson(rows.iterator().next()).encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void listAll(RoutingContext ctx) {
@@ -82,7 +82,7 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
                             .put("count", arr.size())
                             .put("rules", arr)
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void getById(RoutingContext ctx) {
@@ -91,12 +91,12 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
                 "SELECT * FROM alert_rule WHERE id = $1", Tuple.of(id), 3
         ).onSuccess(rows -> {
             if (rows.rowCount() == 0) {
-                error(ctx, 404, "rule not found");
+                sendError(ctx, 404, "rule not found");
             } else {
                 ctx.response().putHeader("content-type", "application/json")
                         .end(rowToJson(rows.iterator().next()).encodePrettily());
             }
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void activeByApp(RoutingContext ctx) {
@@ -113,13 +113,13 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
                             .put("count", arr.size())
                             .put("rules", arr)
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void update(RoutingContext ctx) {
         int id = Integer.parseInt(ctx.pathParam("id"));
         JsonObject body = ctx.body().asJsonObject();
-        if (body == null) { error(ctx, 400, "JSON body required"); return; }
+        if (body == null) { sendError(ctx, 400, "JSON body required"); return; }
 
         StringBuilder sql = new StringBuilder("UPDATE alert_rule SET updated_at = NOW()");
         var params = new java.util.ArrayList<>();
@@ -137,7 +137,7 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
         if (notificationChannel != null) { sql.append(", notification_channel = $").append(idx++); params.add(notificationChannel); }
         if (enabled != null) { sql.append(", enabled = $").append(idx++); params.add(enabled); }
 
-        if (params.isEmpty()) { error(ctx, 400, "no fields to update"); return; }
+        if (params.isEmpty()) { sendError(ctx, 400, "no fields to update"); return; }
 
         sql.append(" WHERE id = $").append(idx);
         params.add(id);
@@ -146,13 +146,13 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
         db.queryWithRetry(sql.toString(), Tuple.from(params), 3)
                 .onSuccess(rows -> {
                     if (rows.rowCount() == 0) {
-                        error(ctx, 404, "rule not found");
+                        sendError(ctx, 404, "rule not found");
                     } else {
                         ctx.response().putHeader("content-type", "application/json")
                                 .end(rowToJson(rows.iterator().next()).encodePrettily());
                     }
                 })
-                .onFailure(err -> error(ctx, 500, err.getMessage()));
+                .onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void delete(RoutingContext ctx) {
@@ -161,11 +161,11 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
                 "DELETE FROM alert_rule WHERE id = $1", Tuple.of(id), 3
         ).onSuccess(rows -> {
             if (rows.rowCount() == 0) {
-                error(ctx, 404, "rule not found");
+                sendError(ctx, 404, "rule not found");
             } else {
                 ctx.response().setStatusCode(204).end();
             }
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private JsonObject rowToJson(Row row) {
@@ -183,9 +183,4 @@ public class AlertRuleVerticle extends AbstractFunctionVerticle {
                 .put("updatedAt", row.getLocalDateTime("updated_at").toString());
     }
 
-    private static void error(RoutingContext ctx, int status, String message) {
-        ctx.response().setStatusCode(status)
-                .putHeader("content-type", "application/json")
-                .end(new JsonObject().put("error", message).encodePrettily());
-    }
 }

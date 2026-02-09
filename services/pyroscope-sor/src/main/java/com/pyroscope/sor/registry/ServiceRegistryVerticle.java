@@ -28,10 +28,10 @@ public class ServiceRegistryVerticle extends AbstractFunctionVerticle {
 
     private void create(RoutingContext ctx) {
         JsonObject body = ctx.body().asJsonObject();
-        if (body == null) { error(ctx, 400, "JSON body required"); return; }
+        if (body == null) { sendError(ctx, 400, "JSON body required"); return; }
 
         String appName = body.getString("appName");
-        if (appName == null) { error(ctx, 400, "appName is required"); return; }
+        if (appName == null) { sendError(ctx, 400, "appName is required"); return; }
 
         String teamOwner = body.getString("teamOwner");
         String tier = body.getString("tier", "standard");
@@ -62,7 +62,7 @@ public class ServiceRegistryVerticle extends AbstractFunctionVerticle {
             ctx.response().setStatusCode(201)
                     .putHeader("content-type", "application/json")
                     .end(rowToJson(rows.iterator().next()).encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void listAll(RoutingContext ctx) {
@@ -86,7 +86,7 @@ public class ServiceRegistryVerticle extends AbstractFunctionVerticle {
                             .put("count", arr.size())
                             .put("services", arr)
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void getByName(RoutingContext ctx) {
@@ -96,18 +96,18 @@ public class ServiceRegistryVerticle extends AbstractFunctionVerticle {
                 Tuple.of(appName), 3
         ).onSuccess(rows -> {
             if (rows.rowCount() == 0) {
-                error(ctx, 404, "service not found: " + appName);
+                sendError(ctx, 404, "service not found: " + appName);
             } else {
                 ctx.response().putHeader("content-type", "application/json")
                         .end(rowToJson(rows.iterator().next()).encodePrettily());
             }
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void update(RoutingContext ctx) {
         String appName = ctx.pathParam("appName");
         JsonObject body = ctx.body().asJsonObject();
-        if (body == null) { error(ctx, 400, "JSON body required"); return; }
+        if (body == null) { sendError(ctx, 400, "JSON body required"); return; }
 
         String teamOwner = body.getString("teamOwner");
         String tier = body.getString("tier");
@@ -126,7 +126,7 @@ public class ServiceRegistryVerticle extends AbstractFunctionVerticle {
         if (pyroscopeLabels != null) { sql.append(", pyroscope_labels = $").append(idx).append("::jsonb"); params.add(pyroscopeLabels.encode()); idx++; }
         if (metadata != null) { sql.append(", metadata = $").append(idx).append("::jsonb"); params.add(metadata.encode()); idx++; }
 
-        if (params.isEmpty()) { error(ctx, 400, "no fields to update"); return; }
+        if (params.isEmpty()) { sendError(ctx, 400, "no fields to update"); return; }
 
         sql.append(" WHERE app_name = $").append(idx);
         params.add(appName);
@@ -135,13 +135,13 @@ public class ServiceRegistryVerticle extends AbstractFunctionVerticle {
         db.queryWithRetry(sql.toString(), Tuple.from(params), 3)
                 .onSuccess(rows -> {
                     if (rows.rowCount() == 0) {
-                        error(ctx, 404, "service not found: " + appName);
+                        sendError(ctx, 404, "service not found: " + appName);
                     } else {
                         ctx.response().putHeader("content-type", "application/json")
                                 .end(rowToJson(rows.iterator().next()).encodePrettily());
                     }
                 })
-                .onFailure(err -> error(ctx, 500, err.getMessage()));
+                .onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private void delete(RoutingContext ctx) {
@@ -151,11 +151,11 @@ public class ServiceRegistryVerticle extends AbstractFunctionVerticle {
                 Tuple.of(appName), 3
         ).onSuccess(rows -> {
             if (rows.rowCount() == 0) {
-                error(ctx, 404, "service not found: " + appName);
+                sendError(ctx, 404, "service not found: " + appName);
             } else {
                 ctx.response().setStatusCode(204).end();
             }
-        }).onFailure(err -> error(ctx, 500, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 500, err.getMessage()));
     }
 
     private JsonObject rowToJson(Row row) {
@@ -174,9 +174,4 @@ public class ServiceRegistryVerticle extends AbstractFunctionVerticle {
         return json;
     }
 
-    private static void error(RoutingContext ctx, int status, String message) {
-        ctx.response().setStatusCode(status)
-                .putHeader("content-type", "application/json")
-                .end(new JsonObject().put("error", message).encodePrettily());
-    }
 }

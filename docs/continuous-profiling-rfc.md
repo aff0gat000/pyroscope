@@ -3,12 +3,12 @@
 | Field | Value |
 |-------|-------|
 | **Status** | Draft |
-| **Authors** | *[your name]* |
-| **Created** | *[date]* |
-| **Last updated** | *[date]* |
-| **Reviewers** | *[engineering leads, architects, SRE/platform team]* |
-| **Approvers** | *[VP Engineering / CTO / Architecture Review Board]* |
-| **Target decision date** | *[date]* |
+| **Authors** | TBD |
+| **Created** | TBD |
+| **Last updated** | TBD |
+| **Reviewers** | Engineering leads, architects, SRE |
+| **Approvers** | Architecture Review Board |
+| **Target decision date** | TBD |
 
 ---
 

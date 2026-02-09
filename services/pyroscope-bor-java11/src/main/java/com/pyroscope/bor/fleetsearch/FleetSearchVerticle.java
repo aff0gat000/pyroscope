@@ -32,7 +32,7 @@ public class FleetSearchVerticle extends AbstractFunctionVerticle {
     private void handleSearch(RoutingContext ctx) {
         String functionName = ctx.request().getParam("function");
         if (functionName == null || functionName.isBlank()) {
-            error(ctx, 400, "query parameter 'function' is required");
+            sendError(ctx,400, "query parameter 'function' is required");
             return;
         }
 
@@ -62,7 +62,7 @@ public class FleetSearchVerticle extends AbstractFunctionVerticle {
                     return matches;
                 })
         ).onComplete(ar -> {
-            if (ar.failed()) { error(ctx, 502, ar.cause().getMessage()); return; }
+            if (ar.failed()) { sendError(ctx,502, ar.cause().getMessage()); return; }
             ctx.response().putHeader("content-type", "application/json")
                     .end(new JsonObject()
                             .put("query", functionName)
@@ -101,7 +101,7 @@ public class FleetSearchVerticle extends AbstractFunctionVerticle {
                     return HotspotScorer.rankHotspots(byFunction, limit);
                 })
         ).onComplete(ar -> {
-            if (ar.failed()) { error(ctx, 502, ar.cause().getMessage()); return; }
+            if (ar.failed()) { sendError(ctx,502, ar.cause().getMessage()); return; }
             ctx.response().putHeader("content-type", "application/json")
                     .end(new JsonObject()
                             .put("profileType", type)
@@ -143,24 +143,4 @@ public class FleetSearchVerticle extends AbstractFunctionVerticle {
         });
     }
 
-    private static void error(RoutingContext ctx, int status, String message) {
-        ctx.response().setStatusCode(status)
-                .putHeader("content-type", "application/json")
-                .end(new JsonObject().put("error", message).encodePrettily());
-    }
-
-    private static long paramLong(RoutingContext ctx, String name, long defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null ? Long.parseLong(val) : defaultValue;
-    }
-
-    private static int paramInt(RoutingContext ctx, String name, int defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null ? Integer.parseInt(val) : defaultValue;
-    }
-
-    private static String paramStr(RoutingContext ctx, String name, String defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null && !val.isBlank() ? val : defaultValue;
-    }
 }

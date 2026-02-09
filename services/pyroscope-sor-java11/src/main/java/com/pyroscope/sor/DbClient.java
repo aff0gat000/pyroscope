@@ -12,22 +12,8 @@ import io.vertx.sqlclient.Tuple;
 
 import java.util.function.Supplier;
 
-/**
- * Shared database client for all SOR services.
- *
- * <p>Manages the PostgreSQL connection pool and provides retry logic
- * with exponential backoff for transient failures.
- *
- * <p>Configuration via environment variables:
- * <ul>
- *   <li>{@code DB_HOST} — PostgreSQL host (default: localhost)</li>
- *   <li>{@code DB_PORT} — PostgreSQL port (default: 5432)</li>
- *   <li>{@code DB_NAME} — database name (default: pyroscope)</li>
- *   <li>{@code DB_USER} — database user (default: pyroscope)</li>
- *   <li>{@code DB_PASSWORD} — database password (default: pyroscope)</li>
- *   <li>{@code DB_POOL_SIZE} — connection pool size (default: 5)</li>
- * </ul>
- */
+// PostgreSQL pool with exponential backoff retry.
+// Config: DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_POOL_SIZE
 public class DbClient {
 
     private final Pool pool;
@@ -61,16 +47,10 @@ public class DbClient {
         return pool;
     }
 
-    /**
-     * Execute a query with retry and exponential backoff.
-     */
     public Future<RowSet<Row>> queryWithRetry(String sql, Tuple params, int maxRetries) {
         return withRetry(() -> pool.preparedQuery(sql).execute(params), maxRetries, 100);
     }
 
-    /**
-     * Execute a query with retry (no parameters).
-     */
     public Future<RowSet<Row>> queryWithRetry(String sql, int maxRetries) {
         return withRetry(() -> pool.query(sql).execute(), maxRetries, 100);
     }

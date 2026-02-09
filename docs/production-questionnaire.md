@@ -1,145 +1,122 @@
-# Production Onboarding Questionnaire — Pyroscope BOR/SOR Functions
+# Production Onboarding Questionnaire — Pyroscope BOR/SOR
 
 ## Initiative Summary
 
 | Field | Answer |
 |-------|--------|
-| Initiative | Continuous profiling observability functions for Pyroscope |
-| Total BOR functions | 6 — 3 lite (ReadPyroscopeTriageAssessment.v1, ReadPyroscopeDiffReport.v1, ReadPyroscopeFleetSearch.v1) + 3 full (ReadPyroscopeTriageAssessment.v2, ReadPyroscopeDiffReport.v2, ReadPyroscopeFleetSearch.v2) |
-| Total SOR functions | 1 for initial deployment (ReadPyroscopeProfile.sor.v1). 4 additional when database is approved (ReadPyroscopeBaseline.sor.v1, CreatePyroscopeTriageHistory.sor.v1, ReadPyroscopeServiceRegistry.sor.v1, ReadPyroscopeAlertRule.sor.v1). |
-| Building off existing SOR? | No. Profile Data SOR is new — wraps the Pyroscope API. |
+| Initiative | Continuous profiling functions for Pyroscope |
+| BOR functions | 3 (Triage, Diff Report, Fleet Search) — each has a v1 (lite) and v2 (full) variant |
+| SOR functions | 5 total: 1 stateless (Profile Data), 4 PostgreSQL-backed (Baseline, History, Registry, AlertRule) |
+| Building off existing SOR? | No — new SOR wrapping Pyroscope API |
 | Type of service | Intranet |
-| Hosted | Internally at enterprise |
-| External deployment (AWS/cloud/3rd party) | No |
+| Hosted | Internal |
+| External deployment | No |
+
+All functions are HTTP request/response only. No file upload/download, cron triggers, Kafka, or protobuf.
 
 ---
 
 ## BOR Functions
 
-### 1. Triage
+All BOR functions are stateless HTTP GET endpoints. Java 11 and Java 21 versions provided. No database.
 
-| Field | Answer |
-|-------|--------|
-| **FUNCTION value** | `ReadPyroscopeTriageAssessment.v1` |
-| **Description / MVP** | Automated diagnosis of an application's profiling data. Accepts an application name, queries its CPU and allocation profiles from the Profile Data SOR, applies pattern-matching diagnostic rules, and returns the primary issue, severity level, and actionable recommendation. Engineers call this during incidents instead of manually reading flame graphs. |
-| **Business benefit / impact** | Reduces mean time to resolution during incidents by eliminating the manual profiling investigation step. Provides consistent diagnostic quality regardless of who is on call. Enables junior engineers to get the same profiling diagnosis as experts. |
-| **Function details** | Java 11 or Java 21 (both versions provided), Vert.x 4.5.8. Single verticle (`TriageVerticle.java`). HTTP GET endpoint. Stateless — no local storage, no sessions. Calls Profile Data SOR over HTTP. |
-| **Expected volumes** | Low. Called on-demand during incidents or by automation. Estimated under 10 TPS. Well below 100 TPS threshold. |
-| **Additional capabilities** | None. HTTP request/response only. No file upload/download, no cron triggers, no Kafka streaming, no protobuf. |
-| **Database** | None |
+### 1. Triage — `ReadPyroscopeTriageAssessment.v1`
 
-### 2. Diff Report
+Queries an app's CPU and allocation profiles, applies pattern-matching diagnostic rules, returns diagnosis + severity + recommendation. Called during incidents instead of manually reading flame graphs.
 
-| Field | Answer |
-|-------|--------|
-| **FUNCTION value** | `ReadPyroscopeDiffReport.v1` |
-| **Description / MVP** | Compares profiling data between two time windows (baseline vs current) to detect per-function performance regressions and improvements after a deployment. Returns results as JSON or Markdown. Engineers call this after deploying to verify no regressions were introduced. |
-| **Business benefit / impact** | Provides deployment confidence by quantifying performance changes at the function level. Gives teams evidence for rollback decisions. Validates optimization work with numbers. Markdown output can be posted to pull requests or Slack as deployment evidence. |
-| **Function details** | Java 11 or Java 21 (both versions provided), Vert.x 4.5.8. Single verticle (`DiffReportVerticle.java`). HTTP GET endpoint. Stateless. Calls Profile Data SOR over HTTP. |
-| **Expected volumes** | Low. Called after deployments or on-demand for performance review. Estimated under 5 TPS. Well below 100 TPS threshold. |
-| **Additional capabilities** | None. HTTP request/response only. No file upload/download, no cron triggers, no Kafka streaming, no protobuf. |
-| **Database** | None |
+- **Verticle:** `TriageVerticle.java`
+- **Impact:** Cuts incident MTTR by removing the manual flame graph interpretation step. Consistent diagnosis regardless of who's on call.
+- **Volume:** Under 10 TPS (on-demand during incidents)
 
-### 3. Fleet Search
+### 2. Diff Report — `ReadPyroscopeDiffReport.v1`
 
-| Field | Answer |
-|-------|--------|
-| **FUNCTION value** | `ReadPyroscopeFleetSearch.v1` |
-| **Description / MVP** | Searches for functions across all Pyroscope-monitored applications and ranks fleet-wide hotspots by impact score. Two endpoints: search by function name (e.g., find all apps where `HashMap.resize` appears) and hotspot ranking (top N functions by fleet-wide impact). Used by the platform team for fleet-wide performance visibility. |
-| **Business benefit / impact** | Identifies cross-cutting performance issues in shared libraries that affect multiple applications. Prioritizes optimization work by organizational impact. Detects when multiple applications share a common root cause during incidents. |
-| **Function details** | Java 11 or Java 21 (both versions provided), Vert.x 4.5.8. Single verticle (`FleetSearchVerticle.java`). Two HTTP GET endpoints. Stateless. Calls Profile Data SOR over HTTP. |
-| **Expected volumes** | Low. Called on-demand by platform engineering team. Estimated under 5 TPS. Well below 100 TPS threshold. |
-| **Additional capabilities** | None. HTTP request/response only. No file upload/download, no cron triggers, no Kafka streaming, no protobuf. |
-| **Database** | None |
+Compares profiling data between two time windows to find per-function regressions and improvements. JSON or Markdown output. Called post-deploy to validate no regressions.
+
+- **Verticle:** `DiffReportVerticle.java`
+- **Impact:** Quantifies deployment impact at the function level. Markdown output can go straight to PRs or Slack.
+- **Volume:** Under 5 TPS (post-deploy or on-demand)
+
+### 3. Fleet Search — `ReadPyroscopeFleetSearch.v1`
+
+Two endpoints: search for a function across all monitored apps, and rank fleet-wide hotspots by impact score (`serviceCount x maxSelfPercent`). Used by the platform team.
+
+- **Verticle:** `FleetSearchVerticle.java`
+- **Impact:** Finds cross-cutting issues in shared libraries, prioritizes optimization work by fleet-wide cost.
+- **Volume:** Under 5 TPS (on-demand)
 
 ---
 
 ## SOR Functions
 
-### 4. Profile Data
+All SOR functions are stateless HTTP endpoints. Java 11 and Java 21 versions provided.
 
-| Field | Answer |
-|-------|--------|
-| **FUNCTION value** | `ReadPyroscopeProfile.sor.v1` |
-| **Description / MVP** | Data access layer wrapping the Pyroscope HTTP API. Accepts profile queries from BOR functions, calls Pyroscope's render and label-values endpoints, parses the flamebearer JSON response into a clean list of top functions with sample counts and percentages. All BOR functions call this SOR — none access Pyroscope directly. |
-| **Business benefit / impact** | Enforces the BOR/SOR architectural pattern. Centralizes Pyroscope API access, flamebearer parsing logic, and connection management in one place. If Pyroscope API changes, only this SOR needs to be updated. |
-| **Function details** | Java 11 or Java 21 (both versions provided), Vert.x 4.5.8. Single verticle (`ProfileDataVerticle.java`). Three HTTP GET endpoints (`/profiles/:appName`, `/profiles/:appName/diff`, `/profiles/apps`). Stateless. Calls Pyroscope over HTTP. |
-| **Expected volumes** | Low. Called by BOR functions only. Each BOR request generates 1-N calls to this SOR (N = number of profile types or applications). Estimated under 50 TPS even under peak fleet search usage. Well below 100 TPS threshold. |
-| **Additional capabilities** | None. HTTP request/response only. No file upload/download, no cron triggers, no Kafka streaming, no protobuf. |
-| **Database** | None. Reads from Pyroscope (HTTP API), not a database. |
+### 4. Profile Data — `ReadPyroscopeProfile.sor.v1`
 
-### 5. Baseline (requires database approval)
+Wraps the Pyroscope HTTP API. Parses flamebearer JSON into a ranked list of top functions with sample counts and percentages. All BOR functions go through this SOR.
 
-| Field | Answer |
-|-------|--------|
-| **FUNCTION value** | `ReadPyroscopeBaseline.sor.v1` |
-| **Description / MVP** | CRUD for approved performance thresholds. Teams define acceptable self-percent thresholds per application, profile type, and function name. The Triage and Diff Report full BOR variants read these baselines to produce threshold-aware diagnoses. |
-| **Business benefit / impact** | Enables data-driven deployment go/no-go decisions. Teams define what "acceptable performance" means for their application, and the system flags when thresholds are exceeded. |
-| **Function details** | Java 11 or Java 21 (both versions provided), Vert.x 4.5.8. Single verticle (`BaselineVerticle.java`). Five HTTP endpoints (POST, GET by app, GET by app+type, PUT, DELETE). Idempotent upsert via `ON CONFLICT DO UPDATE`. |
-| **Expected volumes** | Very low. CRUD operations by engineers setting thresholds. Estimated under 1 TPS. Well below 100 TPS threshold. |
-| **Additional capabilities** | None. HTTP request/response only. No file upload/download, no cron triggers, no Kafka streaming, no protobuf. |
-| **Database** | PostgreSQL. Single table `performance_baseline` with unique constraint on (app_name, profile_type, function_name). |
+- **Verticle:** `ProfileDataVerticle.java` — 3 GET endpoints
+- **Database:** None (calls Pyroscope over HTTP)
+- **Volume:** Under 50 TPS (each BOR request fans out to 1-N calls here)
 
-### 6. History (requires database approval)
+### 5. Baseline — `ReadPyroscopeBaseline.sor.v1` *(requires DB approval)*
 
-| Field | Answer |
-|-------|--------|
-| **FUNCTION value** | `CreatePyroscopeTriageHistory.sor.v1` |
-| **Description / MVP** | CRUD for triage assessment audit trail. Records every triage assessment for trend analysis, incident post-mortems, and compliance. The Triage and Diff Report full BOR variants write here after each assessment. |
-| **Business benefit / impact** | Provides an audit trail for compliance. Enables trend analysis — track whether an application's performance is improving or degrading over time. Supports post-mortem review with historical triage data. |
-| **Function details** | Java 11 or Java 21 (both versions provided), Vert.x 4.5.8. Single verticle (`TriageHistoryVerticle.java`). Four HTTP endpoints (POST, GET by app with time range, GET latest, DELETE). JSONB column for top functions. |
-| **Expected volumes** | Low. Writes occur after each triage or diff report (full variants only). Reads during post-mortem review. Estimated under 5 TPS. Well below 100 TPS threshold. |
-| **Additional capabilities** | None. HTTP request/response only. No file upload/download, no cron triggers, no Kafka streaming, no protobuf. |
-| **Database** | PostgreSQL. Single table `triage_history` with index on (app_name, created_at DESC). |
+CRUD for approved performance thresholds (self-percent per app/type/function). Triage and Diff Report full variants check these to flag threshold violations.
 
-### 7. Registry (requires database approval)
+- **Verticle:** `BaselineVerticle.java` — POST, GET, GET, PUT, DELETE. Upsert via `ON CONFLICT DO UPDATE`.
+- **Database:** PostgreSQL, `performance_baseline` table, unique on `(app_name, profile_type, function_name)`
+- **Volume:** Under 1 TPS
 
-| Field | Answer |
-|-------|--------|
-| **FUNCTION value** | `ReadPyroscopeServiceRegistry.sor.v1` |
-| **Description / MVP** | CRUD for Pyroscope-monitored application metadata. Stores team ownership, tier, environment, and notification channel for each application. The Fleet Search full BOR variant reads this to enrich search results with ownership context. |
-| **Business benefit / impact** | Enables the platform team to route performance findings to the correct team. Tracks which applications are profiled and who owns them. Supports tier-based prioritization of hotspots. |
-| **Function details** | Java 11 or Java 21 (both versions provided), Vert.x 4.5.8. Single verticle (`ServiceRegistryVerticle.java`). Five HTTP endpoints (POST, GET all, GET by app, PUT, DELETE). Idempotent upsert by app_name. JSONB columns for labels and metadata. |
-| **Expected volumes** | Very low. CRUD operations by platform team managing application metadata. Estimated under 1 TPS. Well below 100 TPS threshold. |
-| **Additional capabilities** | None. HTTP request/response only. No file upload/download, no cron triggers, no Kafka streaming, no protobuf. |
-| **Database** | PostgreSQL. Single table `service_registry` with unique constraint on app_name. |
+### 6. History — `CreatePyroscopeTriageHistory.sor.v1` *(requires DB approval)*
 
-### 8. Alert Rule (requires database approval)
+Audit trail for triage assessments. Full BOR variants write here after each diagnosis. Used in post-mortems and trend analysis.
 
-| Field | Answer |
-|-------|--------|
-| **FUNCTION value** | `ReadPyroscopeAlertRule.sor.v1` |
-| **Description / MVP** | CRUD for profiling-based alert rules. Stores per-application alert thresholds (e.g., alert if GC percentage exceeds 30% for a given application). Used by future automation to trigger alerts based on profiling data. |
-| **Business benefit / impact** | Enables proactive alerting based on profiling thresholds instead of reactive incident response. Teams define performance guardrails that generate alerts before issues impact users. |
-| **Function details** | Java 11 or Java 21 (both versions provided), Vert.x 4.5.8. Single verticle (`AlertRuleVerticle.java`). Five HTTP endpoints (POST, GET all, GET by app, PUT, DELETE). Index on (app_name, enabled). |
-| **Expected volumes** | Very low. CRUD operations by engineers managing alert rules. Estimated under 1 TPS. Well below 100 TPS threshold. |
-| **Additional capabilities** | None. HTTP request/response only. No file upload/download, no cron triggers, no Kafka streaming, no protobuf. |
-| **Database** | PostgreSQL. Single table `alert_rule` with index on (app_name, enabled). |
+- **Verticle:** `TriageHistoryVerticle.java` — POST, GET by app w/ time range, GET latest, DELETE. JSONB column.
+- **Database:** PostgreSQL, `triage_history` table, index on `(app_name, created_at DESC)`
+- **Volume:** Under 5 TPS
+
+### 7. Registry — `ReadPyroscopeServiceRegistry.sor.v1` *(requires DB approval)*
+
+Metadata for monitored apps: team owner, tier, environment, notification channel. Fleet Search full variant reads this for ownership enrichment.
+
+- **Verticle:** `ServiceRegistryVerticle.java` — POST, GET all, GET by app, PUT, DELETE. JSONB columns.
+- **Database:** PostgreSQL, `service_registry` table, unique on `app_name`
+- **Volume:** Under 1 TPS
+
+### 8. Alert Rule — `ReadPyroscopeAlertRule.sor.v1` *(requires DB approval)*
+
+CRUD for profiling-based alert thresholds (e.g., "alert if GC > 30% for app X"). For future automation.
+
+- **Verticle:** `AlertRuleVerticle.java` — POST, GET all, GET by app, active rules, PUT, DELETE
+- **Database:** PostgreSQL, `alert_rule` table, index on `(app_name, enabled)`
+- **Volume:** Under 1 TPS
 
 ---
 
 ## Deployment Phases
 
-### Phase 1 — Standalone Triage (no SOR, no database)
+### Phase 1 — No Database (3 BOR + 1 SOR)
 
-| Item | Count |
-|------|-------|
-| BOR functions to deploy | 1 (ReadPyroscopeTriageAssessment.v1) |
-| SOR functions to deploy | 0 — data access is embedded in the BOR |
-| Total functions | 1 |
+| Item | Detail |
+|------|--------|
+| BOR functions | 3: ReadPyroscopeTriageAssessment.v1, ReadPyroscopeDiffReport.v1, ReadPyroscopeFleetSearch.v1 |
+| SOR functions | 1: ReadPyroscopeProfile.sor.v1 (wraps Pyroscope HTTP API, no database) |
+| Total functions | 4 |
 | Database required | No |
 | External dependencies | Pyroscope (already deployed) |
-| Notes | The triage BOR calls Pyroscope directly via an embedded data access layer. No separate SOR deployment needed. Logical BOR/SOR separation is maintained in code (business logic in `TriageVerticle`, data access in `com.pyroscope.bor.sor.PyroscopeClient`). |
 
-### Phase 2 — Full (SOR services + database required)
+All three BOR functions call the Profile Data SOR over HTTP. The Profile Data SOR calls the Pyroscope API and parses flamebearer responses into ranked function lists. No PostgreSQL needed.
 
-| Item | Count |
-|------|-------|
-| BOR functions to deploy | 3 (ReadPyroscopeTriageAssessment.v2, ReadPyroscopeDiffReport.v2, ReadPyroscopeFleetSearch.v2) — replaces Phase 1 standalone triage |
-| SOR functions to deploy | 5 (ReadPyroscopeProfile.sor.v1, ReadPyroscopeBaseline.sor.v1, CreatePyroscopeTriageHistory.sor.v1, ReadPyroscopeServiceRegistry.sor.v1, ReadPyroscopeAlertRule.sor.v1) |
+### Phase 2 — With PostgreSQL (3 BOR + 5 SOR)
+
+| Item | Detail |
+|------|--------|
+| BOR functions | 3: ReadPyroscopeTriageAssessment.v2, ReadPyroscopeDiffReport.v2, ReadPyroscopeFleetSearch.v2 (replace Phase 1 v1 BORs) |
+| SOR functions | 5: ReadPyroscopeProfile.sor.v1 (unchanged), ReadPyroscopeBaseline.sor.v1, CreatePyroscopeTriageHistory.sor.v1, ReadPyroscopeServiceRegistry.sor.v1, ReadPyroscopeAlertRule.sor.v1 |
 | Total functions | 8 |
 | Database required | PostgreSQL (single instance, 4 tables) |
 | External dependencies | Pyroscope (already deployed) |
+
+Phase 1 → Phase 2 upgrade: deploy the 4 new PostgreSQL-backed SORs, then switch BOR `FUNCTION` env vars from v1 to v2 and set the additional SOR URLs. The v2 BORs handle missing SOR URLs gracefully, so the upgrade can be done incrementally.
 
 ---
 

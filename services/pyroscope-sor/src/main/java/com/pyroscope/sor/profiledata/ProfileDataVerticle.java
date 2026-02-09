@@ -77,7 +77,7 @@ public class ProfileDataVerticle extends AbstractFunctionVerticle {
                             .put("totalSamples", totalSamples)
                             .put("functions", toJsonArray(functions))
                             .encodePrettily());
-        }).onFailure(err -> error(ctx, 502, err.getMessage()));
+        }).onFailure(err -> sendError(ctx, 502, err.getMessage()));
     }
 
     /**
@@ -101,7 +101,7 @@ public class ProfileDataVerticle extends AbstractFunctionVerticle {
 
         CompositeFuture.all(baselineFuture, currentFuture).onComplete(ar -> {
             if (ar.failed()) {
-                error(ctx, 502, ar.cause().getMessage());
+                sendError(ctx, 502, ar.cause().getMessage());
                 return;
             }
 
@@ -133,7 +133,7 @@ public class ProfileDataVerticle extends AbstractFunctionVerticle {
                         .end(new JsonObject()
                                 .put("apps", new JsonArray(apps))
                                 .encodePrettily())
-        ).onFailure(err -> error(ctx, 502, err.getMessage()));
+        ).onFailure(err -> sendError(ctx, 502, err.getMessage()));
     }
 
     // ---- Mapping helpers (data concern, not business logic) ----
@@ -158,24 +158,4 @@ public class ProfileDataVerticle extends AbstractFunctionVerticle {
         return arr;
     }
 
-    private static long paramLong(RoutingContext ctx, String name, long defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null ? Long.parseLong(val) : defaultValue;
-    }
-
-    private static int paramInt(RoutingContext ctx, String name, int defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null ? Integer.parseInt(val) : defaultValue;
-    }
-
-    private static String paramStr(RoutingContext ctx, String name, String defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null && !val.isBlank() ? val : defaultValue;
-    }
-
-    private static void error(RoutingContext ctx, int status, String message) {
-        ctx.response().setStatusCode(status)
-                .putHeader("content-type", "application/json")
-                .end(new JsonObject().put("error", message).encodePrettily());
-    }
 }

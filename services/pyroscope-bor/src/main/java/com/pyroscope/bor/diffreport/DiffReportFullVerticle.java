@@ -201,18 +201,4 @@ public class DiffReportFullVerticle extends AbstractFunctionVerticle {
         return sb.toString();
     }
 
-    private static long paramLong(RoutingContext ctx, String name, long defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null ? Long.parseLong(val) : defaultValue;
-    }
-
-    private static int paramInt(RoutingContext ctx, String name, int defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null ? Integer.parseInt(val) : defaultValue;
-    }
-
-    private static String paramStr(RoutingContext ctx, String name, String defaultValue) {
-        String val = ctx.request().getParam(name);
-        return val != null && !val.isBlank() ? val : defaultValue;
-    }
 }
