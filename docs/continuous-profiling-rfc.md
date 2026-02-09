@@ -627,6 +627,111 @@ No code change or rebuild needed — set the environment variable and restart.
 
 ---
 
+## Automated Analysis Functions (BOR/SOR)
+
+Beyond the raw flame graph UI in Grafana, we're building a set of HTTP functions that consume Pyroscope data and return automated analysis. These run as lightweight Vert.x services following the enterprise BOR/SOR pattern.
+
+### Why automate on top of Pyroscope
+
+Flame graphs are powerful but require expertise to interpret. Not every on-call engineer knows how to read one at 2 AM. The analysis functions translate flame graph data into plain-language diagnostics, deployment comparisons, and fleet-wide hotspot rankings — no flame graph expertise required.
+
+| Without functions | With functions |
+|---|---|
+| Open Grafana → navigate to Pyroscope → select app → choose time range → read flame graph → interpret patterns → form diagnosis | `GET /triage/my-app` → receive diagnosis, severity, and recommendation in JSON |
+| Manually compare two flame graphs side by side after a deploy | `GET /diff/my-app?baselineFrom=T1&baselineTo=T2&from=T3&to=T4` → receive list of regressions and improvements with percentages |
+| Check each service individually for a common hotspot | `GET /search?function=HashMap.resize` → see all affected services ranked by impact |
+
+### Function inventory
+
+Three BOR functions (business logic) and five SOR functions (data access), deployed in two phases.
+
+**Phase 1 — No Database (3 BOR + 1 SOR)**
+
+Deploy immediately after Pyroscope is running. No PostgreSQL needed. Validates core value.
+
+| Function | Use Case | Business Impact |
+|----------|----------|----------------|
+| **Triage** | Engineer is paged for a latency spike. Calls `GET /triage/my-app` and gets "gc_pressure — high severity — check heap sizing." | Cuts incident MTTR by removing the manual flame graph interpretation step. Consistent diagnosis regardless of who's on call. |
+| **Diff Report** | Team deploys v2.3.1. Calls `GET /diff/my-app` and gets "1 regression: DataSerializer.serialize +6.6%, 1 improvement: CacheManager.lookup -12.2%." | Quantifies deployment impact at the function level. Markdown output goes straight to PRs or Slack. Catches regressions before users notice. |
+| **Fleet Search** | Platform team notices HashMap.resize in multiple triage reports. Calls `GET /search?function=HashMap.resize` and gets a ranked list of all affected services. `GET /fleet/hotspots` shows the top 10 fleet-wide hotspots. | Finds cross-cutting issues in shared libraries. Prioritizes optimization work by fleet-wide cost (`serviceCount x maxSelfPercent`). |
+| **Profile Data SOR** | Wraps the Pyroscope HTTP API. Parses flamebearer JSON into ranked function lists. All BOR functions call through this SOR. | Anti-corruption layer — BOR functions never touch Pyroscope wire format. Decouples business logic from Pyroscope API changes. |
+
+**Phase 2 — With PostgreSQL (adds 4 SOR, upgrades 3 BOR)**
+
+After Phase 1 proves value, request PostgreSQL and deploy the stateful SORs. Upgrade BOR functions from v1 to v2 by setting additional URLs in config — no code changes.
+
+| Function | What it adds | Business Impact |
+|----------|-------------|----------------|
+| **Baseline SOR** | CRUD for approved performance thresholds per app/type/function | Data-driven deployment go/no-go: "GC at 34.2% exceeds approved baseline of 15% by 19.2 points" |
+| **Triage History SOR** | Audit trail for every triage assessment | Post-mortem reviews reference exactly what was diagnosed and when. Trend analysis over time. |
+| **Service Registry SOR** | Metadata for monitored apps: team owner, tier, environment | Fleet search results include who owns each service. Hotspot findings route directly to the responsible team. |
+| **Alert Rule SOR** | CRUD for profiling-based alert thresholds | Future automation: "alert if GC > 30% for app X" |
+| **Triage v2** | Baseline comparison + audit trail | Instead of "GC is high," says "GC exceeds approved baseline by 19.2 points." Every diagnosis saved for compliance. |
+| **Diff Report v2** | Threshold breach flags + audit trail | Regressions annotated with whether they breach approved thresholds. |
+| **Fleet Search v2** | Service ownership enrichment | `criticalServiceCount` prioritizes hotspots affecting critical services. |
+
+### Architecture
+
+```mermaid
+graph TB
+    subgraph "BOR Layer (Business Logic)"
+        T[Triage]
+        D[Diff Report]
+        F[Fleet Search]
+    end
+
+    subgraph "SOR Layer (Data Access)"
+        PD[Profile Data]
+        BL[Baseline]
+        HI[History]
+        RE[Registry]
+        AR[Alert Rules]
+    end
+
+    T --> PD
+    D --> PD
+    F --> PD
+    PD --> PY[(Pyroscope)]
+
+    T -.->|Phase 2| BL
+    T -.->|Phase 2| HI
+    D -.->|Phase 2| BL
+    D -.->|Phase 2| HI
+    F -.->|Phase 2| RE
+    BL --> PG[(PostgreSQL)]
+    HI --> PG
+    RE --> PG
+    AR --> PG
+```
+
+Solid lines = Phase 1 (no database). Dashed lines = Phase 2 (PostgreSQL). See [function-architecture-phase1.md](function-architecture-phase1.md) and [function-architecture-phase2.md](function-architecture-phase2.md) for detailed architecture, and [function-reference-phase1.md](function-reference-phase1.md) and [function-reference-phase2.md](function-reference-phase2.md) for API specs.
+
+### Relationship to Pyroscope rollout phases
+
+The Pyroscope rollout (Pilot → Expand → Production) and the function deployment (Phase 1 → Phase 2) are independent but complementary:
+
+| Pyroscope rollout | Function deployment | What you get |
+|---|---|---|
+| Pilot (2-3 services, CPU only) | — | Raw flame graphs in Grafana for pilot services |
+| Pilot | Phase 1 (3 BOR + 1 SOR) | Automated triage, diff reports, and fleet search for pilot services |
+| Expand (more services, alloc + lock) | Phase 1 | Automated analysis across more services and profile types |
+| Production (all services, HA) | Phase 2 (+ PostgreSQL) | Full analysis with baselines, audit trails, and service ownership |
+
+Functions can be deployed as early as the Pilot phase. They add value even with 2-3 services — the triage function alone saves time during the first incident investigation.
+
+### Performance considerations
+
+| Concern | Analysis |
+|---------|----------|
+| **Triage latency** | One BOR → SOR → Pyroscope round-trip per profile type. With 2 profile types (cpu, alloc), expect ~200-500ms depending on Pyroscope query latency. |
+| **Diff report latency** | One round-trip for two time windows (Pyroscope renders both in one query). Similar to triage: ~200-500ms. |
+| **Fleet search latency** | Fans out to N apps in parallel. For 50 apps: ~1-3s. For 200 apps: ~3-10s. Latency scales with fleet size, not with data volume per app. |
+| **SOR overhead** | ProfileData SOR is stateless HTTP — scales horizontally. PostgreSQL-backed SORs handle <1 TPS each. Connection pooling via Vert.x PgPool (default 5 connections). |
+| **Horizontal scaling** | Each function is a stateless fat JAR. Deploy more instances behind a load balancer if needed. No shared state between instances. |
+| **Failure isolation** | BOR functions handle SOR failures gracefully (return 502 with error details). Phase 2 SOR URLs are optional — if Baseline SOR goes down, triage still works, just without baseline comparison. |
+
+---
+
 ## Business Value
 
 ### Infrastructure cost optimization
