@@ -442,20 +442,26 @@ Start with monolithic mode to evaluate Pyroscope and validate the integration. W
 3. **Update the Docker image** — add the agent JAR to your application image:
 
    ```dockerfile
-   # Option A: COPY into the image at build time
+   # Option A: COPY into the image at build time (recommended)
    FROM eclipse-temurin:17-jre
    COPY pyroscope.jar /opt/pyroscope/pyroscope.jar
+   COPY pyroscope.properties /opt/pyroscope/pyroscope.properties
    COPY app.jar /app/app.jar
 
-   ENV JAVA_TOOL_OPTIONS="-javaagent:/opt/pyroscope/pyroscope.jar \
-     -Dpyroscope.application.name=my-service \
-     -Dpyroscope.server.address=http://pyroscope:4040 \
-     -Dpyroscope.format=jfr \
-     -Dpyroscope.profiler.event=itimer \
-     -Dpyroscope.profiler.alloc=512k \
-     -Dpyroscope.profiler.lock=10ms"
+   ENV JAVA_TOOL_OPTIONS="-javaagent:/opt/pyroscope/pyroscope.jar"
+   ENV PYROSCOPE_CONFIGURATION_FILE="/opt/pyroscope/pyroscope.properties"
 
    ENTRYPOINT ["java", "-jar", "/app/app.jar"]
+   ```
+
+   ```properties
+   # pyroscope.properties — shared defaults for all services
+   pyroscope.server.address=http://pyroscope:4040
+   pyroscope.format=jfr
+   pyroscope.profiler.event=itimer
+   pyroscope.profiler.alloc=512k
+   pyroscope.profiler.lock=10ms
+   pyroscope.log.level=info
    ```
 
    ```yaml
@@ -465,30 +471,34 @@ Start with monolithic mode to evaluate Pyroscope and validate the integration. W
        image: my-service:latest
        volumes:
          - ./pyroscope.jar:/opt/pyroscope/pyroscope.jar:ro
+         - ./pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
        environment:
+         PYROSCOPE_APPLICATION_NAME: my-service
+         PYROSCOPE_LABELS: env=production,service=my-service
+         PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
          JAVA_TOOL_OPTIONS: >-
            -javaagent:/opt/pyroscope/pyroscope.jar
-           -Dpyroscope.application.name=my-service
-           -Dpyroscope.server.address=http://pyroscope:4040
-           -Dpyroscope.format=jfr
-           -Dpyroscope.profiler.event=itimer
-           -Dpyroscope.profiler.alloc=512k
-           -Dpyroscope.profiler.lock=10ms
        # Required for async-profiler to access perf events
        cap_add:
          - SYS_PTRACE
    ```
 
-4. **Add the agent to your application startup command** — set `-javaagent:/opt/pyroscope/pyroscope.jar` and the required system properties in `JAVA_TOOL_OPTIONS` or your entrypoint:
+4. **Add the agent to your application startup command** — set `-javaagent:/opt/pyroscope/pyroscope.jar` in `JAVA_TOOL_OPTIONS` and provide a `pyroscope.properties` file with shared settings. Per-service values use environment variables:
+   ```properties
+   # pyroscope.properties (shared)
+   pyroscope.server.address=http://<pyroscope-host>:4040
+   pyroscope.format=jfr
+   pyroscope.profiler.event=itimer
+   pyroscope.profiler.alloc=512k
+   pyroscope.profiler.lock=10ms
    ```
-   -javaagent:/opt/pyroscope/pyroscope.jar
-   -Dpyroscope.application.name=app-service-1
-   -Dpyroscope.server.address=http://<pyroscope-host>:4040
-   -Dpyroscope.format=jfr
-   -Dpyroscope.profiler.event=itimer
-   -Dpyroscope.profiler.alloc=512k
-   -Dpyroscope.profiler.lock=10ms
+   ```bash
+   # Per-service overrides via environment variables
+   PYROSCOPE_APPLICATION_NAME=app-service-1
+   PYROSCOPE_LABELS=env=production,service=app-service-1
+   PYROSCOPE_CONFIGURATION_FILE=/opt/pyroscope/pyroscope.properties
    ```
+   Precedence: System Properties (`-D`) > Environment Variables (`PYROSCOPE_*`) > Properties File.
 
 5. **Add Pyroscope as a data source in Grafana** — point Grafana at `http://<pyroscope-host>:4040` and use the built-in flame graph panel.
 
@@ -599,21 +609,29 @@ The Pyroscope Java agent wraps async-profiler and handles:
 
 ### Zero-code attachment
 
-The profiler is attached via an environment variable. No application code, no dependency changes, no rebuild required:
+The profiler is attached via an environment variable. No application code, no dependency changes, no rebuild required. Shared settings are defined in a `pyroscope.properties` file; per-service values use environment variables:
 
-```yaml
-environment:
-  JAVA_TOOL_OPTIONS: >-
-    -javaagent:/opt/pyroscope/pyroscope.jar
-    -Dpyroscope.application.name=app-service-1
-    -Dpyroscope.server.address=http://pyroscope:4040
-    -Dpyroscope.format=jfr
-    -Dpyroscope.profiler.event=itimer
-    -Dpyroscope.profiler.alloc=512k
-    -Dpyroscope.profiler.lock=10ms
+```properties
+# pyroscope.properties — baked into image, shared across all services
+pyroscope.server.address=http://pyroscope:4040
+pyroscope.format=jfr
+pyroscope.profiler.event=itimer
+pyroscope.profiler.alloc=512k
+pyroscope.profiler.lock=10ms
+pyroscope.log.level=info
 ```
 
-No code change or rebuild needed — set the environment variable and restart.
+```yaml
+# docker-compose.yaml — per-service overrides
+environment:
+  PYROSCOPE_APPLICATION_NAME: app-service-1
+  PYROSCOPE_LABELS: env=production,service=app-service-1
+  PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
+  JAVA_TOOL_OPTIONS: >-
+    -javaagent:/opt/pyroscope/pyroscope.jar
+```
+
+No code change or rebuild needed — set the environment variables and restart. Precedence: System Properties (`-D`) > Environment Variables (`PYROSCOPE_*`) > Properties File.
 
 ### JVM version compatibility
 

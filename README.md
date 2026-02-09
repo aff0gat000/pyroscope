@@ -384,21 +384,31 @@ pyroscope/
 
 ## How It Works — No Code Changes
 
-The Pyroscope Java agent is attached using `JAVA_TOOL_OPTIONS` in `docker-compose.yaml`:
+The Pyroscope Java agent is configured via a shared properties file baked into the Docker image (`/opt/pyroscope/pyroscope.properties`). Per-service overrides (application name, labels) are set via environment variables in `docker-compose.yaml`:
+
+```properties
+# config/pyroscope/pyroscope.properties — shared across all services
+pyroscope.server.address=http://pyroscope:4040
+pyroscope.format=jfr
+pyroscope.profiler.event=itimer
+pyroscope.profiler.alloc=512k
+pyroscope.profiler.lock=10ms
+pyroscope.log.level=info
+```
 
 ```yaml
+# docker-compose.yaml — per-service overrides only
 environment:
-  VERTICLE: payment                  # selects PaymentVerticle
+  VERTICLE: payment
+  PYROSCOPE_APPLICATION_NAME: bank-payment-service
+  PYROSCOPE_LABELS: env=production,service=payment-service
+  PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
   JAVA_TOOL_OPTIONS: >-
     -javaagent:/opt/pyroscope/pyroscope.jar
-    -Dpyroscope.application.name=bank-payment-service
-    -Dpyroscope.server.address=http://pyroscope:4040
-    -Dpyroscope.format=jfr
-    -Dpyroscope.profiler.event=itimer
-    -Dpyroscope.profiler.alloc=512k
-    -Dpyroscope.profiler.lock=10ms
-    -Dpyroscope.labels.env=production
+    -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
 ```
+
+Configuration precedence: System Properties (`-D`) > Environment Variables (`PYROSCOPE_*`) > Properties File.
 
 All 9 services use the same Docker image. The `VERTICLE` env var (`order`, `payment`, `fraud`, `account`, `loan`, `notification`, `stream`, `faas`) selects which class to run. Default is `MainVerticle`.
 

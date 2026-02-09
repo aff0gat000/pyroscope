@@ -125,7 +125,21 @@ curl -s http://localhost:4040/ready
 
 ## Step 2: Attach the Java Agent
 
-Add the Pyroscope agent to each Java service via `JAVA_TOOL_OPTIONS`. No code changes are required — the agent is loaded at JVM startup.
+Add the Pyroscope agent to each Java service via `JAVA_TOOL_OPTIONS`. No code changes are required — the agent is loaded at JVM startup. Shared profiler settings are defined in a properties file; per-service values (application name, labels) are set via environment variables.
+
+### Shared properties file
+
+All services share a single `pyroscope.properties` file baked into the Docker image at `/opt/pyroscope/pyroscope.properties`:
+
+```properties
+# config/pyroscope/pyroscope.properties
+pyroscope.server.address=http://pyroscope:4040
+pyroscope.format=jfr
+pyroscope.profiler.event=itimer
+pyroscope.profiler.alloc=512k
+pyroscope.profiler.lock=10ms
+pyroscope.log.level=info
+```
 
 ### Docker Compose service definition
 
@@ -138,44 +152,47 @@ Add the Pyroscope agent to each Java service via `JAVA_TOOL_OPTIONS`. No code ch
     ports:
       - "8081:8080"
     environment:
+      PYROSCOPE_APPLICATION_NAME: bank-order-service
+      PYROSCOPE_LABELS: env=production,service=order-service
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-order-service
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=order-service
-        -Dpyroscope.log.level=info
+        -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
     networks:
       - monitoring
 ```
 
-### Agent flags reference
+### Configuration methods and precedence
 
-| Flag | Purpose | Recommended Value |
-|------|---------|-------------------|
-| `-javaagent:/opt/pyroscope/pyroscope.jar` | Load the Pyroscope agent | Path to agent JAR in container |
-| `-Dpyroscope.application.name` | Application name in Pyroscope UI | Unique per service (e.g., `bank-order-service`) |
-| `-Dpyroscope.server.address` | Pyroscope server URL | `http://pyroscope:4040` (Docker network) |
-| `-Dpyroscope.format=jfr` | Profile data format | `jfr` (Java Flight Recorder) |
-| `-Dpyroscope.profiler.event=itimer` | CPU sampling method | `itimer` (portable) or `cpu` (Linux perf_events, lower overhead) |
-| `-Dpyroscope.profiler.alloc=512k` | Allocation sampling threshold | `512k` (sample every 512 KB allocated per thread) |
-| `-Dpyroscope.profiler.lock=10ms` | Lock contention threshold | `10ms` (report locks held longer than 10 ms) |
-| `-Dpyroscope.labels.*` | Static labels for filtering | `env`, `service`, `region`, `version` |
-| `-Dpyroscope.log.level` | Agent log verbosity | `info` for production, `debug` for troubleshooting |
+| Priority | Method | Example | Use Case |
+|:--------:|--------|---------|----------|
+| 1 (highest) | System Properties (`-D`) | `-Dpyroscope.log.level=debug` | One-off debugging override |
+| 2 | Environment Variables | `PYROSCOPE_APPLICATION_NAME=my-app` | Per-service values in docker-compose |
+| 3 (lowest) | Properties File | `pyroscope.format=jfr` | Shared defaults across all services |
 
-### Dockerfile (agent download)
+### Agent configuration reference
+
+| Property | Env Var | Purpose | Recommended Value |
+|----------|---------|---------|-------------------|
+| `pyroscope.application.name` | `PYROSCOPE_APPLICATION_NAME` | Application name in Pyroscope UI | Unique per service (e.g., `bank-order-service`) |
+| `pyroscope.server.address` | `PYROSCOPE_SERVER_ADDRESS` | Pyroscope server URL | `http://pyroscope:4040` (Docker network) |
+| `pyroscope.format` | `PYROSCOPE_FORMAT` | Profile data format | `jfr` (Java Flight Recorder) |
+| `pyroscope.profiler.event` | `PYROSCOPE_PROFILER_EVENT` | CPU sampling method | `itimer` (portable) or `cpu` (Linux perf_events) |
+| `pyroscope.profiler.alloc` | `PYROSCOPE_PROFILER_ALLOC` | Allocation sampling threshold | `512k` (sample every 512 KB allocated per thread) |
+| `pyroscope.profiler.lock` | `PYROSCOPE_PROFILER_LOCK` | Lock contention threshold | `10ms` (report locks held longer than 10 ms) |
+| `pyroscope.labels` | `PYROSCOPE_LABELS` | Static labels for filtering | `env=production,service=order-service` |
+| `pyroscope.log.level` | `PYROSCOPE_LOG_LEVEL` | Agent log verbosity | `info` for production, `debug` for troubleshooting |
+
+### Dockerfile (agent download + properties)
 
 ```dockerfile
 FROM eclipse-temurin:21-jre
 
 # Download Pyroscope Java agent
 ADD https://github.com/grafana/pyroscope-java/releases/download/v0.14.0/pyroscope.jar /opt/pyroscope/pyroscope.jar
+COPY pyroscope.properties /opt/pyroscope/pyroscope.properties
 
 # Download JMX Exporter (optional — for Prometheus JVM metrics)
 ADD https://repo1.maven.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/1.0.1/jmx_prometheus_javaagent-1.0.1.jar /opt/jmx-exporter/jmx_prometheus_javaagent.jar
@@ -185,7 +202,7 @@ COPY target/app.jar /app/app.jar
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
 ```
 
-The agent is loaded via `JAVA_TOOL_OPTIONS` at container startup — the Dockerfile only needs to include the JAR file.
+The agent is loaded via `JAVA_TOOL_OPTIONS` at container startup. Shared config is loaded from the properties file; the Dockerfile only needs to include the JAR and properties file.
 
 ### Verify profiles are being received
 

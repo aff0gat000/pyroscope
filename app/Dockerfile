@@ -26,6 +26,8 @@ FROM eclipse-temurin:11-jre
 WORKDIR /app
 
 # Download the Pyroscope Java agent – profiling dependency (zero code changes).
+# Shared config is mounted at runtime from config/pyroscope/pyroscope.properties;
+# per-service overrides (application name, labels) use env vars in docker-compose.yaml.
 RUN mkdir -p /opt/pyroscope && \
     curl -fSL "https://github.com/grafana/pyroscope-java/releases/download/v0.14.0/pyroscope.jar" \
          -o /opt/pyroscope/pyroscope.jar

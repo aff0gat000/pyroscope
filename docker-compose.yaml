@@ -59,7 +59,12 @@ services:
   # ---------------------------------------------------------------------------
   # Bank Enterprise Services — each runs a different Verticle.
   # All use the same Docker image; VERTICLE env var selects the class.
-  # Pyroscope agent is injected via JAVA_TOOL_OPTIONS (zero code changes).
+  #
+  # Pyroscope agent config:
+  #   Shared settings  → config/pyroscope/pyroscope.properties (mounted read-only)
+  #   Per-service name → PYROSCOPE_APPLICATION_NAME env var
+  #   Per-service label → PYROSCOPE_LABELS env var
+  #   Agents attached  → JAVA_TOOL_OPTIONS (javaagent flags only)
   # ---------------------------------------------------------------------------
 
   # API Gateway / general workloads (MainVerticle)
@@ -70,19 +75,14 @@ services:
     container_name: api-gateway
     ports:
       - "${API_GATEWAY_PORT:-8080}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
+      PYROSCOPE_APPLICATION_NAME: bank-api-gateway
+      PYROSCOPE_LABELS: env=production,service=api-gateway
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-api-gateway
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=api-gateway
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
@@ -97,20 +97,15 @@ services:
     container_name: order-service
     ports:
       - "${ORDER_SERVICE_PORT:-8081}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
       VERTICLE: order
+      PYROSCOPE_APPLICATION_NAME: bank-order-service
+      PYROSCOPE_LABELS: env=production,service=order-service
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-order-service
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=order-service
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
@@ -125,20 +120,15 @@ services:
     container_name: payment-service
     ports:
       - "${PAYMENT_SERVICE_PORT:-8082}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
       VERTICLE: payment
+      PYROSCOPE_APPLICATION_NAME: bank-payment-service
+      PYROSCOPE_LABELS: env=production,service=payment-service
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-payment-service
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=payment-service
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
@@ -153,20 +143,15 @@ services:
     container_name: fraud-service
     ports:
       - "${FRAUD_SERVICE_PORT:-8083}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
       VERTICLE: fraud
+      PYROSCOPE_APPLICATION_NAME: bank-fraud-service
+      PYROSCOPE_LABELS: env=production,service=fraud-service
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-fraud-service
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=fraud-service
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
@@ -181,20 +166,15 @@ services:
     container_name: account-service
     ports:
       - "${ACCOUNT_SERVICE_PORT:-8084}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
       VERTICLE: account
+      PYROSCOPE_APPLICATION_NAME: bank-account-service
+      PYROSCOPE_LABELS: env=production,service=account-service
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-account-service
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=account-service
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
@@ -209,20 +189,15 @@ services:
     container_name: loan-service
     ports:
       - "${LOAN_SERVICE_PORT:-8085}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
       VERTICLE: loan
+      PYROSCOPE_APPLICATION_NAME: bank-loan-service
+      PYROSCOPE_LABELS: env=production,service=loan-service
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-loan-service
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=loan-service
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
@@ -237,20 +212,15 @@ services:
     container_name: notification-service
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8086}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
       VERTICLE: notification
+      PYROSCOPE_APPLICATION_NAME: bank-notification-service
+      PYROSCOPE_LABELS: env=production,service=notification-service
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-notification-service
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=notification-service
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
@@ -265,20 +235,15 @@ services:
     container_name: stream-service
     ports:
       - "${STREAM_SERVICE_PORT:-8087}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
       VERTICLE: stream
+      PYROSCOPE_APPLICATION_NAME: bank-stream-service
+      PYROSCOPE_LABELS: env=production,service=stream-service
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-stream-service
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=stream-service
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope
@@ -293,20 +258,15 @@ services:
     container_name: faas-server
     ports:
       - "${FAAS_SERVICE_PORT:-8088}:8080"
+    volumes:
+      - ./config/pyroscope/pyroscope.properties:/opt/pyroscope/pyroscope.properties:ro
     environment:
       VERTICLE: faas
+      PYROSCOPE_APPLICATION_NAME: bank-faas-server
+      PYROSCOPE_LABELS: env=production,service=faas-server
+      PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
       JAVA_TOOL_OPTIONS: >-
         -javaagent:/opt/pyroscope/pyroscope.jar
-        -Dpyroscope.application.name=bank-faas-server
-        -Dpyroscope.server.address=http://pyroscope:4040
-        -Dpyroscope.format=jfr
-        -Dpyroscope.profiler.event=itimer
-        -Dpyroscope.profiler.alloc=512k
-        -Dpyroscope.profiler.lock=10ms
-        -Dpyroscope.profiler.event=wall
-        -Dpyroscope.labels.env=production
-        -Dpyroscope.labels.service=faas-server
-        -Dpyroscope.log.level=info
         -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
     depends_on:
       - pyroscope

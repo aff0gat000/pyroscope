@@ -161,21 +161,30 @@ flowchart LR
 
 ## JVM Agent Configuration
 
-Each service container sets `JAVA_TOOL_OPTIONS` with two agents:
+Each service container sets `JAVA_TOOL_OPTIONS` with two agents. Shared profiler settings are loaded from a properties file baked into the image; per-service overrides use environment variables:
 
-```bash
-# Pyroscope agent — continuous profiling via JFR/async-profiler
--javaagent:/opt/pyroscope/pyroscope.jar
--Dpyroscope.application.name=bank-payment-service
--Dpyroscope.server.address=http://pyroscope:4040
--Dpyroscope.format=jfr
--Dpyroscope.profiler.event=itimer      # CPU profiling
--Dpyroscope.profiler.alloc=512k        # Allocation sampling threshold
--Dpyroscope.profiler.lock=10ms         # Lock contention threshold
-
-# JMX Exporter — JVM metrics as Prometheus endpoint
--javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
+```properties
+# /opt/pyroscope/pyroscope.properties — shared across all services
+pyroscope.server.address=http://pyroscope:4040
+pyroscope.format=jfr
+pyroscope.profiler.event=itimer        # CPU profiling
+pyroscope.profiler.alloc=512k          # Allocation sampling threshold
+pyroscope.profiler.lock=10ms           # Lock contention threshold
+pyroscope.log.level=info
 ```
+
+```yaml
+# docker-compose.yaml — per-service overrides + agent attachment
+environment:
+  PYROSCOPE_APPLICATION_NAME: bank-payment-service
+  PYROSCOPE_LABELS: env=production,service=payment-service
+  PYROSCOPE_CONFIGURATION_FILE: /opt/pyroscope/pyroscope.properties
+  JAVA_TOOL_OPTIONS: >-
+    -javaagent:/opt/pyroscope/pyroscope.jar
+    -javaagent:/opt/jmx-exporter/jmx_prometheus_javaagent.jar=9404:/opt/jmx-exporter/config.yaml
+```
+
+Precedence: System Properties (`-D`) > Environment Variables (`PYROSCOPE_*`) > Properties File.
 
 ---
 
