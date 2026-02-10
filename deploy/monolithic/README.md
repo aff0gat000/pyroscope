@@ -8,7 +8,7 @@ Single-process Pyroscope server suitable for development, testing, and small-to-
 graph LR
     subgraph Pyroscope VM
         subgraph Docker Container
-            P[Pyroscope Server<br/>all-in-one]
+            P[Pyroscope Server<br/>monolith]
             FS[("/data<br/>(filesystem)")]
             P --> FS
         end
