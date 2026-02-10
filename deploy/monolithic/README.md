@@ -37,10 +37,11 @@ The Pyroscope Java agent runs as a `-javaagent` inside each Vert.x JVM process. 
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Builds a container image from `grafana/pyroscope:latest` with baked-in config |
+| `Dockerfile` | Builds a container image from Pyroscope base image with baked-in config. Supports `BASE_IMAGE` build arg for Artifactory. |
 | `pyroscope.yaml` | Server config: filesystem storage at `/data`, port 4040 |
 | `deploy.sh` | Lifecycle script (start/stop/restart/logs/status/clean) with Git and local source options |
 | `deploy-test.sh` | 45 mock-based unit tests for deploy.sh (no root or Docker needed) |
+| `build-and-push.sh` | Build Pyroscope image with pinned version and push to internal Artifactory registry |
 
 ## Prerequisites
 
@@ -218,9 +219,18 @@ docker build -t pyroscope-server .
 ```
 
 This builds an image from the Dockerfile, which:
-- Pulls `grafana/pyroscope:latest`
+- Pulls `grafana/pyroscope:latest` from Docker Hub
 - Copies `pyroscope.yaml` into the image as `/etc/pyroscope/config.yaml`
 - Sets the entrypoint to `pyroscope -config.file=/etc/pyroscope/config.yaml`
+
+If the VM cannot reach Docker Hub, use a base image from your internal registry:
+
+```bash
+docker build --build-arg BASE_IMAGE=company.corp.com/docker-proxy/pyroscope/pyroscope:1.13.0 \
+    -t pyroscope-server .
+```
+
+Or use [Option C](#option-c-pre-built-image-from-internal-registry) to avoid building on the VM entirely.
 
 ### Step 6: Create the data volume
 
@@ -313,9 +323,144 @@ docker volume rm pyroscope-data 2>/dev/null
 
 ---
 
+## Option C: Pre-built Image from Internal Registry
+
+Use this when VMs cannot reach Docker Hub (common in enterprise networks). Build the image once from a machine with internet access, push to your internal Artifactory Docker registry, then pull on VMs.
+
+### Why this option?
+
+Options A and B run `docker build` on the VM, which requires pulling `grafana/pyroscope:latest` from Docker Hub. If the VM has no internet access, the build fails with:
+
+```
+failed to resolve source metadata for docker.io/grafana/pyroscope:latest: dial ... i/o timeout
+```
+
+Option C solves this by building and pushing the image from your workstation (which has internet access) to an internal registry that VMs can reach.
+
+### Step 1: Build and push from your workstation
+
+```bash
+# Build with a pinned version (recommended over :latest)
+bash deploy/monolithic/build-and-push.sh 1.13.0
+
+# Inspect the image locally, then push when ready
+bash deploy/monolithic/build-and-push.sh 1.13.0 --push
+
+# Also update the :latest tag in the registry
+bash deploy/monolithic/build-and-push.sh 1.13.0 --push --latest
+```
+
+Configure the registry path via environment variable:
+
+```bash
+REGISTRY=company.corp.com/docker-proxy/pyroscope \
+    bash deploy/monolithic/build-and-push.sh 1.13.0 --push
+```
+
+This produces:
+
+```
+company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.13.0
+company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest   (if --latest)
+```
+
+The image has `pyroscope.yaml` baked in — no config files needed on the VM.
+
+### Step 2: SSH to the VM and elevate to root
+
+```bash
+ssh operator@vm01.corp.example.com
+pbrun /bin/su -
+```
+
+### Step 3: Pre-flight checks
+
+```bash
+docker info >/dev/null 2>&1 && echo "Docker OK" || echo "Docker NOT available"
+ss -tlnp | grep :4040
+```
+
+### Step 4: Pull the image from Artifactory
+
+```bash
+docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.13.0
+```
+
+### Step 5: Create the data volume and start the container
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.13.0
+```
+
+### Step 6: Verify
+
+```bash
+# Wait for health check
+for i in $(seq 1 30); do
+    if docker exec pyroscope wget -q --spider http://localhost:4040/ready 2>/dev/null; then
+        echo "Pyroscope is ready"
+        break
+    fi
+    sleep 2
+done
+
+curl -s http://localhost:4040/ready && echo " OK"
+```
+
+After deployment, the VM has:
+
+```
+No files on disk — the image was pulled from Artifactory.
+
+Docker:
+  Image:     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.13.0
+  Container: pyroscope (port 4040)
+  Volume:    pyroscope-data (mounted as /data)
+```
+
+### Upgrading to a new Pyroscope version
+
+On your workstation:
+
+```bash
+bash deploy/monolithic/build-and-push.sh 1.14.0 --push --latest
+```
+
+On the VM:
+
+```bash
+docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.14.0
+docker rm -f pyroscope
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.14.0
+```
+
+The data volume is preserved across upgrades.
+
+### build-and-push.sh configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `REGISTRY` | `company.corp.com/docker-proxy/pyroscope` | Artifactory registry path |
+| `IMAGE_NAME` | `pyroscope-server` | Image name |
+| `UPSTREAM_IMAGE` | `grafana/pyroscope` | Upstream Docker Hub image |
+
+---
+
 ## Idempotency and Safety
 
-Both deployment options are safe to run on a VM with existing services:
+All three deployment options are safe to run on a VM with existing services:
 
 - **Only manages its own container.** The container is named `pyroscope`. No other containers are affected.
 - **Port binding is scoped.** Only binds port 4040 (or your override). If that port is taken, Docker will fail with a clear error — it will not steal the port.
