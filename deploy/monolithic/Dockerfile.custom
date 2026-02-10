@@ -1,0 +1,81 @@
+# ---------------------------------------------------------------------------
+# Dockerfile.custom — Build Pyroscope image without pulling grafana/pyroscope
+#
+# Use this when the official grafana/pyroscope image is not available in your
+# environment (e.g., no Docker Hub access, no internal mirror). This copies
+# the Pyroscope binary from the official image in a multi-stage build, then
+# runs it on a minimal base.
+#
+# Usage:
+#   docker build -f Dockerfile.custom -t pyroscope-server:1.18.0 .
+#
+# With a custom base:
+#   docker build -f Dockerfile.custom \
+#       --build-arg PYROSCOPE_VERSION=1.18.0 \
+#       --build-arg BASE_IMAGE=registry.access.redhat.com/ubi8/ubi-minimal:8.10 \
+#       -t pyroscope-server:1.18.0 .
+# ---------------------------------------------------------------------------
+
+# ---- Stage 1: Extract binary from official image --------------------------
+ARG PYROSCOPE_VERSION=1.18.0
+FROM grafana/pyroscope:${PYROSCOPE_VERSION} AS source
+
+# ---- Stage 2: Build production image on a custom base ---------------------
+#
+# Supported base images (pick one):
+#
+#   Alpine (default) — smallest (~8 MB), widely used in production
+#     BASE_IMAGE=alpine:3.20
+#
+#   Red Hat UBI Minimal — RHEL-compatible, good for enterprise compliance
+#     BASE_IMAGE=registry.access.redhat.com/ubi8/ubi-minimal:8.10
+#
+#   Debian slim — broader package ecosystem if you need debugging tools
+#     BASE_IMAGE=debian:bookworm-slim
+#
+#   Distroless (what the official image uses) — smallest attack surface, no shell
+#     BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot
+#
+ARG BASE_IMAGE=alpine:3.20
+FROM ${BASE_IMAGE}
+
+LABEL maintainer="platform-team" \
+      description="Pyroscope server in monolithic mode (custom base)" \
+      org.opencontainers.image.source="https://github.com/grafana/pyroscope"
+
+# Create non-root user (skip for distroless which has a built-in nonroot user)
+# Alpine
+RUN if command -v addgroup >/dev/null 2>&1; then \
+        addgroup -g 10001 -S pyroscope && \
+        adduser -u 10001 -S -G pyroscope -h /data pyroscope; \
+    # Debian / UBI
+    elif command -v useradd >/dev/null 2>&1; then \
+        groupadd -g 10001 pyroscope && \
+        useradd -u 10001 -g pyroscope -d /data -s /sbin/nologin pyroscope; \
+    # UBI minimal (microdnf-based, no useradd by default)
+    elif command -v microdnf >/dev/null 2>&1; then \
+        microdnf install -y shadow-utils && \
+        microdnf clean all && \
+        groupadd -g 10001 pyroscope && \
+        useradd -u 10001 -g pyroscope -d /data -s /sbin/nologin pyroscope; \
+    fi
+
+# Copy the Pyroscope binary from the official image
+COPY --from=source /usr/bin/pyroscope /usr/bin/pyroscope
+
+# Copy the baked-in config
+COPY pyroscope.yaml /etc/pyroscope/config.yaml
+
+# Create data directory owned by pyroscope user
+RUN mkdir -p /data && chown 10001:10001 /data
+
+EXPOSE 4040
+
+# Run as non-root
+USER 10001:10001
+
+HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+    CMD ["pyroscope", "admin", "ready"] || exit 1
+
+ENTRYPOINT ["pyroscope"]
+CMD ["-config.file=/etc/pyroscope/config.yaml"]

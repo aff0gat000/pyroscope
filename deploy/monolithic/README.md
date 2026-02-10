@@ -37,11 +37,12 @@ The Pyroscope Java agent runs as a `-javaagent` inside each Vert.x JVM process. 
 
 | File | Purpose |
 |------|---------|
-| `Dockerfile` | Builds a container image from Pyroscope base image with baked-in config. Supports `BASE_IMAGE` build arg for Artifactory. |
+| `Dockerfile` | Production image from official `grafana/pyroscope` base. Pinned version, non-root user, HEALTHCHECK. |
+| `Dockerfile.custom` | Custom base image (Alpine, UBI, Debian) for environments where the official image is unavailable. Multi-stage build copies the Pyroscope binary. |
 | `pyroscope.yaml` | Server config: filesystem storage at `/data`, port 4040 |
 | `deploy.sh` | Lifecycle script (start/stop/restart/logs/status/clean) with Git and local source options |
 | `deploy-test.sh` | 45 mock-based unit tests for deploy.sh (no root or Docker needed) |
-| `build-and-push.sh` | Build Pyroscope image with pinned version and push to internal Artifactory registry |
+| `build-and-push.sh` | Build Pyroscope image with pinned version and push to internal Docker registry |
 
 ## Prerequisites
 
@@ -491,6 +492,64 @@ All settings can be set via flags or environment variables. Flags take precedenc
 | `--dry-run` | | | Show commands without executing |
 | `--list-tags` | | | List recent upstream versions from Docker Hub |
 | `--no-cache` | | | Build without Docker cache (force fresh pull) |
+
+---
+
+## Dockerfile Details
+
+### Which Dockerfile to use
+
+| Dockerfile | Base Image | When to Use |
+|-----------|-----------|-------------|
+| `Dockerfile` | `grafana/pyroscope:1.18.0` (distroless) | Default. Use when you can pull the official image from Docker Hub or an internal mirror. |
+| `Dockerfile.custom` | Alpine, UBI, or Debian (your choice) | Use when the official `grafana/pyroscope` image is completely unavailable. Multi-stage build copies the binary from the official image into a custom base. |
+
+### Security and best practices
+
+The official `grafana/pyroscope` image is already hardened:
+
+- **Distroless base** (`gcr.io/distroless/static`) — no shell, no package manager, minimal attack surface
+- **Non-root user** — runs as `pyroscope` (UID 10001, GID 10001)
+- **Statically compiled Go binary** — no runtime dependencies
+
+Our `Dockerfile` adds:
+
+- **Pinned version** (`1.18.0` instead of `latest`) — reproducible builds, no surprise upgrades
+- **HEALTHCHECK** — Docker monitors container health automatically, reports in `docker ps`
+- **OCI labels** — metadata for image provenance tracking
+
+### Custom base image (Dockerfile.custom)
+
+For environments where even the multi-stage pull from `grafana/pyroscope` is blocked, or when enterprise policy requires a specific base image (e.g., Red Hat UBI for RHEL compliance):
+
+```bash
+# Alpine (default) — smallest, ~8 MB total
+docker build -f Dockerfile.custom -t pyroscope-server:1.18.0 .
+
+# Red Hat UBI Minimal — RHEL-compatible, good for enterprise compliance
+docker build -f Dockerfile.custom \
+    --build-arg BASE_IMAGE=registry.access.redhat.com/ubi8/ubi-minimal:8.10 \
+    -t pyroscope-server:1.18.0 .
+
+# Debian slim — broader package ecosystem
+docker build -f Dockerfile.custom \
+    --build-arg BASE_IMAGE=debian:bookworm-slim \
+    -t pyroscope-server:1.18.0 .
+
+# Distroless (same as official) — smallest attack surface, no shell
+docker build -f Dockerfile.custom \
+    --build-arg BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot \
+    -t pyroscope-server:1.18.0 .
+```
+
+| Base Image | Size | Shell | Production Use | Notes |
+|-----------|:----:|:-----:|:--------------:|-------|
+| Alpine 3.20 | ~8 MB | Yes | Yes | Widely used. Default for `Dockerfile.custom`. |
+| UBI 8 Minimal | ~80 MB | Yes | Yes | Required by some enterprises for RHEL compliance. |
+| Debian slim | ~75 MB | Yes | Yes | Broader ecosystem if you need debugging tools. |
+| Distroless | ~5 MB | No | Yes | What the official image uses. Most secure, hardest to debug. |
+
+All base images are production-grade. Alpine is the best default — small, well-maintained, and has a shell for debugging if needed. Use UBI if your enterprise requires Red Hat-based images.
 
 ---
 
