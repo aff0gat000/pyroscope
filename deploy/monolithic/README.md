@@ -344,42 +344,92 @@ Option C solves this by building and pushing the image from your workstation (wh
 
 ### Step 1: Check available versions (from your workstation)
 
+Using the script:
+
 ```bash
-# List recent Pyroscope releases from Docker Hub
 bash deploy/monolithic/build-and-push.sh --list-tags
 ```
 
-### Step 2: Build and push from your workstation
+Or manually with curl:
 
 ```bash
-# Build with a pinned version (default: 1.18.0)
-bash deploy/monolithic/build-and-push.sh --version 1.18.0
-
-# Preview what would happen without executing
-bash deploy/monolithic/build-and-push.sh --version 1.18.0 --push --dry-run
-
-# Build and push to your internal registry
-bash deploy/monolithic/build-and-push.sh --version 1.18.0 --push
-
-# Also update the :latest tag in the registry
-bash deploy/monolithic/build-and-push.sh --version 1.18.0 --push --latest
+curl -s "https://hub.docker.com/v2/repositories/grafana/pyroscope/tags/?page_size=15&ordering=last_updated" \
+    | grep -oP '"name"\s*:\s*"\K[0-9]+\.[0-9]+\.[0-9]+' \
+    | sort -t. -k1,1nr -k2,2nr -k3,3nr \
+    | head -10
 ```
 
-Configure the registry path via flag or environment variable:
+Pick a version (e.g., `1.18.0`). Avoid using `latest` in production.
+
+### Step 2: Build and push from your workstation
+
+Choose **2a** (script) or **2b** (manual). Both produce the same result.
+
+#### Step 2a: Build and push with script
 
 ```bash
-# Via flag
-bash deploy/monolithic/build-and-push.sh \
-    --version 1.18.0 \
+cd deploy/monolithic
+
+# Preview what would happen (no changes made)
+bash build-and-push.sh --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --push --dry-run
+
+# Build and push to your internal registry
+bash build-and-push.sh --version 1.18.0 \
     --registry company.corp.com/docker-proxy/pyroscope \
     --push
 
-# Via environment variable
-REGISTRY=company.corp.com/docker-proxy/pyroscope \
-    bash deploy/monolithic/build-and-push.sh --version 1.18.0 --push
+# Also update the :latest tag in the registry
+bash build-and-push.sh --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --push --latest
 ```
 
-This produces:
+If building on a Mac/ARM workstation for Linux x86_64 VMs:
+
+```bash
+bash build-and-push.sh --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --platform linux/amd64 --push
+```
+
+#### Step 2b: Build and push manually (without script)
+
+```bash
+cd deploy/monolithic
+
+# 1. Build the image with a pinned version
+docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
+    -t pyroscope-server:1.18.0 .
+
+# 2. Tag for your internal registry
+docker tag pyroscope-server:1.18.0 \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+
+# 3. Log in to your internal registry (if not already authenticated)
+docker login company.corp.com
+
+# 4. Push
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+
+# 5. Optionally update the :latest tag
+docker tag pyroscope-server:1.18.0 \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest
+```
+
+If building on a Mac/ARM workstation for Linux x86_64 VMs, add `--platform linux/amd64` to the build:
+
+```bash
+docker build --platform linux/amd64 \
+    --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
+    -t pyroscope-server:1.18.0 .
+```
+
+#### Result
+
+Both 2a and 2b produce:
 
 ```
 company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
@@ -387,12 +437,6 @@ company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest   (if --latest)
 ```
 
 The image has `pyroscope.yaml` baked in — no config files needed on the VM.
-
-If building on a Mac/ARM workstation for Linux VMs:
-
-```bash
-bash deploy/monolithic/build-and-push.sh --version 1.18.0 --platform linux/amd64 --push
-```
 
 ### Step 3: SSH to the VM and elevate to root
 
@@ -455,17 +499,31 @@ Docker:
 
 ### Upgrading to a new Pyroscope version
 
-On your workstation:
+**On your workstation — build and push the new version:**
+
+With the script:
 
 ```bash
-# Check what's available
-bash deploy/monolithic/build-and-push.sh --list-tags
-
-# Build and push the new version
-bash deploy/monolithic/build-and-push.sh --version 1.19.0 --push --latest
+bash deploy/monolithic/build-and-push.sh --version 1.19.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --push --latest
 ```
 
-On the VM:
+Or manually:
+
+```bash
+cd deploy/monolithic
+
+docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.19.0 \
+    -t pyroscope-server:1.19.0 .
+
+docker tag pyroscope-server:1.19.0 \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
+
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
+```
+
+**On the VM — pull and replace the container:**
 
 ```bash
 docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
@@ -479,6 +537,18 @@ docker run -d \
 ```
 
 The data volume is preserved across upgrades.
+
+### Rolling back
+
+```bash
+docker rm -f pyroscope
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
 
 ### build-and-push.sh configuration
 
