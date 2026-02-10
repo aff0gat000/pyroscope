@@ -382,7 +382,7 @@ Pick a version (e.g., `1.18.0`). Avoid using `latest` in production.
 
 ### Step 2: Build and push from your workstation
 
-Choose **2a** (script) or **2b** (manual). Both produce the same result.
+Choose **2a** (script), **2b** (manual), or **2c** (pull official image directly). All three produce the same registry image.
 
 #### Step 2a: Build and push with script
 
@@ -446,38 +446,90 @@ docker build --platform linux/amd64 \
     -t pyroscope-server:1.18.0 .
 ```
 
+#### Step 2c: Pull and push official image directly (no build)
+
+The simplest option — pull the official `grafana/pyroscope` image from Docker Hub on your workstation, re-tag it for your internal registry, and push. No Dockerfile or build step needed. Config is mounted at runtime on the VM instead of baked into the image.
+
+With the script:
+
+```bash
+bash build-and-push.sh --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --pull-only --push
+```
+
+From a Mac for RHEL x86_64:
+
+```bash
+bash build-and-push.sh --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --pull-only --platform linux/amd64 --push
+```
+
+Or manually without the script:
+
+```bash
+# 1. Pull the official image
+docker pull --platform linux/amd64 grafana/pyroscope:1.18.0
+
+# 2. Tag for your internal registry
+docker tag grafana/pyroscope:1.18.0 \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+
+# 3. Log in to your internal registry (if not already authenticated)
+docker login company.corp.com
+
+# 4. Push
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+> **Note:** Step 2c pushes the official image without `pyroscope.yaml` baked in. You must copy `pyroscope.yaml` to the VM and mount it at runtime (see step 6 below).
+
 #### Result
 
-Both 2a and 2b produce:
+Steps 2a, 2b, and 2c all produce:
 
 ```
 company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
 company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest   (if --latest)
 ```
 
-The image has `pyroscope.yaml` baked in — no config files needed on the VM.
+If you used step 2a or 2b, the image has `pyroscope.yaml` baked in — no config files needed on the VM. If you used step 2c, you must copy `pyroscope.yaml` to the VM and mount it at runtime (see step 6).
 
-### Step 3: SSH to the VM and elevate to root
+### Step 3: Copy pyroscope.yaml to the VM (step 2c only)
+
+Skip this step if you used 2a or 2b (config is already baked into the image).
+
+From your workstation:
+
+```bash
+ssh operator@vm01.corp.example.com "mkdir -p /opt/pyroscope"
+scp deploy/monolithic/pyroscope.yaml operator@vm01.corp.example.com:/opt/pyroscope/pyroscope.yaml
+```
+
+### Step 4: SSH to the VM and elevate to root
 
 ```bash
 ssh operator@vm01.corp.example.com
 pbrun /bin/su -
 ```
 
-### Step 4: Pre-flight checks
+### Step 5: Pre-flight checks
 
 ```bash
 docker info >/dev/null 2>&1 && echo "Docker OK" || echo "Docker NOT available"
 ss -tlnp | grep :4040
 ```
 
-### Step 5: Pull the image from your internal registry
+### Step 6: Pull the image from your internal registry
 
 ```bash
 docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
 ```
 
-### Step 6: Create the data volume and start the container
+### Step 7: Create the data volume and start the container
+
+If you used **step 2a or 2b** (config baked in):
 
 ```bash
 docker volume create pyroscope-data
@@ -490,7 +542,22 @@ docker run -d \
     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
 ```
 
-### Step 7: Verify
+If you used **step 2c** (official image, config mounted at runtime):
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
+```
+
+### Step 8: Verify
 
 ```bash
 # Wait for health check
@@ -505,10 +572,13 @@ done
 curl -s http://localhost:4040/ready && echo " OK"
 ```
 
+Open `http://<VM_IP>:4040` in a browser to access the Pyroscope UI.
+
 After deployment, the VM has:
 
 ```
-No files on disk — the image was pulled from the internal registry.
+/opt/pyroscope/
+└── pyroscope.yaml     # only if step 2c (mounted at runtime)
 
 Docker:
   Image:     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
@@ -580,6 +650,7 @@ All settings can be set via flags or environment variables. Flags take precedenc
 | `--image` | `IMAGE_NAME` | `pyroscope-server` | Image name appended to registry path |
 | `--upstream` | `UPSTREAM_IMAGE` | `grafana/pyroscope` | Upstream Docker Hub image |
 | `--platform` | `PLATFORM` | *(current)* | Target platform (e.g., `linux/amd64`) |
+| `--pull-only` | | | Pull official image and push directly (no Dockerfile build, config mounted at runtime) |
 | `--push` | | | Push to internal registry after building |
 | `--latest` | | | Also tag and push as `:latest` (requires `--push`) |
 | `--dry-run` | | | Show commands without executing |
@@ -594,6 +665,7 @@ See [DOCKER-BUILD.md](DOCKER-BUILD.md) for the step-by-step guide covering:
 
 - **Option A:** Build and push with `build-and-push.sh` script (7 steps)
 - **Option B:** Build and push manually without the script (9 steps)
+- **Option C:** Pull and push official image directly — no build needed (8 steps)
 - **Custom base images:** Alpine, UBI, Debian, distroless (when official image is unavailable)
 - **Upgrading and rolling back** to a different Pyroscope version
 

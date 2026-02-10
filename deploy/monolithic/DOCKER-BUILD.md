@@ -253,6 +253,97 @@ curl -s http://localhost:4040/ready && echo " OK"
 
 ---
 
+## Option C: Pull and Push Official Image Directly (No Build)
+
+The simplest option — pull the official `grafana/pyroscope` image from Docker Hub on your workstation, re-tag it for your internal registry, and push. No Dockerfile or build step needed. Config is mounted at runtime on the VM.
+
+Run steps 1-4 on your **workstation**. Run steps 5-8 on the **VM**.
+
+### Step 1: Pull the official image
+
+```bash
+docker pull --platform linux/amd64 grafana/pyroscope:1.18.0
+```
+
+Or with the script:
+
+```bash
+bash build-and-push.sh --version 1.18.0 --pull-only --platform linux/amd64 --push \
+    --registry company.corp.com/docker-proxy/pyroscope
+```
+
+If using the script with `--push`, skip to step 5 — the script handles steps 2-4 for you.
+
+### Step 2: Tag for your internal registry
+
+```bash
+docker tag grafana/pyroscope:1.18.0 \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+### Step 3: Log in to your internal registry
+
+```bash
+docker login company.corp.com
+```
+
+### Step 4: Push to your internal registry
+
+```bash
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+### Step 5: Copy pyroscope.yaml to the VM (from your workstation)
+
+Since the official image does not have `pyroscope.yaml` baked in, copy it to the VM:
+
+```bash
+ssh operator@vm01.corp.example.com "mkdir -p /opt/pyroscope"
+scp deploy/monolithic/pyroscope.yaml operator@vm01.corp.example.com:/opt/pyroscope/pyroscope.yaml
+```
+
+### Step 6: SSH to the VM and pull the image
+
+```bash
+ssh operator@vm01.corp.example.com
+pbrun /bin/su -
+
+docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+### Step 7: Create the data volume and start the container
+
+Mount `pyroscope.yaml` from the VM filesystem into the container:
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
+```
+
+### Step 8: Verify
+
+```bash
+for i in $(seq 1 30); do
+    if docker exec pyroscope wget -q --spider http://localhost:4040/ready 2>/dev/null; then
+        echo "Pyroscope is ready"
+        break
+    fi
+    sleep 2
+done
+
+curl -s http://localhost:4040/ready && echo " OK"
+```
+
+---
+
 ## Building with a Custom Base Image
 
 Use `Dockerfile.custom` when the official `grafana/pyroscope` image is not available or enterprise policy requires a specific base (e.g., UBI for RHEL compliance).
@@ -395,6 +486,7 @@ docker run -d \
 | `--image` | `IMAGE_NAME` | `pyroscope-server` | Image name appended to registry path |
 | `--upstream` | `UPSTREAM_IMAGE` | `grafana/pyroscope` | Upstream Docker Hub image |
 | `--platform` | `PLATFORM` | *(current)* | Target platform (e.g., `linux/amd64`) |
+| `--pull-only` | | | Pull official image and push directly (no Dockerfile build, config mounted at runtime) |
 | `--push` | | | Push to internal registry after building |
 | `--latest` | | | Also tag and push as `:latest` (requires `--push`) |
 | `--dry-run` | | | Show commands without executing |

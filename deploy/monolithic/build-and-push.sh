@@ -30,6 +30,9 @@ set -euo pipefail
 #   # Override registry
 #   bash build-and-push.sh --version 1.18.0 --registry mycompany.jfrog.io/docker/pyroscope --push
 #
+#   # Pull official image and push directly (no Dockerfile build)
+#   bash build-and-push.sh --version 1.18.0 --pull-only --push
+#
 #   # Dry run — show what would be built and pushed without executing
 #   bash build-and-push.sh --version 1.18.0 --push --dry-run
 #
@@ -85,6 +88,7 @@ Options:
   --image <name>       Image name (default: ${IMAGE_NAME})
   --upstream <image>   Upstream Docker Hub image (default: ${UPSTREAM_IMAGE})
   --platform <platform> Target platform, e.g., linux/amd64 (default: current)
+  --pull-only          Pull the official image and push directly (no Dockerfile build)
   --push               Push the image to the internal registry after building
   --latest             Also tag and push as :latest (requires --push)
   --dry-run            Show what would be done without executing
@@ -115,6 +119,12 @@ Examples:
   # Build for Linux AMD64 from a Mac
   bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --push
 
+  # Pull official image and push directly (no build, no Dockerfile needed)
+  bash build-and-push.sh --version 1.18.0 --pull-only --push
+
+  # Pull official image for Linux AMD64 from a Mac
+  bash build-and-push.sh --version 1.18.0 --pull-only --platform linux/amd64 --push
+
   # Preview without executing
   bash build-and-push.sh --version 1.18.0 --push --dry-run
 USAGE
@@ -127,6 +137,7 @@ TAG_LATEST=false
 DRY_RUN=false
 LIST_TAGS=false
 NO_CACHE=false
+PULL_ONLY=false
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -135,6 +146,7 @@ while [ $# -gt 0 ]; do
         --image)      IMAGE_NAME="${2:?--image requires a value}"; shift 2 ;;
         --upstream)   UPSTREAM_IMAGE="${2:?--upstream requires a value}"; shift 2 ;;
         --platform)   PLATFORM="${2:?--platform requires a value}"; shift 2 ;;
+        --pull-only)  PULL_ONLY=true; shift ;;
         --push)       DO_PUSH=true; shift ;;
         --latest)     TAG_LATEST=true; shift ;;
         --dry-run)    DRY_RUN=true; shift ;;
@@ -193,14 +205,16 @@ if [ "${DRY_RUN}" = false ]; then
     fi
 fi
 
-if [ ! -f "${SCRIPT_DIR}/Dockerfile" ]; then
-    err "Dockerfile not found in ${SCRIPT_DIR}"
-    exit 1
-fi
+if [ "${PULL_ONLY}" = false ]; then
+    if [ ! -f "${SCRIPT_DIR}/Dockerfile" ]; then
+        err "Dockerfile not found in ${SCRIPT_DIR}"
+        exit 1
+    fi
 
-if [ ! -f "${SCRIPT_DIR}/pyroscope.yaml" ]; then
-    err "pyroscope.yaml not found in ${SCRIPT_DIR}"
-    exit 1
+    if [ ! -f "${SCRIPT_DIR}/pyroscope.yaml" ]; then
+        err "pyroscope.yaml not found in ${SCRIPT_DIR}"
+        exit 1
+    fi
 fi
 
 # ---- Summary --------------------------------------------------------------
@@ -216,6 +230,9 @@ if [ -n "${PLATFORM}" ]; then
     info "  Platform:          ${PLATFORM}"
 fi
 info "  Push to registry:  ${DO_PUSH}"
+if [ "${PULL_ONLY}" = true ]; then
+    info "  Mode:              PULL ONLY (no Dockerfile build)"
+fi
 if [ "${DRY_RUN}" = true ]; then
     info "  Mode:              DRY RUN (no commands executed)"
 fi
@@ -229,13 +246,18 @@ if [ "${DRY_RUN}" = true ]; then
     if [ -n "${PLATFORM}" ]; then
         PLATFORM_FLAG="--platform ${PLATFORM} "
     fi
-    CACHE_FLAG=""
-    if [ "${NO_CACHE}" = true ]; then
-        CACHE_FLAG="--no-cache "
+    if [ "${PULL_ONLY}" = true ]; then
+        echo "  docker pull ${PLATFORM_FLAG}${UPSTREAM_TAG}"
+        echo "  docker tag ${UPSTREAM_TAG} ${REGISTRY_TAG}"
+    else
+        CACHE_FLAG=""
+        if [ "${NO_CACHE}" = true ]; then
+            CACHE_FLAG="--no-cache "
+        fi
+        echo "  docker build ${PLATFORM_FLAG}${CACHE_FLAG}--build-arg BASE_IMAGE=${UPSTREAM_TAG} -t ${LOCAL_TAG} -t ${REGISTRY_TAG} ${SCRIPT_DIR}"
     fi
-    echo "  docker build ${PLATFORM_FLAG}${CACHE_FLAG}--build-arg BASE_IMAGE=${UPSTREAM_TAG} -t ${LOCAL_TAG} -t ${REGISTRY_TAG} ${SCRIPT_DIR}"
     if [ "${TAG_LATEST}" = true ]; then
-        echo "  docker tag ${LOCAL_TAG} ${REGISTRY_LATEST}"
+        echo "  docker tag ${REGISTRY_TAG} ${REGISTRY_LATEST}"
     fi
     if [ "${DO_PUSH}" = true ]; then
         echo "  docker push ${REGISTRY_TAG}"
@@ -244,34 +266,62 @@ if [ "${DRY_RUN}" = true ]; then
         fi
     fi
     echo ""
+    if [ "${PULL_ONLY}" = true ]; then
+        warn "Note: --pull-only pushes the official image without pyroscope.yaml baked in."
+        info "Mount your config at runtime: -v /path/to/pyroscope.yaml:/etc/pyroscope/config.yaml"
+    fi
     info "Re-run without --dry-run to execute."
     exit 0
 fi
 
-# ---- Build ----------------------------------------------------------------
-BUILD_ARGS=(
-    --build-arg "BASE_IMAGE=${UPSTREAM_TAG}"
-    -t "${LOCAL_TAG}"
-    -t "${REGISTRY_TAG}"
-)
+# ---- Build or Pull --------------------------------------------------------
+if [ "${PULL_ONLY}" = true ]; then
+    # Pull the official image directly and re-tag for internal registry
+    PULL_ARGS=()
+    if [ -n "${PLATFORM}" ]; then
+        PULL_ARGS+=(--platform "${PLATFORM}")
+    fi
 
-if [ -n "${PLATFORM}" ]; then
-    BUILD_ARGS+=(--platform "${PLATFORM}")
-fi
+    info "Pulling official image ${UPSTREAM_TAG}..."
+    docker pull "${PULL_ARGS[@]}" "${UPSTREAM_TAG}"
 
-if [ "${NO_CACHE}" = true ]; then
-    BUILD_ARGS+=(--no-cache)
-fi
+    docker tag "${UPSTREAM_TAG}" "${REGISTRY_TAG}"
+    ok "Pulled: ${UPSTREAM_TAG}"
+    ok "Tagged: ${REGISTRY_TAG}"
 
-info "Building image from ${UPSTREAM_TAG}..."
-docker build "${BUILD_ARGS[@]}" "${SCRIPT_DIR}"
+    if [ "${TAG_LATEST}" = true ]; then
+        docker tag "${UPSTREAM_TAG}" "${REGISTRY_LATEST}"
+        ok "Tagged: ${REGISTRY_LATEST}"
+    fi
 
-ok "Built: ${LOCAL_TAG}"
-ok "Tagged: ${REGISTRY_TAG}"
+    warn "Note: --pull-only pushes the official image without pyroscope.yaml baked in."
+    info "Mount your config at runtime: -v /path/to/pyroscope.yaml:/etc/pyroscope/config.yaml"
+else
+    # Build custom image with pyroscope.yaml baked in
+    BUILD_ARGS=(
+        --build-arg "BASE_IMAGE=${UPSTREAM_TAG}"
+        -t "${LOCAL_TAG}"
+        -t "${REGISTRY_TAG}"
+    )
 
-if [ "${TAG_LATEST}" = true ]; then
-    docker tag "${LOCAL_TAG}" "${REGISTRY_LATEST}"
-    ok "Tagged: ${REGISTRY_LATEST}"
+    if [ -n "${PLATFORM}" ]; then
+        BUILD_ARGS+=(--platform "${PLATFORM}")
+    fi
+
+    if [ "${NO_CACHE}" = true ]; then
+        BUILD_ARGS+=(--no-cache)
+    fi
+
+    info "Building image from ${UPSTREAM_TAG}..."
+    docker build "${BUILD_ARGS[@]}" "${SCRIPT_DIR}"
+
+    ok "Built: ${LOCAL_TAG}"
+    ok "Tagged: ${REGISTRY_TAG}"
+
+    if [ "${TAG_LATEST}" = true ]; then
+        docker tag "${LOCAL_TAG}" "${REGISTRY_LATEST}"
+        ok "Tagged: ${REGISTRY_LATEST}"
+    fi
 fi
 
 # ---- Print image info -----------------------------------------------------
@@ -299,12 +349,24 @@ if [ "${DO_PUSH}" = true ]; then
     info "  docker pull ${REGISTRY_TAG}"
     echo ""
     info "Run on VMs with:"
-    info "  docker run -d \\"
-    info "      --name pyroscope \\"
-    info "      --restart unless-stopped \\"
-    info "      -p 4040:4040 \\"
-    info "      -v pyroscope-data:/data \\"
-    info "      ${REGISTRY_TAG}"
+    if [ "${PULL_ONLY}" = true ]; then
+        info "  # Copy pyroscope.yaml to the VM first, then mount it at runtime:"
+        info "  docker run -d \\"
+        info "      --name pyroscope \\"
+        info "      --restart unless-stopped \\"
+        info "      -p 4040:4040 \\"
+        info "      -v pyroscope-data:/data \\"
+        info "      -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \\"
+        info "      ${REGISTRY_TAG} \\"
+        info "      -config.file=/etc/pyroscope/config.yaml"
+    else
+        info "  docker run -d \\"
+        info "      --name pyroscope \\"
+        info "      --restart unless-stopped \\"
+        info "      -p 4040:4040 \\"
+        info "      -v pyroscope-data:/data \\"
+        info "      ${REGISTRY_TAG}"
+    fi
     echo ""
 else
     echo ""
