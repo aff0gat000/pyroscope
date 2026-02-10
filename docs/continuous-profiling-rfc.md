@@ -360,11 +360,11 @@ Dynatrace is the incumbent APM platform in many enterprise environments. It incl
 
 ## Deployment and Integration
 
-Pyroscope supports two deployment modes. Use monolithic mode for development, POC, and evaluation. Plan on microservices mode for production.
+Pyroscope supports two [deployment modes](https://grafana.com/docs/pyroscope/latest/reference-pyroscope-architecture/deployment-modes/): **monolithic mode** and **microservices mode**. Use monolithic mode for development, POC, and evaluation. Plan on microservices mode for production.
 
 ### Monolithic mode (dev / POC / evaluation)
 
-A single Pyroscope process handles ingestion, storage, and querying. This is the fastest way to get running and evaluate the tool. The diagram below shows how Pyroscope integrates with an existing Grafana and Prometheus deployment:
+Monolithic mode (`-target=all`) runs all required components in a single process. This is the default mode and the fastest way to get running and evaluate the tool. The diagram below shows how Pyroscope integrates with an existing Grafana and Prometheus deployment:
 
 ```mermaid
 graph TB
@@ -406,17 +406,18 @@ Each Vert.x FaaS server runs as a standalone JVM process with the Pyroscope Java
 
 ### Microservices mode (production)
 
-For production workloads, Pyroscope's components (distributor, ingester, compactor, store-gateway, query-frontend, query-scheduler, querier, overrides-exporter, and optional ruler) run as separate processes with shared object storage. This provides high availability, horizontal scalability, and independent scaling of read and write paths. See [deploy/microservices/README.md](../deploy/microservices/README.md) for the full production deployment guide.
+In microservices mode, components are deployed in distinct processes (`-target=<component>`): distributor, ingester, compactor, store-gateway, query-frontend, query-scheduler, querier, overrides-exporter, and optional ruler. This provides high availability, horizontal scalability, and independent scaling of read and write paths. See [deploy/microservices/README.md](../deploy/microservices/README.md) for the full production deployment guide.
 
 ### Choosing a mode
 
-| Factor | Monolithic | Microservices |
-|--------|-----------|---------------|
+| Factor | Monolithic mode | Microservices mode |
+|--------|----------------|-------------------|
+| Target flag | `-target=all` | `-target=<component>` |
 | Purpose | Dev, POC, evaluation | Production |
 | Services profiled | Up to ~50 | 50+ or high-throughput |
 | Ingestion rate | < 100 MB/s | Hundreds of MB/s |
 | Availability | Single point of failure | Highly available |
-| Operational complexity | Minimal — one process | Higher — 9 services, shared storage |
+| Operational complexity | Minimal — single process | Higher — 9+ services, shared storage |
 
 Start with monolithic mode to evaluate Pyroscope and validate the integration. When moving to production, deploy in microservices mode for high availability and scalability.
 
@@ -845,7 +846,7 @@ Adoption follows three phases. Each phase has a clear gate before proceeding to 
 | Item | Detail |
 |------|--------|
 | **Scope** | 2-3 non-critical services, single team |
-| **Deployment mode** | Monolithic (single VM) |
+| **Deployment mode** | Monolithic mode (single VM, `-target=all`) |
 | **Profile types** | CPU only (< 1% overhead) |
 | **Goal** | Validate integration, confirm overhead is within tolerance, train the pilot team on flame graph reading |
 | **Gate to Phase 2** | No measurable latency impact at p99, at least one incident or investigation where profiling data was useful, team confirms workflow improvement |
@@ -862,7 +863,7 @@ Adoption follows three phases. Each phase has a clear gate before proceeding to 
 | Item | Detail |
 |------|--------|
 | **Scope** | All services owned by the pilot team, expand to 1-2 additional teams |
-| **Deployment mode** | Monolithic (evaluate capacity for microservices migration) |
+| **Deployment mode** | Monolithic mode (evaluate capacity for microservices mode migration) |
 | **Profile types** | Add allocation and lock profiling |
 | **Goal** | Validate at broader scale, collect MTTR data, establish Grafana dashboards and team runbooks |
 | **Gate to Phase 3** | Stable operation for 3+ weeks, MTTR improvement data collected, no production incidents caused by profiling, storage growth matches projections |

@@ -46,4 +46,4 @@ graph TB
 
 Both environments use identical Pyroscope component topology (9 services) and NFS-backed filesystem storage.
 
-For simpler single-node deployments, see [`../monolithic/`](../monolithic/).
+For monolithic mode (single-node) deployments, see [`../monolithic/`](../monolithic/).

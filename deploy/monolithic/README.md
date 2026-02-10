@@ -1,6 +1,6 @@
 # Pyroscope Monolithic Deployment
 
-Single-process Pyroscope server suitable for development, testing, and small-to-medium workloads. All components (ingestion, storage, querying) run inside one container with local filesystem storage.
+Pyroscope server deployed in **monolithic mode** (`-target=all`), suitable for development, testing, and small-to-medium workloads. All components (ingestion, storage, querying) run in a single process inside one container with local filesystem storage. See [Grafana docs: deployment modes](https://grafana.com/docs/pyroscope/latest/reference-pyroscope-architecture/deployment-modes/) for details.
 
 ## Architecture
 
@@ -8,7 +8,7 @@ Single-process Pyroscope server suitable for development, testing, and small-to-
 graph LR
     subgraph Pyroscope VM
         subgraph Docker Container
-            P[Pyroscope Server<br/>monolith]
+            P[Pyroscope Server<br/>monolithic mode]
             FS[("/data<br/>(filesystem)")]
             P --> FS
         end
@@ -272,4 +272,4 @@ bash deploy/monolithic/deploy-test.sh
 - Environments where operational simplicity is preferred over horizontal scaling
 - Development and testing
 
-For high-availability or high-throughput workloads, see [`../microservices/`](../microservices/).
+For high-availability or high-throughput workloads, use [microservices mode](../microservices/).

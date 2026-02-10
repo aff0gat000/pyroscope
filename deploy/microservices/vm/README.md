@@ -151,4 +151,4 @@ bash deploy.sh clean        # Stop services and remove all volumes
 | `:4040` | Distributor | SDK push endpoint (`/ingest`) |
 | `:4041` | Query Frontend | Query endpoint (configure as Grafana data source) |
 
-For simpler single-node deployments, see [`../../monolithic/`](../../monolithic/).
+For monolithic mode (single-node) deployments, see [`../../monolithic/`](../../monolithic/).

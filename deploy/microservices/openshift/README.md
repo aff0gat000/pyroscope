@@ -108,4 +108,4 @@ helm install pyroscope deploy/microservices/openshift/helm/ \
 | Service `*-query-frontend:4040` | Query endpoint (Grafana data source) |
 | Route (if enabled) | External access to query-frontend |
 
-For simpler single-node deployments, see [`../../../monolithic/`](../../../monolithic/).
+For monolithic mode (single-node) deployments, see [`../../../monolithic/`](../../../monolithic/).
