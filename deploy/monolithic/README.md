@@ -43,6 +43,7 @@ The Pyroscope Java agent runs as a `-javaagent` inside each Vert.x JVM process. 
 | `deploy.sh` | Lifecycle script (start/stop/restart/logs/status/clean) with Git and local source options |
 | `deploy-test.sh` | 45 mock-based unit tests for deploy.sh (no root or Docker needed) |
 | `build-and-push.sh` | Build Pyroscope image with pinned version and push to internal Docker registry |
+| `DOCKER-BUILD.md` | Full guide for building, pushing, and managing Pyroscope Docker images |
 
 ## Prerequisites
 
@@ -495,61 +496,28 @@ All settings can be set via flags or environment variables. Flags take precedenc
 
 ---
 
-## Dockerfile Details
+## Docker Image Build and Push
 
-### Which Dockerfile to use
+See [DOCKER-BUILD.md](DOCKER-BUILD.md) for the full guide covering:
 
-| Dockerfile | Base Image | When to Use |
-|-----------|-----------|-------------|
-| `Dockerfile` | `grafana/pyroscope:latest` (distroless) | Default. Use when you can pull the official image from Docker Hub or an internal mirror. Pin a version at build time with `--build-arg BASE_IMAGE=grafana/pyroscope:1.18.0`. |
-| `Dockerfile.custom` | Alpine, UBI, or Debian (your choice) | Use when the official `grafana/pyroscope` image is completely unavailable. Multi-stage build copies the binary from the official image into a custom base. |
+- Building from the official image (`Dockerfile`) or a custom base (`Dockerfile.custom`)
+- Pushing to an internal Docker registry (Artifactory, Nexus, Harbor)
+- Cross-platform builds, version pinning, upgrading, and rolling back
+- Base image comparison (Alpine, UBI, Debian, distroless)
+- `build-and-push.sh` script reference
 
-### Security and best practices
-
-The official `grafana/pyroscope` image is already hardened:
-
-- **Distroless base** (`gcr.io/distroless/static`) — no shell, no package manager, minimal attack surface
-- **Non-root user** — runs as `pyroscope` (UID 10001, GID 10001)
-- **Statically compiled Go binary** — no runtime dependencies
-
-Our `Dockerfile` adds:
-
-- **Configurable version** — defaults to `latest`, pin at build time with `--build-arg BASE_IMAGE=grafana/pyroscope:1.18.0`
-- **HEALTHCHECK** — Docker monitors container health automatically, reports in `docker ps`
-- **OCI labels** — metadata for image provenance tracking
-
-### Custom base image (Dockerfile.custom)
-
-For environments where even the multi-stage pull from `grafana/pyroscope` is blocked, or when enterprise policy requires a specific base image (e.g., Red Hat UBI for RHEL compliance):
+Quick reference:
 
 ```bash
-# Alpine (default) — smallest, ~8 MB total
-docker build -f Dockerfile.custom -t pyroscope-server:1.18.0 .
+# Build with official base, pinned version
+docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 -t pyroscope-server:1.18.0 .
 
-# Red Hat UBI Minimal — RHEL-compatible, good for enterprise compliance
-docker build -f Dockerfile.custom \
-    --build-arg BASE_IMAGE=registry.access.redhat.com/ubi8/ubi-minimal:8.10 \
-    -t pyroscope-server:1.18.0 .
+# Build with custom base (Alpine, UBI, etc.)
+docker build -f Dockerfile.custom --build-arg BASE_IMAGE=alpine:3.20 -t pyroscope-server:1.18.0 .
 
-# Debian slim — broader package ecosystem
-docker build -f Dockerfile.custom \
-    --build-arg BASE_IMAGE=debian:bookworm-slim \
-    -t pyroscope-server:1.18.0 .
-
-# Distroless (same as official) — smallest attack surface, no shell
-docker build -f Dockerfile.custom \
-    --build-arg BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot \
-    -t pyroscope-server:1.18.0 .
+# Build and push to internal registry
+bash build-and-push.sh --version 1.18.0 --registry company.corp.com/docker-proxy/pyroscope --push
 ```
-
-| Base Image | Size | Shell | Production Use | Notes |
-|-----------|:----:|:-----:|:--------------:|-------|
-| Alpine 3.20 | ~8 MB | Yes | Yes | Widely used. Default for `Dockerfile.custom`. |
-| UBI 8 Minimal | ~80 MB | Yes | Yes | Required by some enterprises for RHEL compliance. |
-| Debian slim | ~75 MB | Yes | Yes | Broader ecosystem if you need debugging tools. |
-| Distroless | ~5 MB | No | Yes | What the official image uses. Most secure, hardest to debug. |
-
-All base images are production-grade. Alpine is the best default — small, well-maintained, and has a shell for debugging if needed. Use UBI if your enterprise requires Red Hat-based images.
 
 ---
 
