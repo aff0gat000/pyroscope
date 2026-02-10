@@ -350,7 +350,20 @@ Use this when the VM cannot pull from Docker Hub or your internal registry. Buil
 
 Run steps 1-3 on your **workstation**. Run steps 4-7 on the **VM**.
 
-### Step 1: Build the image
+### Steps 1-2: Build and export (with script)
+
+```bash
+cd deploy/monolithic
+bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save
+```
+
+This produces `./pyroscope-server-1.18.0.tar`. To save to a custom path:
+
+```bash
+bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save /tmp/pyroscope.tar
+```
+
+### Steps 1-2: Build and export (manually)
 
 ```bash
 cd deploy/monolithic
@@ -358,11 +371,7 @@ cd deploy/monolithic
 docker build --platform linux/amd64 \
     --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
     -t pyroscope-server:1.18.0 .
-```
 
-### Step 2: Export the image to a tar file
-
-```bash
 docker save -o pyroscope-server-1.18.0.tar pyroscope-server:1.18.0
 ```
 
@@ -562,6 +571,7 @@ docker run -d \
 | `--upstream` | `UPSTREAM_IMAGE` | `grafana/pyroscope` | Upstream Docker Hub image |
 | `--platform` | `PLATFORM` | *(current)* | Target platform (e.g., `linux/amd64`) |
 | `--pull-only` | | | Pull official image and push directly (no Dockerfile build, config mounted at runtime) |
+| `--save [path]` | | | Export image as tar file for scp to VM (default: `./<image>-<version>.tar`) |
 | `--push` | | | Push to internal registry after building |
 | `--latest` | | | Also tag and push as `:latest` (requires `--push`) |
 | `--dry-run` | | | Show commands without executing |

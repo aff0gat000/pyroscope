@@ -33,6 +33,9 @@ set -euo pipefail
 #   # Pull official image and push directly (no Dockerfile build)
 #   bash build-and-push.sh --version 1.18.0 --pull-only --push
 #
+#   # Build and save as tar file for scp to VM (no registry needed)
+#   bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save
+#
 #   # Dry run — show what would be built and pushed without executing
 #   bash build-and-push.sh --version 1.18.0 --push --dry-run
 #
@@ -89,6 +92,7 @@ Options:
   --upstream <image>   Upstream Docker Hub image (default: ${UPSTREAM_IMAGE})
   --platform <platform> Target platform, e.g., linux/amd64 (default: current)
   --pull-only          Pull the official image and push directly (no Dockerfile build)
+  --save [path]        Export image as tar file for scp to VM (default: ./<image>-<version>.tar)
   --push               Push the image to the internal registry after building
   --latest             Also tag and push as :latest (requires --push)
   --dry-run            Show what would be done without executing
@@ -125,6 +129,12 @@ Examples:
   # Pull official image for Linux AMD64 from a Mac
   bash build-and-push.sh --version 1.18.0 --pull-only --platform linux/amd64 --push
 
+  # Build and save as tar for scp to VM (no registry needed on VM)
+  bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save
+
+  # Save to a custom path
+  bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save /tmp/pyroscope.tar
+
   # Preview without executing
   bash build-and-push.sh --version 1.18.0 --push --dry-run
 USAGE
@@ -133,6 +143,8 @@ USAGE
 
 # ---- Parse arguments ------------------------------------------------------
 DO_PUSH=false
+DO_SAVE=false
+SAVE_PATH=""
 TAG_LATEST=false
 DRY_RUN=false
 LIST_TAGS=false
@@ -147,6 +159,12 @@ while [ $# -gt 0 ]; do
         --upstream)   UPSTREAM_IMAGE="${2:?--upstream requires a value}"; shift 2 ;;
         --platform)   PLATFORM="${2:?--platform requires a value}"; shift 2 ;;
         --pull-only)  PULL_ONLY=true; shift ;;
+        --save)       DO_SAVE=true
+                      # Optional path argument: if next arg exists and doesn't start with --, use it
+                      if [ $# -ge 2 ] && [[ ! "$2" =~ ^-- ]]; then
+                          SAVE_PATH="$2"; shift
+                      fi
+                      shift ;;
         --push)       DO_PUSH=true; shift ;;
         --latest)     TAG_LATEST=true; shift ;;
         --dry-run)    DRY_RUN=true; shift ;;
@@ -192,6 +210,11 @@ LOCAL_TAG="${IMAGE_NAME}:${VERSION}"
 REGISTRY_TAG="${REGISTRY_IMAGE}:${VERSION}"
 REGISTRY_LATEST="${REGISTRY_IMAGE}:latest"
 
+# Default save path: ./<image-name>-<version>.tar
+if [ "${DO_SAVE}" = true ] && [ -z "${SAVE_PATH}" ]; then
+    SAVE_PATH="./${IMAGE_NAME}-${VERSION}.tar"
+fi
+
 # ---- Pre-flight -----------------------------------------------------------
 if [ "${DRY_RUN}" = false ]; then
     if ! command -v docker >/dev/null 2>&1; then
@@ -230,6 +253,9 @@ if [ -n "${PLATFORM}" ]; then
     info "  Platform:          ${PLATFORM}"
 fi
 info "  Push to registry:  ${DO_PUSH}"
+if [ "${DO_SAVE}" = true ]; then
+    info "  Save to file:      ${SAVE_PATH}"
+fi
 if [ "${PULL_ONLY}" = true ]; then
     info "  Mode:              PULL ONLY (no Dockerfile build)"
 fi
@@ -259,6 +285,9 @@ if [ "${DRY_RUN}" = true ]; then
     if [ "${TAG_LATEST}" = true ]; then
         echo "  docker tag ${REGISTRY_TAG} ${REGISTRY_LATEST}"
     fi
+    if [ "${DO_SAVE}" = true ]; then
+        echo "  docker save -o ${SAVE_PATH} ${LOCAL_TAG}"
+    fi
     if [ "${DO_PUSH}" = true ]; then
         echo "  docker push ${REGISTRY_TAG}"
         if [ "${TAG_LATEST}" = true ]; then
@@ -269,6 +298,11 @@ if [ "${DRY_RUN}" = true ]; then
     if [ "${PULL_ONLY}" = true ]; then
         warn "Note: --pull-only pushes the official image without pyroscope.yaml baked in."
         info "Mount your config at runtime: -v /path/to/pyroscope.yaml:/etc/pyroscope/config.yaml"
+    fi
+    if [ "${DO_SAVE}" = true ]; then
+        info "After saving, scp the tar to the VM and load with:"
+        info "  scp ${SAVE_PATH} operator@vm:/tmp/pyroscope-deploy/"
+        info "  ssh operator@vm 'docker load -i /tmp/pyroscope-deploy/$(basename "${SAVE_PATH}")'"
     fi
     info "Re-run without --dry-run to execute."
     exit 0
@@ -373,7 +407,33 @@ else
     info "Image built locally. To push to your internal registry, re-run with --push:"
     info "  bash build-and-push.sh --version ${VERSION} --push"
     echo ""
+    info "To save as tar for scp to VM, re-run with --save:"
+    info "  bash build-and-push.sh --version ${VERSION} --save"
+    echo ""
     info "To inspect the image locally:"
     info "  docker run --rm -p 4040:4040 ${LOCAL_TAG}"
+    echo ""
+fi
+
+# ---- Save as tar file ----------------------------------------------------
+if [ "${DO_SAVE}" = true ]; then
+    info "Saving image to ${SAVE_PATH}..."
+    docker save -o "${SAVE_PATH}" "${LOCAL_TAG}"
+    SAVE_SIZE=$(ls -lh "${SAVE_PATH}" | awk '{print $5}')
+    ok "Saved: ${SAVE_PATH} (${SAVE_SIZE})"
+    echo ""
+    info "Copy to your VM and load:"
+    info "  scp ${SAVE_PATH} operator@vm:/tmp/pyroscope-deploy/"
+    info "  ssh operator@vm"
+    info "  docker load -i /tmp/pyroscope-deploy/$(basename "${SAVE_PATH}")"
+    echo ""
+    info "Then run on the VM:"
+    info "  docker volume create pyroscope-data"
+    info "  docker run -d \\"
+    info "      --name pyroscope \\"
+    info "      --restart unless-stopped \\"
+    info "      -p 4040:4040 \\"
+    info "      -v pyroscope-data:/data \\"
+    info "      ${LOCAL_TAG}"
     echo ""
 fi

@@ -645,21 +645,35 @@ docker run -d \
 
 Use this when the VM cannot pull from Docker Hub or your internal registry (e.g., `client does not have permissions to that manifest`). Build the image on your workstation, export it as a tar file, scp it to the VM, and load it directly. No registry access needed on the VM at all.
 
-### Step 1: Build the image on your workstation
+### Steps 1-2: Build and export (with script)
+
+The script builds the image and saves it as a tar file in one command:
 
 ```bash
 cd deploy/monolithic
 
+bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save
+```
+
+This produces `./pyroscope-server-1.18.0.tar` with `pyroscope.yaml` baked in. No config files needed on the VM.
+
+To save to a custom path:
+
+```bash
+bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save /tmp/pyroscope.tar
+```
+
+### Steps 1-2: Build and export (manually)
+
+```bash
+cd deploy/monolithic
+
+# 1. Build the image
 docker build --platform linux/amd64 \
     --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
     -t pyroscope-server:1.18.0 .
-```
 
-This bakes `pyroscope.yaml` into the image. No config files needed on the VM.
-
-### Step 2: Export the image to a tar file
-
-```bash
+# 2. Export to tar
 docker save -o pyroscope-server-1.18.0.tar pyroscope-server:1.18.0
 ```
 
@@ -747,7 +761,16 @@ Docker:
 
 ### Upgrading via docker save/load
 
-On your workstation:
+**On your workstation:**
+
+With the script:
+
+```bash
+bash build-and-push.sh --version 1.19.0 --platform linux/amd64 --save
+scp pyroscope-server-1.19.0.tar operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
+```
+
+Or manually:
 
 ```bash
 cd deploy/monolithic
@@ -793,6 +816,7 @@ All settings can be set via flags or environment variables. Flags take precedenc
 | `--upstream` | `UPSTREAM_IMAGE` | `grafana/pyroscope` | Upstream Docker Hub image |
 | `--platform` | `PLATFORM` | *(current)* | Target platform (e.g., `linux/amd64`) |
 | `--pull-only` | | | Pull official image and push directly (no Dockerfile build, config mounted at runtime) |
+| `--save [path]` | | | Export image as tar file for scp to VM (default: `./<image>-<version>.tar`) |
 | `--push` | | | Push to internal registry after building |
 | `--latest` | | | Also tag and push as `:latest` (requires `--push`) |
 | `--dry-run` | | | Show commands without executing |
