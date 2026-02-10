@@ -344,6 +344,81 @@ curl -s http://localhost:4040/ready && echo " OK"
 
 ---
 
+## Option D: Build Locally and SCP Image to VM (No Registry Needed)
+
+Use this when the VM cannot pull from Docker Hub or your internal registry. Build the image on your workstation, export to a tar file with `docker save`, scp to the VM, and load with `docker load`.
+
+Run steps 1-3 on your **workstation**. Run steps 4-7 on the **VM**.
+
+### Step 1: Build the image
+
+```bash
+cd deploy/monolithic
+
+docker build --platform linux/amd64 \
+    --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
+    -t pyroscope-server:1.18.0 .
+```
+
+### Step 2: Export the image to a tar file
+
+```bash
+docker save -o pyroscope-server-1.18.0.tar pyroscope-server:1.18.0
+```
+
+### Step 3: SCP the tar file to the VM
+
+```bash
+ssh operator@vm01.corp.example.com "mkdir -p /tmp/pyroscope-deploy"
+
+scp pyroscope-server-1.18.0.tar \
+    operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
+```
+
+### Step 4: Load the image on the VM
+
+```bash
+ssh operator@vm01.corp.example.com
+pbrun /bin/su -
+
+docker load -i /tmp/pyroscope-deploy/pyroscope-server-1.18.0.tar
+```
+
+### Step 5: Create the data volume and start the container
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    pyroscope-server:1.18.0
+```
+
+### Step 6: Verify
+
+```bash
+for i in $(seq 1 30); do
+    if docker exec pyroscope wget -q --spider http://localhost:4040/ready 2>/dev/null; then
+        echo "Pyroscope is ready"
+        break
+    fi
+    sleep 2
+done
+
+curl -s http://localhost:4040/ready && echo " OK"
+```
+
+### Step 7: Clean up the tar file
+
+```bash
+rm -f /tmp/pyroscope-deploy/pyroscope-server-1.18.0.tar
+```
+
+---
+
 ## Building with a Custom Base Image
 
 Use `Dockerfile.custom` when the official `grafana/pyroscope` image is not available or enterprise policy requires a specific base (e.g., UBI for RHEL compliance).

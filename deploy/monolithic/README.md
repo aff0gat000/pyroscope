@@ -639,6 +639,148 @@ docker run -d \
     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
 ```
 
+---
+
+## Option D: Build Locally and SCP Image to VM (No Registry Needed)
+
+Use this when the VM cannot pull from Docker Hub or your internal registry (e.g., `client does not have permissions to that manifest`). Build the image on your workstation, export it as a tar file, scp it to the VM, and load it directly. No registry access needed on the VM at all.
+
+### Step 1: Build the image on your workstation
+
+```bash
+cd deploy/monolithic
+
+docker build --platform linux/amd64 \
+    --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
+    -t pyroscope-server:1.18.0 .
+```
+
+This bakes `pyroscope.yaml` into the image. No config files needed on the VM.
+
+### Step 2: Export the image to a tar file
+
+```bash
+docker save -o pyroscope-server-1.18.0.tar pyroscope-server:1.18.0
+```
+
+Check the file size (typically ~30-50 MB):
+
+```bash
+ls -lh pyroscope-server-1.18.0.tar
+```
+
+### Step 3: SCP the tar file to the VM
+
+```bash
+ssh operator@vm01.corp.example.com "mkdir -p /tmp/pyroscope-deploy"
+
+scp pyroscope-server-1.18.0.tar \
+    operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
+```
+
+### Step 4: SSH to the VM and elevate to root
+
+```bash
+ssh operator@vm01.corp.example.com
+pbrun /bin/su -
+```
+
+### Step 5: Load the image from the tar file
+
+```bash
+docker load -i /tmp/pyroscope-deploy/pyroscope-server-1.18.0.tar
+```
+
+Verify it loaded:
+
+```bash
+docker images pyroscope-server
+```
+
+### Step 6: Create the data volume and start the container
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    pyroscope-server:1.18.0
+```
+
+### Step 7: Verify
+
+```bash
+# Wait for health check
+for i in $(seq 1 30); do
+    if docker exec pyroscope wget -q --spider http://localhost:4040/ready 2>/dev/null; then
+        echo "Pyroscope is ready"
+        break
+    fi
+    sleep 2
+done
+
+curl -s http://localhost:4040/ready && echo " OK"
+```
+
+Open `http://<VM_IP>:4040` in a browser to access the Pyroscope UI.
+
+### Step 8: Clean up the tar file
+
+```bash
+rm -f /tmp/pyroscope-deploy/pyroscope-server-1.18.0.tar
+rmdir /tmp/pyroscope-deploy 2>/dev/null
+```
+
+After deployment, the VM has:
+
+```
+No files on disk — the image was loaded from the tar file.
+
+Docker:
+  Image:     pyroscope-server:1.18.0
+  Container: pyroscope (port 4040)
+  Volume:    pyroscope-data (mounted as /data)
+```
+
+### Upgrading via docker save/load
+
+On your workstation:
+
+```bash
+cd deploy/monolithic
+
+docker build --platform linux/amd64 \
+    --build-arg BASE_IMAGE=grafana/pyroscope:1.19.0 \
+    -t pyroscope-server:1.19.0 .
+
+docker save -o pyroscope-server-1.19.0.tar pyroscope-server:1.19.0
+
+scp pyroscope-server-1.19.0.tar \
+    operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
+```
+
+On the VM:
+
+```bash
+docker load -i /tmp/pyroscope-deploy/pyroscope-server-1.19.0.tar
+docker rm -f pyroscope
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    pyroscope-server:1.19.0
+
+rm -f /tmp/pyroscope-deploy/pyroscope-server-1.19.0.tar
+```
+
+The data volume is preserved across upgrades.
+
+---
+
 ### build-and-push.sh configuration
 
 All settings can be set via flags or environment variables. Flags take precedence.
@@ -666,6 +808,7 @@ See [DOCKER-BUILD.md](DOCKER-BUILD.md) for the step-by-step guide covering:
 - **Option A:** Build and push with `build-and-push.sh` script (7 steps)
 - **Option B:** Build and push manually without the script (9 steps)
 - **Option C:** Pull and push official image directly — no build needed (8 steps)
+- **Option D:** Build locally and scp image to VM — no registry needed (8 steps)
 - **Custom base images:** Alpine, UBI, Debian, distroless (when official image is unavailable)
 - **Upgrading and rolling back** to a different Pyroscope version
 
