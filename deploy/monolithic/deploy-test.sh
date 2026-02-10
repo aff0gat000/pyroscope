@@ -2,16 +2,16 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# test-vm-deploy.sh — Unit tests for vm-deploy.sh
+# deploy-test.sh — Unit tests for deploy.sh
 #
 # Exercises every code path using mock binaries for docker, id, git, hostname.
 # No root, Docker, or network access required.
 #
-# Usage:  bash scripts/test-vm-deploy.sh
+# Usage:  bash deploy/monolithic/deploy-test.sh
 # ---------------------------------------------------------------------------
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-DEPLOY_SCRIPT="${SCRIPT_DIR}/vm-deploy.sh"
+DEPLOY_SCRIPT="${SCRIPT_DIR}/deploy.sh"
 
 PASSED=0
 FAILED=0

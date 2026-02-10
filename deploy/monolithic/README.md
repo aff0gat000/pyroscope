@@ -25,25 +25,34 @@ graph LR
 |------|---------|
 | `Dockerfile` | Builds a container image from `grafana/pyroscope:latest` with baked-in config |
 | `pyroscope.yaml` | Server config: filesystem storage at `/data`, port 4040 |
-| `deploy.sh` | Lifecycle script (start/stop/restart/logs/status/clean) |
+| `deploy.sh` | Lifecycle script (start/stop/restart/logs/status/clean) with Git and local source options |
+| `deploy-test.sh` | 45 mock-based unit tests for deploy.sh (no root or Docker needed) |
 
-## Quick start
+## Operator Workflow
 
 ```bash
-bash deploy.sh          # Build image and start container
-```
+# 1. SSH to the VM
+ssh operator@vm01.corp.example.com
 
-Pyroscope will be available at `http://localhost:4040`.
+# 2. Elevate to root
+pbrun /bin/su -
+
+# 3. Deploy from Git
+bash deploy.sh start --from-git
+
+# Or deploy from files scp'd to the VM
+bash deploy.sh start --from-local /tmp/pyroscope-deploy
+```
 
 ## Usage
 
 ```bash
-bash deploy.sh              # Start (default)
-bash deploy.sh stop         # Stop and remove container
-bash deploy.sh restart      # Restart container
-bash deploy.sh logs         # Tail container logs
-bash deploy.sh status       # Show container status and health
-bash deploy.sh clean        # Stop container, remove image + volume
+bash deploy.sh start   [--from-git [url] | --from-local <path>]
+bash deploy.sh stop
+bash deploy.sh restart [--from-git [url] | --from-local <path>]
+bash deploy.sh logs
+bash deploy.sh status
+bash deploy.sh clean
 ```
 
 ## Configuration
@@ -51,6 +60,9 @@ bash deploy.sh clean        # Stop container, remove image + volume
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `PYROSCOPE_PORT` | `4040` | Host port mapped to the container |
+| `REPO_URL` | `git@github.com:aff0gat000/pyroscope.git` | Git repo URL for `--from-git` |
+| `REPO_BRANCH` | `main` | Git branch |
+| `INSTALL_DIR` | `/opt/pyroscope` | Installation directory on the VM |
 
 ## Endpoints
 
@@ -59,6 +71,12 @@ bash deploy.sh clean        # Stop container, remove image + volume
 | `:4040` | Pyroscope UI |
 | `:4040/ingest` | SDK push endpoint |
 | `:4040/ready` | Health/readiness check |
+
+## Running Tests
+
+```bash
+bash deploy/monolithic/deploy-test.sh
+```
 
 ## When to use this mode
 
