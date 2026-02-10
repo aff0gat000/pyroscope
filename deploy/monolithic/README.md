@@ -690,6 +690,10 @@ ssh operator@vm01.corp.example.com "mkdir -p /tmp/pyroscope-deploy"
 
 scp pyroscope-server-1.18.0.tar \
     operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
+
+# Also copy pyroscope.yaml so you can edit config without rebuilding
+scp deploy/monolithic/pyroscope.yaml \
+    operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
 ```
 
 ### Step 4: SSH to the VM and elevate to root
@@ -699,7 +703,7 @@ ssh operator@vm01.corp.example.com
 pbrun /bin/su -
 ```
 
-### Step 5: Load the image from the tar file
+### Step 5: Load the image and place config on disk
 
 ```bash
 docker load -i /tmp/pyroscope-deploy/pyroscope-server-1.18.0.tar
@@ -711,7 +715,32 @@ Verify it loaded:
 docker images pyroscope-server
 ```
 
+Copy `pyroscope.yaml` to a permanent location on the VM:
+
+```bash
+mkdir -p /opt/pyroscope
+cp /tmp/pyroscope-deploy/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
+```
+
 ### Step 6: Create the data volume and start the container
+
+**Recommended — mount config from host** (edit config without rebuilding):
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    pyroscope-server:1.18.0
+```
+
+The mounted file overrides the baked-in config. To change settings, edit `/opt/pyroscope/pyroscope.yaml` on the VM and restart the container — no rebuild needed.
+
+**Alternative — use baked-in config only** (no files on VM):
 
 ```bash
 docker volume create pyroscope-data
@@ -723,6 +752,8 @@ docker run -d \
     -v pyroscope-data:/data \
     pyroscope-server:1.18.0
 ```
+
+This uses the `pyroscope.yaml` that was copied into the image at build time. To change config you must rebuild the image.
 
 ### Step 7: Verify
 
@@ -741,23 +772,34 @@ curl -s http://localhost:4040/ready && echo " OK"
 
 Open `http://<VM_IP>:4040` in a browser to access the Pyroscope UI.
 
-### Step 8: Clean up the tar file
+### Step 8: Clean up temp files
 
 ```bash
-rm -f /tmp/pyroscope-deploy/pyroscope-server-1.18.0.tar
-rmdir /tmp/pyroscope-deploy 2>/dev/null
+rm -rf /tmp/pyroscope-deploy
 ```
 
 After deployment, the VM has:
 
 ```
-No files on disk — the image was loaded from the tar file.
+/opt/pyroscope/
+└── pyroscope.yaml     # editable config (if using mounted config)
 
 Docker:
   Image:     pyroscope-server:1.18.0
   Container: pyroscope (port 4040)
   Volume:    pyroscope-data (mounted as /data)
 ```
+
+### Changing config after deployment
+
+If you used the mounted config (recommended), edit the file and restart:
+
+```bash
+vi /opt/pyroscope/pyroscope.yaml    # make changes
+docker restart pyroscope             # pick up new config
+```
+
+No rebuild, no scp, no downtime beyond the restart.
 
 ### Upgrading via docker save/load
 
@@ -785,7 +827,7 @@ scp pyroscope-server-1.19.0.tar \
     operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
 ```
 
-On the VM:
+**On the VM:**
 
 ```bash
 docker load -i /tmp/pyroscope-deploy/pyroscope-server-1.19.0.tar
@@ -795,12 +837,13 @@ docker run -d \
     --restart unless-stopped \
     -p 4040:4040 \
     -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
     pyroscope-server:1.19.0
 
 rm -f /tmp/pyroscope-deploy/pyroscope-server-1.19.0.tar
 ```
 
-The data volume is preserved across upgrades.
+The data volume and config file are preserved across upgrades.
 
 ---
 

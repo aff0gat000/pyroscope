@@ -300,9 +300,11 @@ if [ "${DRY_RUN}" = true ]; then
         info "Mount your config at runtime: -v /path/to/pyroscope.yaml:/etc/pyroscope/config.yaml"
     fi
     if [ "${DO_SAVE}" = true ]; then
-        info "After saving, scp the tar to the VM and load with:"
+        info "After saving, scp the tar and config to the VM:"
         info "  scp ${SAVE_PATH} operator@vm:/tmp/pyroscope-deploy/"
+        info "  scp ${SCRIPT_DIR}/pyroscope.yaml operator@vm:/tmp/pyroscope-deploy/"
         info "  ssh operator@vm 'docker load -i /tmp/pyroscope-deploy/$(basename "${SAVE_PATH}")'"
+        info "Mount config at runtime: -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro"
     fi
     info "Re-run without --dry-run to execute."
     exit 0
@@ -424,16 +426,22 @@ if [ "${DO_SAVE}" = true ]; then
     echo ""
     info "Copy to your VM and load:"
     info "  scp ${SAVE_PATH} operator@vm:/tmp/pyroscope-deploy/"
+    info "  scp ${SCRIPT_DIR}/pyroscope.yaml operator@vm:/tmp/pyroscope-deploy/"
     info "  ssh operator@vm"
     info "  docker load -i /tmp/pyroscope-deploy/$(basename "${SAVE_PATH}")"
+    info "  mkdir -p /opt/pyroscope"
+    info "  cp /tmp/pyroscope-deploy/pyroscope.yaml /opt/pyroscope/pyroscope.yaml"
     echo ""
-    info "Then run on the VM:"
+    info "Then run on the VM (mount config for easy editing):"
     info "  docker volume create pyroscope-data"
     info "  docker run -d \\"
     info "      --name pyroscope \\"
     info "      --restart unless-stopped \\"
     info "      -p 4040:4040 \\"
     info "      -v pyroscope-data:/data \\"
+    info "      -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \\"
     info "      ${LOCAL_TAG}"
+    echo ""
+    info "To change config later: edit /opt/pyroscope/pyroscope.yaml, then docker restart pyroscope"
     echo ""
 fi

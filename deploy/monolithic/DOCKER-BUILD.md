@@ -375,25 +375,50 @@ docker build --platform linux/amd64 \
 docker save -o pyroscope-server-1.18.0.tar pyroscope-server:1.18.0
 ```
 
-### Step 3: SCP the tar file to the VM
+### Step 3: SCP the tar file and config to the VM
 
 ```bash
 ssh operator@vm01.corp.example.com "mkdir -p /tmp/pyroscope-deploy"
 
 scp pyroscope-server-1.18.0.tar \
     operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
+
+# Also copy pyroscope.yaml so you can edit config without rebuilding
+scp deploy/monolithic/pyroscope.yaml \
+    operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
 ```
 
-### Step 4: Load the image on the VM
+### Step 4: Load the image and place config on disk
 
 ```bash
 ssh operator@vm01.corp.example.com
 pbrun /bin/su -
 
 docker load -i /tmp/pyroscope-deploy/pyroscope-server-1.18.0.tar
+
+mkdir -p /opt/pyroscope
+cp /tmp/pyroscope-deploy/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
 ```
 
 ### Step 5: Create the data volume and start the container
+
+**Recommended — mount config from host** (edit config without rebuilding):
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    pyroscope-server:1.18.0
+```
+
+To change settings later, edit `/opt/pyroscope/pyroscope.yaml` and `docker restart pyroscope`.
+
+**Alternative — use baked-in config only:**
 
 ```bash
 docker volume create pyroscope-data
@@ -420,10 +445,10 @@ done
 curl -s http://localhost:4040/ready && echo " OK"
 ```
 
-### Step 7: Clean up the tar file
+### Step 7: Clean up temp files
 
 ```bash
-rm -f /tmp/pyroscope-deploy/pyroscope-server-1.18.0.tar
+rm -rf /tmp/pyroscope-deploy
 ```
 
 ---
