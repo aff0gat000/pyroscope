@@ -45,21 +45,30 @@ The Pyroscope Java agent runs as a `-javaagent` inside each Vert.x JVM process. 
 ## Prerequisites
 
 - **Docker** installed and running on the target VM
-- **Root access** via `pbrun /bin/su -` (the script checks for root and exits with a hint if not elevated)
-- **Port 4040** available (or set `PYROSCOPE_PORT` to use a different port)
+- **Root access** via `pbrun /bin/su -`
+- **Port 4040** available (or choose a different port)
+
+## Directory Layout
+
+| Location | Purpose |
+|----------|---------|
+| **Your workstation** | |
+| `deploy/monolithic/` | Source files in your local repo clone (Dockerfile, pyroscope.yaml, deploy.sh) |
+| **Target VM** | |
+| `/tmp/pyroscope-deploy/` | Temporary landing directory for scp (deleted after install) |
+| `/opt/pyroscope/` | Permanent install directory on the VM (Dockerfile + pyroscope.yaml live here) |
+| Docker volume `pyroscope-data` | Mounted as `/data` inside the container — stores profiling data |
 
 ---
 
-## Step-by-Step Deployment Guide
+## Option A: Deploy with Script
 
-### Step 1: Copy files to the VM (from your local machine)
+### Step 1: Copy files to the VM (from your workstation)
 
-Only 3 files are needed. Use `scp` to copy them from your local machine to the VM before connecting.
-
-`scp` (secure copy) transfers files over SSH. The syntax is `scp <local-files> <user>@<host>:<remote-path>`. It runs from your workstation, not from the VM.
+`scp` (secure copy) transfers files over SSH. The syntax is `scp <local-files> <user>@<host>:<remote-path>`. Run this from your workstation, not from the VM.
 
 ```bash
-# Create a directory on the VM to receive the files
+# Create the landing directory on the VM
 ssh operator@vm01.corp.example.com "mkdir -p /tmp/pyroscope-deploy"
 
 # Copy the 3 required files from your local repo clone
@@ -69,7 +78,14 @@ scp deploy/monolithic/deploy.sh \
     operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
 ```
 
-If `scp` is not available, you can use `sftp` or `rsync -e ssh` instead. All three transfer files over SSH the same way.
+After this step, the VM has:
+
+```
+/tmp/pyroscope-deploy/
+├── deploy.sh
+├── Dockerfile
+└── pyroscope.yaml
+```
 
 ### Step 2: SSH to the VM
 
@@ -85,23 +101,15 @@ pbrun /bin/su -
 
 ### Step 4: Pre-flight checks
 
-Run these before deploying to verify the VM is ready and there are no conflicts with existing services.
-
 ```bash
 # Verify Docker is installed and running
 docker info >/dev/null 2>&1 && echo "Docker OK" || echo "Docker NOT available"
 
-# Check that port 4040 is not already in use by another service
+# Check that port 4040 is not already in use
 ss -tlnp | grep :4040
 
 # Check no container named 'pyroscope' already exists
 docker ps -a --format '{{.Names}}' | grep -x pyroscope || echo "No conflict"
-```
-
-If port 4040 is in use by another service, set a different port when deploying:
-
-```bash
-PYROSCOPE_PORT=9090 bash /tmp/pyroscope-deploy/deploy.sh start --from-local /tmp/pyroscope-deploy
 ```
 
 If Docker is not installed (RHEL 8):
@@ -121,50 +129,197 @@ bash /tmp/pyroscope-deploy/deploy.sh start --from-local /tmp/pyroscope-deploy
 
 The script will:
 
-1. Verify you are root
-2. Verify Docker is running
-3. Copy `Dockerfile` and `pyroscope.yaml` to `/opt/pyroscope/`
-4. Build the Docker image
-5. Create a `pyroscope-data` volume (if it does not already exist)
-6. Start the container on port 4040 (or your override)
-7. Wait up to 60 seconds for the health check (`/ready` endpoint)
-8. Print a connection summary with the VM IP address
+1. Verify you are root and Docker is running
+2. Copy `Dockerfile` and `pyroscope.yaml` from `/tmp/pyroscope-deploy/` to `/opt/pyroscope/`
+3. Build the Docker image `pyroscope-server` from `/opt/pyroscope/Dockerfile`
+4. Create a Docker volume `pyroscope-data` (if it does not already exist)
+5. Start the container `pyroscope` on port 4040
+6. Wait up to 60 seconds for the health check (`/ready` endpoint)
+7. Print a connection summary with the VM IP address
+
+To use a different port:
+
+```bash
+PYROSCOPE_PORT=9090 bash /tmp/pyroscope-deploy/deploy.sh start --from-local /tmp/pyroscope-deploy
+```
 
 ### Step 6: Verify
 
 ```bash
-# Quick health check
 curl -s http://localhost:4040/ready && echo " OK"
-
-# Or use the script
-bash /tmp/pyroscope-deploy/deploy.sh status
 ```
 
 Open `http://<VM_IP>:4040` in a browser to access the Pyroscope UI.
 
-### Step 7: Clean up temp files (optional)
+### Step 7: Clean up and keep deploy.sh for day-2
+
+```bash
+# Copy deploy.sh to the install directory for future use
+cp /tmp/pyroscope-deploy/deploy.sh /opt/pyroscope/deploy.sh
+
+# Remove the temp landing directory
+rm -rf /tmp/pyroscope-deploy
+```
+
+After cleanup, the VM has:
+
+```
+/opt/pyroscope/
+├── deploy.sh          # lifecycle script for day-2 operations
+├── Dockerfile         # used by docker build
+└── pyroscope.yaml     # Pyroscope server config
+```
+
+---
+
+## Option B: Deploy Manually (without script)
+
+If you prefer not to use the deploy script, run the Docker commands directly.
+
+### Step 1: Copy files to the VM (from your workstation)
+
+Only 2 files are needed (no deploy.sh).
+
+```bash
+ssh operator@vm01.corp.example.com "mkdir -p /tmp/pyroscope-deploy"
+
+scp deploy/monolithic/Dockerfile \
+    deploy/monolithic/pyroscope.yaml \
+    operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
+```
+
+### Step 2: SSH to the VM and elevate to root
+
+```bash
+ssh operator@vm01.corp.example.com
+pbrun /bin/su -
+```
+
+### Step 3: Pre-flight checks
+
+```bash
+docker info >/dev/null 2>&1 && echo "Docker OK" || echo "Docker NOT available"
+ss -tlnp | grep :4040
+```
+
+### Step 4: Copy files to the install directory
+
+```bash
+mkdir -p /opt/pyroscope
+cp /tmp/pyroscope-deploy/Dockerfile     /opt/pyroscope/Dockerfile
+cp /tmp/pyroscope-deploy/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
+```
+
+### Step 5: Build the Docker image
+
+```bash
+cd /opt/pyroscope
+docker build -t pyroscope-server .
+```
+
+This builds an image from the Dockerfile, which:
+- Pulls `grafana/pyroscope:latest`
+- Copies `pyroscope.yaml` into the image as `/etc/pyroscope/config.yaml`
+- Sets the entrypoint to `pyroscope -config.file=/etc/pyroscope/config.yaml`
+
+### Step 6: Create the data volume
+
+```bash
+docker volume create pyroscope-data
+```
+
+This volume persists profiling data across container restarts. It is mounted as `/data` inside the container.
+
+### Step 7: Start the container
+
+```bash
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    pyroscope-server
+```
+
+To use a different host port (e.g., 9090):
+
+```bash
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 9090:4040 \
+    -v pyroscope-data:/data \
+    pyroscope-server
+```
+
+### Step 8: Wait for health check
+
+```bash
+# Poll until ready (up to 60 seconds)
+for i in $(seq 1 30); do
+    if docker exec pyroscope wget -q --spider http://localhost:4040/ready 2>/dev/null; then
+        echo "Pyroscope is ready"
+        break
+    fi
+    sleep 2
+done
+```
+
+### Step 9: Verify
+
+```bash
+curl -s http://localhost:4040/ready && echo " OK"
+docker ps --filter "name=^pyroscope$" --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+### Step 10: Clean up temp files
 
 ```bash
 rm -rf /tmp/pyroscope-deploy
 ```
 
-The installed files are now in `/opt/pyroscope/`. The temp copy is no longer needed.
+After cleanup, the VM has:
 
-If you want `deploy.sh` available on the VM for day-2 operations:
+```
+/opt/pyroscope/
+├── Dockerfile         # kept for rebuilds
+└── pyroscope.yaml     # kept for reference
+
+Docker:
+  Image:     pyroscope-server
+  Container: pyroscope (port 4040)
+  Volume:    pyroscope-data (mounted as /data)
+```
+
+### Manual day-2 operations
 
 ```bash
-cp /tmp/pyroscope-deploy/deploy.sh /opt/pyroscope/deploy.sh
+# View logs
+docker logs -f pyroscope
+
+# Stop (data volume preserved)
+docker rm -f pyroscope
+
+# Restart (rebuild image first if config changed)
+cd /opt/pyroscope && docker build -t pyroscope-server .
+docker rm -f pyroscope 2>/dev/null
+docker run -d --name pyroscope --restart unless-stopped -p 4040:4040 -v pyroscope-data:/data pyroscope-server
+
+# Full cleanup (removes container, image, and all profiling data)
+docker rm -f pyroscope 2>/dev/null
+docker rmi pyroscope-server 2>/dev/null
+docker volume rm pyroscope-data 2>/dev/null
 ```
 
 ---
 
 ## Idempotency and Safety
 
-The script is safe to run on a VM with existing services:
+Both deployment options are safe to run on a VM with existing services:
 
-- **Only manages its own container.** It looks for a container named exactly `pyroscope` (via `grep -qx`). It will never stop, remove, or interfere with other containers.
+- **Only manages its own container.** The container is named `pyroscope`. No other containers are affected.
 - **Port binding is scoped.** Only binds port 4040 (or your override). If that port is taken, Docker will fail with a clear error — it will not steal the port.
-- **Re-running is safe.** Running `start` again replaces the existing `pyroscope` container and rebuilds the image. The data volume is preserved.
+- **Re-running is safe.** Running `start` again (or the manual commands) replaces the existing `pyroscope` container and rebuilds the image. The data volume `pyroscope-data` is preserved.
 - **No system-level changes.** No firewall rules, systemd units, cron jobs, or package installations. Only Docker API calls.
 
 ---
@@ -241,22 +396,17 @@ PYROSCOPE_SERVER_ADDRESS=http://<PYROSCOPE_VM_IP>:4040
 
 ## Day-2 Operations
 
+If you deployed with the script (Option A) and copied `deploy.sh` to `/opt/pyroscope/`:
+
 ```bash
-# View logs
-docker logs -f pyroscope
-
-# Check status and health
-bash /opt/pyroscope/deploy.sh status
-
-# Restart with a fresh image (e.g., after Pyroscope releases a new version)
-bash /opt/pyroscope/deploy.sh restart
-
-# Stop without removing data
-bash /opt/pyroscope/deploy.sh stop
-
-# Full cleanup (removes container, image, and all profiling data)
-bash /opt/pyroscope/deploy.sh clean
+docker logs -f pyroscope                     # View logs
+bash /opt/pyroscope/deploy.sh status         # Check status and health
+bash /opt/pyroscope/deploy.sh restart        # Restart with fresh image
+bash /opt/pyroscope/deploy.sh stop           # Stop (data preserved)
+bash /opt/pyroscope/deploy.sh clean          # Full cleanup (deletes data)
 ```
+
+If you deployed manually (Option B), see the [manual day-2 operations](#manual-day-2-operations) section above.
 
 ## Running Tests
 
