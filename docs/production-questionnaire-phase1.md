@@ -16,8 +16,64 @@
 | Type of service | Intranet |
 | Hosted | Internal |
 | External deployment | No |
+| Expected Volume(s) | All functions are well under the 100 TPS threshold. Peak TPS is the Profile Data SOR at under 50 TPS due to fan-out from the 3 BOR functions; individual BOR functions are under 10 TPS each. All requests are on-demand and human-triggered (no batch, polling, or streaming). Expected daily volume is under 500 requests across all functions. Request and response payloads are small JSON (under 50 KB). No database and no persistent storage — the SOR is stateless and holds no data at rest. The single shared SOR is not a bottleneck; Vert.x is non-blocking and the serverless platform scales each function independently. |
 
 All functions are HTTP request/response only. No file upload/download, cron triggers, Kafka, or protobuf.
+
+---
+
+## Volume and TPS Estimates
+
+These functions are on-demand, human-triggered tools — not streaming pipelines or batch jobs. An engineer calls Triage during an incident, Diff Report after a deployment, or Fleet Search when investigating a shared-library issue. There is no background polling, scheduled execution, or automated triggering in Phase 1.
+
+### BOR vs SOR volume relationship
+
+Each BOR request fans out to one or more SOR calls. The SOR TPS is higher than any individual BOR because all three BOR functions share the same Profile Data SOR.
+
+```
+1 Triage request     → 2 SOR calls  (CPU profile + memory profile)
+1 Diff Report request → 2 SOR calls  (baseline window + current window)
+1 Fleet Search request → N SOR calls (1 per monitored service, typically 5-20)
+```
+
+### TPS summary
+
+| Function | Type | Expected TPS | Usage Pattern |
+|----------|------|:------------:|---------------|
+| Triage BOR | BOR | Under 10 | On-demand during incidents. A few engineers may triage the same app simultaneously. |
+| Diff Report BOR | BOR | Under 5 | Post-deployment. Typically one request per deploy, sometimes re-run with different time windows. |
+| Fleet Search BOR | BOR | Under 5 | Ad-hoc investigation. A platform engineer searches for a function across the fleet. |
+| Profile Data SOR | SOR | Under 50 | Receives fan-out from all three BOR functions. Peak occurs when Fleet Search scans many services. |
+
+### How TPS estimates were calculated
+
+TPS is derived from: **(concurrent users) x (requests per user action) x (fan-out multiplier)**.
+
+All functions are human-triggered. A human can realistically invoke one action every few seconds at most. The calculation assumes a peak-concurrent-user count (worst case, all happening at the same time) and multiplies by the fan-out each request produces.
+
+**BOR TPS (inbound requests from engineers):**
+
+| Scenario | Concurrent Users | Requests per Action | Peak BOR TPS |
+|----------|:----------------:|:-------------------:|:------------:|
+| Incident triage | 3-5 engineers triaging same app | 1 | 5 |
+| Post-deploy diff | 2-3 deploys in progress across teams | 1 | 3 |
+| Fleet search | 1-2 platform engineers investigating | 1 | 2 |
+| **Combined peak** (all scenarios at once) | | | **10** |
+
+**SOR TPS (internal calls from BOR functions):**
+
+| Source | BOR TPS | Fan-out per Request | SOR TPS |
+|--------|:-------:|:-------------------:|:-------:|
+| Triage | 5 | x 2 (CPU + memory profile) | 10 |
+| Diff Report | 3 | x 2 (baseline + current window) | 6 |
+| Fleet Search | 2 | x 15 (avg monitored services) | 30 |
+| **Combined peak** | | | **46** |
+
+46 rounds to "under 50 TPS" for the Profile Data SOR. This is the absolute peak — all three scenarios happening simultaneously with maximum concurrent users. Typical steady-state is well below this.
+
+**Why these numbers hold at enterprise scale:** The constraint is concurrent human users, not total user count. Even with 100+ engineers on the platform, these functions are diagnostic tools used during incidents or deployments — not called continuously. The number of concurrent incidents and deployments at any given second stays roughly constant regardless of team size.
+
+**Daily volume estimate:** Assuming 5-10 triage calls, 10-20 diff reports, and 2-5 fleet searches per day = 50-200 BOR requests/day, producing 200-1000 SOR requests/day after fan-out. Well under 500 BOR requests/day, well under 2000 SOR requests/day.
 
 ---
 

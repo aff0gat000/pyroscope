@@ -23,6 +23,58 @@ All functions are HTTP request/response only. No file upload/download, cron trig
 
 ---
 
+## Volume and TPS Estimates
+
+Phase 2 adds 4 PostgreSQL-backed SORs and upgrades the 3 BOR functions to v2. The usage pattern remains on-demand and human-triggered — no background polling, scheduled execution, or automated triggering.
+
+### BOR vs SOR volume relationship
+
+Phase 2 increases the fan-out per BOR request because v2 BOR functions call additional SORs (Baseline, History, Registry) alongside the Profile Data SOR.
+
+```
+1 Triage v2 request       → 2 Profile Data calls + 1 Baseline call + 1 History write = 4 SOR calls
+1 Diff Report v2 request  → 2 Profile Data calls + 1 Baseline call + 1 History write = 4 SOR calls
+1 Fleet Search v2 request → N Profile Data calls + 1 Registry call = N+1 SOR calls
+```
+
+### TPS summary
+
+| Function | Type | Expected TPS | Usage Pattern |
+|----------|------|:------------:|---------------|
+| Triage v2 BOR | BOR | Under 10 | On-demand during incidents. Same as Phase 1, now with baseline comparison. |
+| Diff Report v2 BOR | BOR | Under 5 | Post-deployment. Same as Phase 1, now with threshold annotation. |
+| Fleet Search v2 BOR | BOR | Under 5 | Ad-hoc investigation. Same as Phase 1, now with ownership enrichment. |
+| Profile Data SOR | SOR | Under 50 | Fan-out from all three BOR functions. Unchanged from Phase 1. |
+| Baseline SOR | SOR | Under 1 | Reference data lookups. Read on each Triage/Diff request, written rarely by admins setting thresholds. |
+| History SOR | SOR | Under 5 | Write-heavy relative to reads. Every Triage and Diff assessment writes one audit record. Reads happen during post-mortem reviews. |
+| Registry SOR | SOR | Under 1 | Reference data lookups. Read on each Fleet Search request, written rarely by admins registering services. |
+| Alert Rule SOR | SOR | Under 1 | Admin-only CRUD. Rules are created and updated infrequently. Read when evaluating alerts (future phase). |
+
+### How TPS estimates were calculated
+
+See [Phase 1 questionnaire](production-questionnaire-phase1.md#how-tps-estimates-were-calculated) for the full methodology. TPS is derived from: **(concurrent users) x (requests per user action) x (fan-out multiplier)**.
+
+Phase 2 BOR TPS is unchanged from Phase 1 — the same human-triggered usage patterns apply. The additional SOR TPS comes from the increased fan-out per BOR request.
+
+**SOR TPS (internal calls from v2 BOR functions):**
+
+| Source | BOR TPS | Profile Data Fan-out | Baseline | History | Registry | Total SOR TPS |
+|--------|:-------:|:--------------------:|:--------:|:-------:|:--------:|:-------------:|
+| Triage v2 | 5 | x 2 = 10 | x 1 = 5 | x 1 = 5 | — | 20 |
+| Diff Report v2 | 3 | x 2 = 6 | x 1 = 3 | x 1 = 3 | — | 12 |
+| Fleet Search v2 | 2 | x 15 = 30 | — | — | x 1 = 2 | 32 |
+| **Combined peak** | | **46** | **8** | **8** | **2** | **64** |
+
+- Profile Data SOR: 46 TPS (unchanged from Phase 1, still under 50)
+- Baseline SOR: 8 TPS peak, rounds to "under 10" — but typical is under 1 because incidents and deploys rarely overlap
+- History SOR: 8 TPS peak, rounds to "under 10" — write-only during BOR requests, reads are rare post-mortem queries
+- Registry SOR: 2 TPS peak, rounds to "under 5" — one lookup per Fleet Search request
+- Alert Rule SOR: Under 1 TPS — admin-only CRUD, not called by any BOR function in Phase 2
+
+All estimates are peak concurrent scenarios. The PostgreSQL-backed SORs handle small reference data and audit trail records — total database storage is expected to stay under 1 GB. No function exceeds the 100 TPS threshold.
+
+---
+
 ## Upgraded BOR Functions (v1 → v2)
 
 The v2 functions serve the same API endpoints with the same parameters. The response includes additional fields. No breaking changes.
