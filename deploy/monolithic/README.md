@@ -342,6 +342,25 @@ failed to resolve source metadata for docker.io/grafana/pyroscope:latest: dial .
 
 Option C solves this by building and pushing the image from your workstation (which has internet access) to an internal registry that VMs can reach.
 
+### Building from a Mac for RHEL
+
+If building on an Apple Silicon Mac (M1/M2/M3) for a RHEL 8 x86_64 VM, you must specify the target platform. Without this, Docker builds an ARM image that will not run on the VM.
+
+Add `--platform linux/amd64` to all `docker build` commands:
+
+```bash
+docker build --platform linux/amd64 \
+    --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
+    -t pyroscope-server:1.18.0 .
+```
+
+Or with the script:
+
+```bash
+bash build-and-push.sh --version 1.18.0 --platform linux/amd64 \
+    --registry company.corp.com/docker-proxy/pyroscope --push
+```
+
 ### Step 1: Check available versions (from your workstation)
 
 Using the script:
