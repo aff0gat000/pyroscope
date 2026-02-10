@@ -501,7 +501,7 @@ All settings can be set via flags or environment variables. Flags take precedenc
 
 | Dockerfile | Base Image | When to Use |
 |-----------|-----------|-------------|
-| `Dockerfile` | `grafana/pyroscope:1.18.0` (distroless) | Default. Use when you can pull the official image from Docker Hub or an internal mirror. |
+| `Dockerfile` | `grafana/pyroscope:latest` (distroless) | Default. Use when you can pull the official image from Docker Hub or an internal mirror. Pin a version at build time with `--build-arg BASE_IMAGE=grafana/pyroscope:1.18.0`. |
 | `Dockerfile.custom` | Alpine, UBI, or Debian (your choice) | Use when the official `grafana/pyroscope` image is completely unavailable. Multi-stage build copies the binary from the official image into a custom base. |
 
 ### Security and best practices
@@ -514,7 +514,7 @@ The official `grafana/pyroscope` image is already hardened:
 
 Our `Dockerfile` adds:
 
-- **Pinned version** (`1.18.0` instead of `latest`) — reproducible builds, no surprise upgrades
+- **Configurable version** — defaults to `latest`, pin at build time with `--build-arg BASE_IMAGE=grafana/pyroscope:1.18.0`
 - **HEALTHCHECK** — Docker monitors container health automatically, reports in `docker ps`
 - **OCI labels** — metadata for image provenance tracking
 

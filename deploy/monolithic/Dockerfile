@@ -1,4 +1,4 @@
-ARG BASE_IMAGE=grafana/pyroscope:1.18.0
+ARG BASE_IMAGE=grafana/pyroscope:latest
 FROM ${BASE_IMAGE}
 
 LABEL maintainer="platform-team" \
