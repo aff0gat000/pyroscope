@@ -6,18 +6,32 @@ Single-process Pyroscope server suitable for development, testing, and small-to-
 
 ```mermaid
 graph LR
-    subgraph VM / EC2
+    subgraph Pyroscope VM
         subgraph Docker Container
-            P[Pyroscope<br/>all-in-one]
+            P[Pyroscope Server<br/>all-in-one]
             FS[("/data<br/>(filesystem)")]
             P --> FS
         end
     end
 
-    JVM1[JVM Service 1] -->|push profiles<br/>:4040/ingest| P
-    JVM2[JVM Service 2] -->|push profiles<br/>:4040/ingest| P
+    subgraph App Server 1
+        V1[Vert.x FaaS Server<br/>Java Functions]
+        A1[Pyroscope Agent<br/>JFR profiler]
+        V1 -.- A1
+    end
+
+    subgraph App Server 2
+        V2[Vert.x FaaS Server<br/>Java Functions]
+        A2[Pyroscope Agent<br/>JFR profiler]
+        V2 -.- A2
+    end
+
+    A1 -->|push profiles<br/>:4040/ingest| P
+    A2 -->|push profiles<br/>:4040/ingest| P
     G[Grafana] -->|query<br/>:4040| P
 ```
+
+The Pyroscope Java agent runs as a `-javaagent` inside each Vert.x JVM process. It continuously samples CPU, memory, lock, and wall-clock profiles using JFR and pushes them to the Pyroscope server every 10 seconds. No application code changes are required — the agent is attached at JVM startup via `JAVA_TOOL_OPTIONS`.
 
 ## Files
 

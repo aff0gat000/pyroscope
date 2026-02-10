@@ -81,9 +81,16 @@ We recommend **Grafana Pyroscope** specifically: it's open source, Grafana-nativ
 ```mermaid
 graph TB
     subgraph Your Applications
-        APP1[Service 1]
-        APP2[Service 2]
-        APP3[Service 3]
+        subgraph JVM 1
+            APP1[Vert.x FaaS Server<br/>Java Functions]
+            AG1[Pyroscope Agent]
+            APP1 -.- AG1
+        end
+        subgraph JVM 2
+            APP2[Vert.x FaaS Server<br/>Java Functions]
+            AG2[Pyroscope Agent]
+            APP2 -.- AG2
+        end
     end
 
     subgraph Pyroscope
@@ -98,15 +105,13 @@ graph TB
         MQUERY[PromQL API]
     end
 
-    APP1 -->|"profiles every 10s"| PUSH
-    APP2 -->|"profiles every 10s"| PUSH
-    APP3 -->|"profiles every 10s"| PUSH
+    AG1 -->|"push profiles every 10s"| PUSH
+    AG2 -->|"push profiles every 10s"| PUSH
     PUSH --> PSTORE
     PQUERY --> PSTORE
 
     SCRAPE -->|"scrape /metrics"| APP1
     SCRAPE -->|"scrape /metrics"| APP2
-    SCRAPE -->|"scrape /metrics"| APP3
     SCRAPE --> MSTORE
     MQUERY --> MSTORE
 
@@ -364,10 +369,16 @@ A single Pyroscope process handles ingestion, storage, and querying. This is the
 ```mermaid
 graph TB
     subgraph Enterprise Network
-        subgraph Application Servers
-            S1[Service 1<br/>Java + Pyroscope Agent]
-            S2[Service 2<br/>Java + Pyroscope Agent]
-            S3[Service 3<br/>Java + Pyroscope Agent]
+        subgraph App Server 1
+            V1[Vert.x FaaS Server<br/>Java Functions :8080]
+            A1[Pyroscope Agent<br/>JFR profiler]
+            V1 -.- A1
+        end
+
+        subgraph App Server 2
+            V2[Vert.x FaaS Server<br/>Java Functions :8080]
+            A2[Pyroscope Agent<br/>JFR profiler]
+            V2 -.- A2
         end
 
         subgraph Pyroscope VM
@@ -382,15 +393,16 @@ graph TB
         end
     end
 
-    S1 -->|push profiles| PY
-    S2 -->|push profiles| PY
-    S3 -->|push profiles| PY
+    A1 -->|push profiles<br/>every 10s| PY
+    A2 -->|push profiles<br/>every 10s| PY
 
     GF -->|query profiles<br/>new datasource| PY
     GF -->|query metrics<br/>existing| PR
-    PR -->|scrape /metrics| S1
-    PR -->|scrape /metrics| S2
+    PR -->|scrape /metrics| V1
+    PR -->|scrape /metrics| V2
 ```
+
+Each Vert.x FaaS server runs as a standalone JVM process with the Pyroscope Java agent attached via `JAVA_TOOL_OPTIONS=-javaagent:/path/to/pyroscope.jar`. The agent runs in-process, continuously sampling CPU, memory, lock, and wall-clock profiles using JFR, and pushes them to the Pyroscope server every 10 seconds. No application code changes are required.
 
 ### Microservices mode (production)
 

@@ -114,22 +114,25 @@ Three telemetry pipelines run simultaneously with zero code changes:
 
 ```mermaid
 flowchart LR
-    subgraph jvm["Each JVM (9 total)"]
-        APP["Vert.x App\n:8080"]
-        PA["Pyroscope Agent\n(JFR)"]
+    subgraph jvm["Each Vert.x FaaS Server JVM"]
+        APP["Vert.x FaaS Server\nJava Functions\n:8080"]
+        PA["Pyroscope Agent\n-javaagent\nJFR profiler"]
         JMX["JMX Exporter\n:9404"]
+        APP -.- PA
     end
 
-    PY["Pyroscope\n:4040"]
+    PY["Pyroscope Server\n:4040"]
     PR["Prometheus\n:9090"]
     GF["Grafana\n:3000"]
 
-    PA -->|"push profiles"| PY
+    PA -->|"push profiles\nevery 10s"| PY
     PR -->|"scrape :8080/metrics"| APP
     PR -->|"scrape :9404"| JMX
     PY --> GF
     PR --> GF
 ```
+
+The Pyroscope Java agent runs inside the same JVM process as the Vert.x FaaS server. It is attached at startup via `JAVA_TOOL_OPTIONS=-javaagent:/path/to/pyroscope.jar` and requires no application code changes. The agent uses JFR to continuously sample CPU, memory allocation, lock contention, and wall-clock profiles, pushing them to the Pyroscope server every 10 seconds.
 
 ### Pipeline Details
 
