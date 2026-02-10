@@ -95,6 +95,8 @@ Options:
   --save [path]        Export image as tar file for scp to VM (default: ./<image>-<version>.tar)
   --push               Push the image to the internal registry after building
   --latest             Also tag and push as :latest (requires --push)
+  --clean              Remove Pyroscope container, image, volume, and config from the VM
+  --clean-keep-data    Remove container and image but keep volume and config
   --dry-run            Show what would be done without executing
   --list-tags          List recent upstream tags from Docker Hub
   --no-cache           Build without Docker cache (force fresh pull)
@@ -135,6 +137,12 @@ Examples:
   # Save to a custom path
   bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save /tmp/pyroscope.tar
 
+  # Clean up everything on the VM (container, image, volume, config)
+  bash build-and-push.sh --clean
+
+  # Clean up but keep data volume and config (for redeployment)
+  bash build-and-push.sh --clean-keep-data
+
   # Preview without executing
   bash build-and-push.sh --version 1.18.0 --push --dry-run
 USAGE
@@ -145,6 +153,8 @@ USAGE
 DO_PUSH=false
 DO_SAVE=false
 SAVE_PATH=""
+DO_CLEAN=false
+CLEAN_KEEP_DATA=false
 TAG_LATEST=false
 DRY_RUN=false
 LIST_TAGS=false
@@ -165,6 +175,8 @@ while [ $# -gt 0 ]; do
                           SAVE_PATH="$2"; shift
                       fi
                       shift ;;
+        --clean)      DO_CLEAN=true; shift ;;
+        --clean-keep-data) DO_CLEAN=true; CLEAN_KEEP_DATA=true; shift ;;
         --push)       DO_PUSH=true; shift ;;
         --latest)     TAG_LATEST=true; shift ;;
         --dry-run)    DRY_RUN=true; shift ;;
@@ -189,6 +201,64 @@ if [ "${LIST_TAGS}" = true ]; then
         err "curl is required for --list-tags"
         exit 1
     fi
+    exit 0
+fi
+
+# ---- Clean ----------------------------------------------------------------
+if [ "${DO_CLEAN}" = true ]; then
+    echo ""
+    info "Cleaning up Pyroscope deployment on this machine..."
+    echo ""
+
+    # Stop and remove container
+    if docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx pyroscope; then
+        info "Stopping and removing container: pyroscope"
+        docker rm -f pyroscope 2>/dev/null || true
+        ok "Container removed"
+    else
+        info "No container named 'pyroscope' found — skipping"
+    fi
+
+    # Remove image
+    if docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -q "^${IMAGE_NAME}:"; then
+        info "Removing image: ${IMAGE_NAME}"
+        docker rmi $(docker images --format '{{.Repository}}:{{.Tag}}' | grep "^${IMAGE_NAME}:") 2>/dev/null || true
+        ok "Image removed"
+    else
+        info "No image named '${IMAGE_NAME}' found — skipping"
+    fi
+
+    if [ "${CLEAN_KEEP_DATA}" = true ]; then
+        warn "Keeping volume 'pyroscope-data' and config '/opt/pyroscope/' (--clean-keep-data)"
+    else
+        # Remove volume
+        if docker volume ls --format '{{.Name}}' 2>/dev/null | grep -qx pyroscope-data; then
+            warn "Removing volume: pyroscope-data (THIS DELETES ALL PROFILING DATA)"
+            docker volume rm pyroscope-data 2>/dev/null || true
+            ok "Volume removed"
+        else
+            info "No volume named 'pyroscope-data' found — skipping"
+        fi
+
+        # Remove config directory
+        if [ -d /opt/pyroscope ]; then
+            info "Removing config directory: /opt/pyroscope/"
+            rm -rf /opt/pyroscope
+            ok "Config directory removed"
+        else
+            info "No config directory at /opt/pyroscope/ — skipping"
+        fi
+    fi
+
+    # Remove temp files
+    if [ -d /tmp/pyroscope-deploy ]; then
+        info "Removing temp directory: /tmp/pyroscope-deploy/"
+        rm -rf /tmp/pyroscope-deploy
+        ok "Temp directory removed"
+    fi
+
+    echo ""
+    ok "Cleanup complete"
     exit 0
 fi
 

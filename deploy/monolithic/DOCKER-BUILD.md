@@ -451,6 +451,40 @@ curl -s http://localhost:4040/ready && echo " OK"
 rm -rf /tmp/pyroscope-deploy
 ```
 
+### Where Pyroscope stores data
+
+| What | Inside Container | On the VM Host |
+|------|-----------------|----------------|
+| Profiling data | `/data` | Docker volume `pyroscope-data` |
+| Server config | `/etc/pyroscope/config.yaml` | `/opt/pyroscope/pyroscope.yaml` (bind mount) |
+
+Configured in `pyroscope.yaml`:
+
+```yaml
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data
+```
+
+Both the volume and the config file persist across container restarts, removals, and upgrades.
+
+### Cleanup and uninstall
+
+Full cleanup (removes everything including profiling data):
+
+```bash
+bash build-and-push.sh --clean
+```
+
+Partial cleanup (keeps data volume and config for redeployment):
+
+```bash
+bash build-and-push.sh --clean-keep-data
+```
+
+See [README.md Option D — Cleanup and uninstall](README.md#cleanup-and-uninstall) for the manual cleanup steps.
+
 ---
 
 ## Building with a Custom Base Image
@@ -597,6 +631,8 @@ docker run -d \
 | `--platform` | `PLATFORM` | *(current)* | Target platform (e.g., `linux/amd64`) |
 | `--pull-only` | | | Pull official image and push directly (no Dockerfile build, config mounted at runtime) |
 | `--save [path]` | | | Export image as tar file for scp to VM (default: `./<image>-<version>.tar`) |
+| `--clean` | | | Remove container, image, volume, and config from the VM |
+| `--clean-keep-data` | | | Remove container and image but keep volume and config |
 | `--push` | | | Push to internal registry after building |
 | `--latest` | | | Also tag and push as `:latest` (requires `--push`) |
 | `--dry-run` | | | Show commands without executing |

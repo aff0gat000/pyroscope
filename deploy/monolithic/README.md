@@ -845,6 +845,96 @@ rm -f /tmp/pyroscope-deploy/pyroscope-server-1.19.0.tar
 
 The data volume and config file are preserved across upgrades.
 
+### Where Pyroscope stores data
+
+Pyroscope stores all profiling data in the `/data` directory inside the container. This maps to the Docker named volume `pyroscope-data` on the host.
+
+| What | Inside Container | On the VM Host | Persists across restarts? |
+|------|-----------------|----------------|:------------------------:|
+| Profiling data | `/data` | Docker volume `pyroscope-data` | Yes |
+| Server config | `/etc/pyroscope/config.yaml` | `/opt/pyroscope/pyroscope.yaml` (bind mount) | Yes |
+| Logs | stdout/stderr | `docker logs pyroscope` | Until container is removed |
+
+The `pyroscope.yaml` config tells Pyroscope to use filesystem storage at `/data`:
+
+```yaml
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data
+```
+
+The Docker volume is managed by Docker and stored at `/var/lib/docker/volumes/pyroscope-data/` on the host. You should never modify files in that directory directly — use the Pyroscope API or UI instead.
+
+To check volume size:
+
+```bash
+docker system df -v 2>/dev/null | grep pyroscope-data
+```
+
+### Cleanup and uninstall
+
+#### Full cleanup (remove everything including profiling data)
+
+With the script:
+
+```bash
+bash build-and-push.sh --clean
+```
+
+Or manually:
+
+```bash
+# 1. Stop and remove the container
+docker rm -f pyroscope
+
+# 2. Remove the image
+docker rmi pyroscope-server:1.18.0
+
+# 3. Remove profiling data (THIS DELETES ALL COLLECTED PROFILES)
+docker volume rm pyroscope-data
+
+# 4. Remove config from disk
+rm -rf /opt/pyroscope
+
+# 5. Remove temp files (if still present)
+rm -rf /tmp/pyroscope-deploy
+```
+
+After full cleanup, the VM has no Pyroscope artifacts remaining.
+
+#### Partial cleanup (keep data and config for redeployment)
+
+With the script:
+
+```bash
+bash build-and-push.sh --clean-keep-data
+```
+
+Or manually:
+
+```bash
+# 1. Stop and remove the container
+docker rm -f pyroscope
+
+# 2. Remove the image
+docker rmi pyroscope-server:1.18.0
+```
+
+This keeps:
+- `pyroscope-data` volume — all profiling data preserved
+- `/opt/pyroscope/pyroscope.yaml` — config preserved
+
+You can redeploy later by loading a new image and running `docker run` with the same volume and config mount.
+
+#### Failed deployment cleanup
+
+If a deployment failed partway through, run full cleanup to remove any partial state, then retry from step 1:
+
+```bash
+bash build-and-push.sh --clean
+```
+
 ---
 
 ### build-and-push.sh configuration
@@ -860,6 +950,8 @@ All settings can be set via flags or environment variables. Flags take precedenc
 | `--platform` | `PLATFORM` | *(current)* | Target platform (e.g., `linux/amd64`) |
 | `--pull-only` | | | Pull official image and push directly (no Dockerfile build, config mounted at runtime) |
 | `--save [path]` | | | Export image as tar file for scp to VM (default: `./<image>-<version>.tar`) |
+| `--clean` | | | Remove container, image, volume, and config from the VM |
+| `--clean-keep-data` | | | Remove container and image but keep volume and config |
 | `--push` | | | Push to internal registry after building |
 | `--latest` | | | Also tag and push as `:latest` (requires `--push`) |
 | `--dry-run` | | | Show commands without executing |
