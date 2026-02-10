@@ -325,11 +325,11 @@ docker volume rm pyroscope-data 2>/dev/null
 
 ## Option C: Pre-built Image from Internal Registry
 
-Use this when VMs cannot reach Docker Hub (common in enterprise networks). Build the image once from a machine with internet access, push to your internal Artifactory Docker registry, then pull on VMs.
+Use this when VMs cannot reach Docker Hub (common in enterprise networks). Build the image once from a machine with internet access, push to your internal Docker registry (e.g., Artifactory, Nexus, Harbor), then pull on VMs.
 
 ### Why this option?
 
-Options A and B run `docker build` on the VM, which requires pulling `grafana/pyroscope:latest` from Docker Hub. If the VM has no internet access, the build fails with:
+Options A and B run `docker build` on the VM, which requires pulling `grafana/pyroscope` from Docker Hub. If the VM has no internet access, the build fails with:
 
 ```
 failed to resolve source metadata for docker.io/grafana/pyroscope:latest: dial ... i/o timeout
@@ -337,56 +337,79 @@ failed to resolve source metadata for docker.io/grafana/pyroscope:latest: dial .
 
 Option C solves this by building and pushing the image from your workstation (which has internet access) to an internal registry that VMs can reach.
 
-### Step 1: Build and push from your workstation
+### Step 1: Check available versions (from your workstation)
 
 ```bash
-# Build with a pinned version (recommended over :latest)
-bash deploy/monolithic/build-and-push.sh 1.13.0
-
-# Inspect the image locally, then push when ready
-bash deploy/monolithic/build-and-push.sh 1.13.0 --push
-
-# Also update the :latest tag in the registry
-bash deploy/monolithic/build-and-push.sh 1.13.0 --push --latest
+# List recent Pyroscope releases from Docker Hub
+bash deploy/monolithic/build-and-push.sh --list-tags
 ```
 
-Configure the registry path via environment variable:
+### Step 2: Build and push from your workstation
 
 ```bash
+# Build with a pinned version (default: 1.18.0)
+bash deploy/monolithic/build-and-push.sh --version 1.18.0
+
+# Preview what would happen without executing
+bash deploy/monolithic/build-and-push.sh --version 1.18.0 --push --dry-run
+
+# Build and push to your internal registry
+bash deploy/monolithic/build-and-push.sh --version 1.18.0 --push
+
+# Also update the :latest tag in the registry
+bash deploy/monolithic/build-and-push.sh --version 1.18.0 --push --latest
+```
+
+Configure the registry path via flag or environment variable:
+
+```bash
+# Via flag
+bash deploy/monolithic/build-and-push.sh \
+    --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --push
+
+# Via environment variable
 REGISTRY=company.corp.com/docker-proxy/pyroscope \
-    bash deploy/monolithic/build-and-push.sh 1.13.0 --push
+    bash deploy/monolithic/build-and-push.sh --version 1.18.0 --push
 ```
 
 This produces:
 
 ```
-company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.13.0
+company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
 company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest   (if --latest)
 ```
 
 The image has `pyroscope.yaml` baked in — no config files needed on the VM.
 
-### Step 2: SSH to the VM and elevate to root
+If building on a Mac/ARM workstation for Linux VMs:
+
+```bash
+bash deploy/monolithic/build-and-push.sh --version 1.18.0 --platform linux/amd64 --push
+```
+
+### Step 3: SSH to the VM and elevate to root
 
 ```bash
 ssh operator@vm01.corp.example.com
 pbrun /bin/su -
 ```
 
-### Step 3: Pre-flight checks
+### Step 4: Pre-flight checks
 
 ```bash
 docker info >/dev/null 2>&1 && echo "Docker OK" || echo "Docker NOT available"
 ss -tlnp | grep :4040
 ```
 
-### Step 4: Pull the image from Artifactory
+### Step 5: Pull the image from your internal registry
 
 ```bash
-docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.13.0
+docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
 ```
 
-### Step 5: Create the data volume and start the container
+### Step 6: Create the data volume and start the container
 
 ```bash
 docker volume create pyroscope-data
@@ -396,10 +419,10 @@ docker run -d \
     --restart unless-stopped \
     -p 4040:4040 \
     -v pyroscope-data:/data \
-    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.13.0
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
 ```
 
-### Step 6: Verify
+### Step 7: Verify
 
 ```bash
 # Wait for health check
@@ -417,10 +440,10 @@ curl -s http://localhost:4040/ready && echo " OK"
 After deployment, the VM has:
 
 ```
-No files on disk — the image was pulled from Artifactory.
+No files on disk — the image was pulled from the internal registry.
 
 Docker:
-  Image:     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.13.0
+  Image:     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
   Container: pyroscope (port 4040)
   Volume:    pyroscope-data (mounted as /data)
 ```
@@ -430,31 +453,44 @@ Docker:
 On your workstation:
 
 ```bash
-bash deploy/monolithic/build-and-push.sh 1.14.0 --push --latest
+# Check what's available
+bash deploy/monolithic/build-and-push.sh --list-tags
+
+# Build and push the new version
+bash deploy/monolithic/build-and-push.sh --version 1.19.0 --push --latest
 ```
 
 On the VM:
 
 ```bash
-docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.14.0
+docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
 docker rm -f pyroscope
 docker run -d \
     --name pyroscope \
     --restart unless-stopped \
     -p 4040:4040 \
     -v pyroscope-data:/data \
-    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.14.0
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
 ```
 
 The data volume is preserved across upgrades.
 
 ### build-and-push.sh configuration
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `REGISTRY` | `company.corp.com/docker-proxy/pyroscope` | Artifactory registry path |
-| `IMAGE_NAME` | `pyroscope-server` | Image name |
-| `UPSTREAM_IMAGE` | `grafana/pyroscope` | Upstream Docker Hub image |
+All settings can be set via flags or environment variables. Flags take precedence.
+
+| Flag | Env Variable | Default | Description |
+|------|-------------|---------|-------------|
+| `--version` | `VERSION` | `1.18.0` | Pyroscope version to build (pinned, not `latest`) |
+| `--registry` | `REGISTRY` | `company.corp.com/docker-proxy/pyroscope` | Internal registry path |
+| `--image` | `IMAGE_NAME` | `pyroscope-server` | Image name appended to registry path |
+| `--upstream` | `UPSTREAM_IMAGE` | `grafana/pyroscope` | Upstream Docker Hub image |
+| `--platform` | `PLATFORM` | *(current)* | Target platform (e.g., `linux/amd64`) |
+| `--push` | | | Push to internal registry after building |
+| `--latest` | | | Also tag and push as `:latest` (requires `--push`) |
+| `--dry-run` | | | Show commands without executing |
+| `--list-tags` | | | List recent upstream versions from Docker Hub |
+| `--no-cache` | | | Build without Docker cache (force fresh pull) |
 
 ---
 
