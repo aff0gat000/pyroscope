@@ -140,6 +140,9 @@ The script will:
 6. Wait up to 60 seconds for the health check (`/ready` endpoint)
 7. Print a connection summary with the VM IP address
 
+> **If step 3 fails with `i/o timeout` or `failed to resolve source metadata`:**
+> The VM cannot reach Docker Hub. Use [Option C](#option-c-pre-built-image-from-internal-registry) instead — build the image on your workstation (which has internet access), push to your internal registry, then pull on the VM. See [DOCKER-BUILD.md](DOCKER-BUILD.md) for the full walkthrough.
+
 To use a different port:
 
 ```bash
@@ -498,26 +501,14 @@ All settings can be set via flags or environment variables. Flags take precedenc
 
 ## Docker Image Build and Push
 
-See [DOCKER-BUILD.md](DOCKER-BUILD.md) for the full guide covering:
+See [DOCKER-BUILD.md](DOCKER-BUILD.md) for the step-by-step guide covering:
 
-- Building from the official image (`Dockerfile`) or a custom base (`Dockerfile.custom`)
-- Pushing to an internal Docker registry (Artifactory, Nexus, Harbor)
-- Cross-platform builds, version pinning, upgrading, and rolling back
-- Base image comparison (Alpine, UBI, Debian, distroless)
-- `build-and-push.sh` script reference
+- **Option A:** Build and push with `build-and-push.sh` script (7 steps)
+- **Option B:** Build and push manually without the script (9 steps)
+- **Custom base images:** Alpine, UBI, Debian, distroless (when official image is unavailable)
+- **Upgrading and rolling back** to a different Pyroscope version
 
-Quick reference:
-
-```bash
-# Build with official base, pinned version
-docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 -t pyroscope-server:1.18.0 .
-
-# Build with custom base (Alpine, UBI, etc.)
-docker build -f Dockerfile.custom --build-arg BASE_IMAGE=alpine:3.20 -t pyroscope-server:1.18.0 .
-
-# Build and push to internal registry
-bash build-and-push.sh --version 1.18.0 --registry company.corp.com/docker-proxy/pyroscope --push
-```
+Use this when your VM cannot reach Docker Hub (e.g., `i/o timeout` during `docker build`).
 
 ---
 

@@ -1,126 +1,317 @@
 # Building and Pushing Pyroscope Docker Images
 
-This guide covers building the Pyroscope monolithic mode Docker image and pushing it to an internal Docker registry (Artifactory, Nexus, Harbor, etc.). All push operations target internal registries only — never push to public Docker Hub.
+Step-by-step guide to building the Pyroscope monolithic mode Docker image on your workstation and pushing it to an internal Docker registry so VMs can pull it without Docker Hub access. All push operations target internal registries only — never push to public Docker Hub.
 
-## Overview
+## When to Use This Guide
 
-There are two Dockerfiles in this directory:
+Use this when your target VMs cannot reach Docker Hub directly. The workflow is:
 
-| Dockerfile | Base | Use When |
-|-----------|------|----------|
-| `Dockerfile` | `grafana/pyroscope` (official, distroless) | You can pull the official image from Docker Hub or an internal mirror |
-| `Dockerfile.custom` | Alpine, UBI, Debian, or distroless (your choice) | The official image is unavailable, or enterprise policy requires a specific base |
-
-Both produce the same result: a Pyroscope server image with `pyroscope.yaml` baked in, running as a non-root user on port 4040.
-
----
-
-## Quick Start
-
-```bash
-# Build locally with the official base image
-docker build -t pyroscope-server .
-
-# Build with a pinned version
-docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 -t pyroscope-server:1.18.0 .
-
-# Build and push to internal registry in one step
-bash build-and-push.sh --version 1.18.0 --registry company.corp.com/docker-proxy/pyroscope --push
+```
+Workstation (has internet) → Internal Registry → VM (no internet)
 ```
 
+If your VM can reach Docker Hub, you can build on the VM directly — see [README.md Options A and B](README.md#option-a-deploy-with-script).
+
+## Prerequisites
+
+| Requirement | Where | How to Check |
+|-------------|-------|--------------|
+| Docker installed and running | Workstation | `docker info` |
+| Internet access to Docker Hub | Workstation | `docker pull hello-world` |
+| Access to internal Docker registry | Workstation | `docker login company.corp.com` |
+| Docker installed and running | Target VM | `docker info` |
+| Access to internal Docker registry | Target VM | `docker pull company.corp.com/hello-world` (or similar) |
+
+## Files Involved
+
+| File | Purpose |
+|------|---------|
+| `Dockerfile` | Builds from official `grafana/pyroscope` base (distroless, ~30 MB) |
+| `Dockerfile.custom` | Builds from Alpine, UBI, Debian, or distroless when official image is unavailable or enterprise policy requires a specific base |
+| `pyroscope.yaml` | Server config baked into the image |
+| `build-and-push.sh` | Script that handles building, tagging, and pushing in one command |
+
+Both Dockerfiles produce the same result: a Pyroscope server image with `pyroscope.yaml` baked in, running as a non-root user (UID 10001) on port 4040.
+
 ---
 
-## 1. Building from the Official Image (Dockerfile)
+## Option A: Build and Push with Script (Recommended)
 
-### Default build (pulls latest from Docker Hub)
+Run all steps from your **workstation** in the `deploy/monolithic/` directory.
+
+### Step 1: Check available Pyroscope versions
 
 ```bash
 cd deploy/monolithic
-docker build -t pyroscope-server .
+bash build-and-push.sh --list-tags
 ```
 
-### Pinned version (recommended)
+Pick a version (e.g., `1.18.0`). Avoid using `latest` in production.
+
+### Step 2: Preview the build (dry run)
 
 ```bash
-docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
-    -t pyroscope-server:1.18.0 .
+bash build-and-push.sh \
+    --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --push --dry-run
 ```
 
-### From an internal mirror of the official image
+This shows exactly what commands would run without executing them. Verify the registry path and version look correct.
 
-If your internal registry mirrors Docker Hub:
+### Step 3: Build and push to your internal registry
 
 ```bash
-docker build --build-arg BASE_IMAGE=company.corp.com/docker-hub/grafana/pyroscope:1.18.0 \
-    -t pyroscope-server:1.18.0 .
+bash build-and-push.sh \
+    --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --push
 ```
 
-### What the Dockerfile does
+This will:
+1. Pull `grafana/pyroscope:1.18.0` from Docker Hub
+2. Build the image with `pyroscope.yaml` baked in
+3. Tag as `company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0`
+4. Push to your internal registry
+
+To also update the `:latest` tag in the registry, add `--latest`:
+
+```bash
+bash build-and-push.sh \
+    --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --push --latest
+```
+
+If building on a Mac/ARM workstation for Linux x86_64 VMs, add `--platform`:
+
+```bash
+bash build-and-push.sh \
+    --version 1.18.0 \
+    --registry company.corp.com/docker-proxy/pyroscope \
+    --platform linux/amd64 \
+    --push
+```
+
+### Step 4: SSH to the VM and elevate to root
+
+```bash
+ssh operator@vm01.corp.example.com
+pbrun /bin/su -
+```
+
+### Step 5: Pull the image from your internal registry
+
+```bash
+docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+### Step 6: Create the data volume and start the container
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+### Step 7: Verify
+
+```bash
+# Wait for health check (up to 60 seconds)
+for i in $(seq 1 30); do
+    if docker exec pyroscope wget -q --spider http://localhost:4040/ready 2>/dev/null; then
+        echo "Pyroscope is ready"
+        break
+    fi
+    sleep 2
+done
+
+curl -s http://localhost:4040/ready && echo " OK"
+```
+
+Open `http://<VM_IP>:4040` in a browser to access the Pyroscope UI.
+
+After deployment, the VM has:
 
 ```
-grafana/pyroscope:latest (or pinned version)
-  └── COPY pyroscope.yaml → /etc/pyroscope/config.yaml
-  └── HEALTHCHECK via "pyroscope admin ready"
-  └── ENTRYPOINT: pyroscope -config.file=/etc/pyroscope/config.yaml
-  └── Runs as non-root user pyroscope (UID 10001) — inherited from base
+No files on disk — the image was pulled from the internal registry.
+
+Docker:
+  Image:     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+  Container: pyroscope (port 4040)
+  Volume:    pyroscope-data (mounted as /data)
 ```
-
-### Official base image details
-
-The `grafana/pyroscope` image is already hardened:
-
-- **Distroless base** (`gcr.io/distroless/static`) — no shell, no package manager
-- **Non-root user** — `pyroscope` (UID 10001, GID 10001)
-- **Statically compiled Go binary** — no runtime dependencies
-- **~30 MB** total image size
 
 ---
 
-## 2. Building from a Custom Base (Dockerfile.custom)
+## Option B: Build and Push Manually (Without Script)
 
-Use this when the official `grafana/pyroscope` image is not available, or when enterprise policy requires a specific base image.
+Run steps 1-5 on your **workstation** in the `deploy/monolithic/` directory. Run steps 6-9 on the **VM**.
+
+### Step 1: Choose a version
+
+Check available versions on Docker Hub:
+
+```bash
+curl -s "https://hub.docker.com/v2/repositories/grafana/pyroscope/tags/?page_size=15&ordering=last_updated" \
+    | grep -oP '"name"\s*:\s*"\K[0-9]+\.[0-9]+\.[0-9]+' \
+    | sort -t. -k1,1nr -k2,2nr -k3,3nr \
+    | head -10
+```
+
+### Step 2: Build the image
+
+```bash
+cd deploy/monolithic
+
+docker build \
+    --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
+    -t pyroscope-server:1.18.0 .
+```
+
+This pulls `grafana/pyroscope:1.18.0` from Docker Hub and bakes in `pyroscope.yaml`.
+
+If building on a Mac/ARM workstation for Linux x86_64 VMs:
+
+```bash
+docker build --platform linux/amd64 \
+    --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
+    -t pyroscope-server:1.18.0 .
+```
+
+### Step 3: Tag for your internal registry
+
+```bash
+docker tag pyroscope-server:1.18.0 \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+### Step 4: Log in to your internal registry
+
+```bash
+docker login company.corp.com
+```
+
+### Step 5: Push to your internal registry
+
+```bash
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+Optionally update the `:latest` tag:
+
+```bash
+docker tag pyroscope-server:1.18.0 \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest
+```
+
+### Step 6: SSH to the VM and elevate to root
+
+```bash
+ssh operator@vm01.corp.example.com
+pbrun /bin/su -
+```
+
+### Step 7: Pull the image from your internal registry
+
+```bash
+docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+### Step 8: Create the data volume and start the container
+
+```bash
+docker volume create pyroscope-data
+
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
+```
+
+### Step 9: Verify
+
+```bash
+for i in $(seq 1 30); do
+    if docker exec pyroscope wget -q --spider http://localhost:4040/ready 2>/dev/null; then
+        echo "Pyroscope is ready"
+        break
+    fi
+    sleep 2
+done
+
+curl -s http://localhost:4040/ready && echo " OK"
+```
+
+---
+
+## Building with a Custom Base Image
+
+Use `Dockerfile.custom` when the official `grafana/pyroscope` image is not available or enterprise policy requires a specific base (e.g., UBI for RHEL compliance).
 
 The Dockerfile uses a multi-stage build: stage 1 copies the Pyroscope binary from the official image, stage 2 places it on your chosen base with a non-root user.
 
-### Alpine (default, recommended)
+### Step 1: Build with your chosen base
+
+**Alpine (default, recommended):**
 
 ```bash
 cd deploy/monolithic
-docker build -f Dockerfile.custom -t pyroscope-server:1.18.0 .
-```
 
-### Red Hat UBI Minimal (RHEL compliance)
-
-```bash
 docker build -f Dockerfile.custom \
-    --build-arg BASE_IMAGE=registry.access.redhat.com/ubi8/ubi-minimal:8.10 \
+    --build-arg PYROSCOPE_VERSION=1.18.0 \
     -t pyroscope-server:1.18.0 .
 ```
 
-### Debian slim
-
-```bash
-docker build -f Dockerfile.custom \
-    --build-arg BASE_IMAGE=debian:bookworm-slim \
-    -t pyroscope-server:1.18.0 .
-```
-
-### Distroless (same as official, most secure)
-
-```bash
-docker build -f Dockerfile.custom \
-    --build-arg BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot \
-    -t pyroscope-server:1.18.0 .
-```
-
-### Pinning the Pyroscope version
+**Red Hat UBI Minimal (RHEL compliance):**
 
 ```bash
 docker build -f Dockerfile.custom \
     --build-arg PYROSCOPE_VERSION=1.18.0 \
-    --build-arg BASE_IMAGE=alpine:3.20 \
-    -t pyroscope-server:1.18.0 .
+    --build-arg BASE_IMAGE=registry.access.redhat.com/ubi8/ubi-minimal:8.10 \
+    -t pyroscope-server:1.18.0-ubi .
 ```
+
+**Debian slim:**
+
+```bash
+docker build -f Dockerfile.custom \
+    --build-arg PYROSCOPE_VERSION=1.18.0 \
+    --build-arg BASE_IMAGE=debian:bookworm-slim \
+    -t pyroscope-server:1.18.0-debian .
+```
+
+**Distroless (same as official, most secure):**
+
+```bash
+docker build -f Dockerfile.custom \
+    --build-arg PYROSCOPE_VERSION=1.18.0 \
+    --build-arg BASE_IMAGE=gcr.io/distroless/static-debian12:nonroot \
+    -t pyroscope-server:1.18.0-distroless .
+```
+
+### Step 2: Tag and push to your internal registry
+
+```bash
+docker tag pyroscope-server:1.18.0-ubi \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0-ubi
+
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0-ubi
+```
+
+Use a tag suffix (e.g., `-ubi`, `-alpine`, `-debian`) to distinguish custom base images from the default.
+
+### Step 3: Pull and run on the VM
+
+Same as Option A steps 4-7 or Option B steps 6-9, using the custom-tagged image name.
 
 ### Base image comparison
 
@@ -131,144 +322,45 @@ docker build -f Dockerfile.custom \
 | Debian slim | ~75 MB | Yes | Easy | Widely accepted | Broadest package ecosystem for debugging. |
 | Distroless | ~5 MB | No | Hard | Highest security posture | No shell. Same as official image. Hardest to troubleshoot. |
 
-**Recommendation:** Use Alpine unless your enterprise requires UBI. Alpine is production-grade, widely used, and small enough that image pulls are fast even on slow networks.
+**Recommendation:** Use Alpine unless your enterprise requires UBI.
 
 ---
 
-## 3. Pushing to an Internal Registry
+## Upgrading to a New Version
 
-### Using the build-and-push.sh script (recommended)
+### Step 1: Build and push the new version (from your workstation)
 
-The script handles building, tagging, and pushing in one step.
+With the script:
 
 ```bash
-# Check available Pyroscope versions
-bash build-and-push.sh --list-tags
-
-# Preview what will happen (no changes made)
-bash build-and-push.sh --version 1.18.0 \
-    --registry company.corp.com/docker-proxy/pyroscope \
-    --push --dry-run
-
-# Build and push
-bash build-and-push.sh --version 1.18.0 \
-    --registry company.corp.com/docker-proxy/pyroscope \
-    --push
-
-# Also update the :latest tag in the registry
-bash build-and-push.sh --version 1.18.0 \
+bash build-and-push.sh \
+    --version 1.19.0 \
     --registry company.corp.com/docker-proxy/pyroscope \
     --push --latest
-```
-
-This produces:
-
-```
-company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
-company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest   (if --latest)
-```
-
-### Pushing manually
-
-If you prefer not to use the script:
-
-```bash
-# 1. Build with a pinned version
-docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
-    -t pyroscope-server:1.18.0 .
-
-# 2. Tag for your internal registry
-docker tag pyroscope-server:1.18.0 \
-    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
-
-# 3. Log in to your internal registry (if not already authenticated)
-docker login company.corp.com
-
-# 4. Push
-docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
-
-# 5. Optionally update the :latest tag
-docker tag pyroscope-server:1.18.0 \
-    company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest
-docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:latest
-```
-
-### Pushing a custom base image
-
-Same workflow, just build with `Dockerfile.custom` first:
-
-```bash
-# Build with UBI base
-docker build -f Dockerfile.custom \
-    --build-arg PYROSCOPE_VERSION=1.18.0 \
-    --build-arg BASE_IMAGE=registry.access.redhat.com/ubi8/ubi-minimal:8.10 \
-    -t pyroscope-server:1.18.0-ubi .
-
-# Tag and push
-docker tag pyroscope-server:1.18.0-ubi \
-    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0-ubi
-docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0-ubi
-```
-
-Use a tag suffix (e.g., `-ubi`, `-alpine`) to distinguish custom base images from the default.
-
-### Cross-platform builds (Mac workstation to Linux VM)
-
-If building on a Mac with Apple Silicon for a Linux x86_64 VM:
-
-```bash
-bash build-and-push.sh --version 1.18.0 --platform linux/amd64 \
-    --registry company.corp.com/docker-proxy/pyroscope --push
 ```
 
 Or manually:
 
 ```bash
-docker build --platform linux/amd64 \
-    --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
-    -t pyroscope-server:1.18.0 .
+docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.19.0 \
+    -t pyroscope-server:1.19.0 deploy/monolithic/
+
+docker tag pyroscope-server:1.19.0 \
+    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
+docker push company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
 ```
 
----
-
-## 4. Pulling and Running on VMs
-
-After pushing to your internal registry, VMs pull directly — no Docker Hub access needed.
-
-```bash
-# Pull
-docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
-
-# Run
-docker volume create pyroscope-data
-docker run -d \
-    --name pyroscope \
-    --restart unless-stopped \
-    -p 4040:4040 \
-    -v pyroscope-data:/data \
-    company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.18.0
-
-# Verify
-curl -s http://localhost:4040/ready && echo " OK"
-```
-
----
-
-## 5. Upgrading
-
-### Build and push the new version (from your workstation)
-
-```bash
-bash build-and-push.sh --version 1.19.0 \
-    --registry company.corp.com/docker-proxy/pyroscope \
-    --push --latest
-```
-
-### Upgrade on the VM
+### Step 2: Pull the new version on the VM
 
 ```bash
 docker pull company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
+```
+
+### Step 3: Replace the running container
+
+```bash
 docker rm -f pyroscope
+
 docker run -d \
     --name pyroscope \
     --restart unless-stopped \
@@ -277,12 +369,13 @@ docker run -d \
     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0
 ```
 
-The `pyroscope-data` volume is preserved across upgrades — profiling data is not lost.
+The `pyroscope-data` volume is preserved — profiling data is not lost.
 
 ### Rolling back
 
 ```bash
 docker rm -f pyroscope
+
 docker run -d \
     --name pyroscope \
     --restart unless-stopped \
