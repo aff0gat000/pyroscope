@@ -131,6 +131,91 @@ graph TB
 
 ---
 
+## Profiling vs Distributed Tracing
+
+The most common objection: "We already have OpenTelemetry tracing — why add another observability signal?"
+
+Tracing and profiling answer fundamentally different questions. They are complementary, not redundant — and using one without the other leaves a diagnostic gap.
+
+### What each signal tells you
+
+**Tracing (OpenTelemetry):** "Request X took 850ms. It spent 200ms in Service A, 400ms in Service B, 250ms in the database."
+
+**Profiling (Pyroscope):** "Service B's 400ms was spent 60% in `JsonParser.parse()`, 25% in GC pause, 15% in TLS handshake. Here's the exact call stack."
+
+Tracing shows **where time is spent across services**. Profiling shows **why time is spent inside a service** — down to the method and line level.
+
+| Concern | Tracing answers | Profiling answers |
+|---------|----------------|-------------------|
+| Which service is slow? | Yes | No |
+| Why is this method slow? | No | Yes — flame graph shows the call stack |
+| Where is CPU going? | No | Yes — CPU profile shows function-level breakdown |
+| Memory allocation hotspots? | No | Yes — allocation profile shows which functions allocate most |
+| GC pressure? | No | Yes — allocation profiling reveals object churn |
+| Lock contention? | No | Yes — lock profile shows contended monitors |
+| Cross-service request flow? | Yes | No |
+| Per-request latency breakdown? | Yes | No — profiling is statistical, not per-request |
+
+### The diagnostic gap tracing leaves
+
+Distributed tracing instruments request boundaries — HTTP calls, database queries, message queue operations. It tells you which span in the request chain is slow. But it cannot tell you **what the code is doing inside that span**.
+
+Common scenarios where tracing alone is insufficient:
+
+1. **Tracing shows a span is slow, but not why.** A 2-second database call in Jaeger — is it query execution, connection pool contention, serialization overhead, or a GC pause? Tracing shows a single span labeled "db.query." Profiling shows the call stack inside that span.
+
+2. **CPU/memory issues that don't manifest as slow requests.** A service uses 90% CPU but p99 latency looks normal. Tracing won't flag this — no span is slow. Profiling shows which methods are burning CPU (perhaps a regex, a serialization loop, or excessive logging).
+
+3. **Memory pressure and GC.** Tracing has zero visibility into heap allocation patterns, GC pauses, or memory leaks. Pyroscope's allocation profiling shows exactly which code paths allocate the most objects, causing GC pressure.
+
+4. **Lock contention.** Threads blocking on `synchronized` methods or `ReentrantLock` — invisible to tracing because no span is created for lock acquisition. Lock profiling in Pyroscope shows the contended lock and the callers waiting on it.
+
+5. **Before/after deployment validation.** Tracing can show latency changed, but not which function changed. Pyroscope's diff flame graph compares two time ranges and highlights exactly which functions regressed or improved.
+
+### How they work together
+
+The recommended workflow uses both signals together:
+
+```mermaid
+flowchart TD
+    A[Alert: p99 > 2s] --> B[Open traces in Tempo/Jaeger]
+    B --> C[Identify the slow span<br/>'Service B: 400ms']
+    C --> D{What is Service B<br/>doing for 400ms?}
+    D -->|Tracing cannot answer| E[Open flame graph in Pyroscope<br/>filter to Service B, same time window]
+    E --> F["See: JsonParser.parse() = 60% CPU"]
+    F --> G[Fix the code]
+
+    style D fill:#fff3e0,stroke:#ff9800
+    style E fill:#e8f5e9,stroke:#4caf50
+    style F fill:#e8f5e9,stroke:#4caf50
+```
+
+Tracing narrows the investigation to a specific service and time window. Profiling reveals the root cause within that service. Together, they eliminate the "add logging → redeploy → wait" cycle entirely.
+
+### Overhead comparison
+
+Both signals run continuously in production. Their combined overhead is well within tolerance:
+
+| Signal | Mechanism | CPU Overhead | Adds latency to requests? |
+|--------|-----------|:------------:|:-------------------------:|
+| Tracing (OpenTelemetry) | Instruments request boundaries, propagates context headers | 2-5% | Yes — adds microseconds per span for context propagation |
+| Profiling (Pyroscope) | OS-level sampling every 10ms, reads call stack | 1-3% | No — sampling is asynchronous, never on the request path |
+| **Combined** | | **3-8%** | **Minimal** |
+
+Profiling adds negligible incremental overhead on top of tracing because the two mechanisms are independent. Tracing instruments request flow; profiling passively samples the CPU. They don't interfere with each other.
+
+### When profiling replaces ad-hoc debugging
+
+If your team currently debugs performance issues by:
+- Adding `System.nanoTime()` calls around suspect code
+- Attaching async-profiler or VisualVM to production during an incident
+- Taking thread dumps manually
+- Adding temporary logging, redeploying, and waiting for recurrence
+
+...then continuous profiling replaces all of that with always-on data. The profile was already captured when the issue occurred — just query the time window.
+
+---
+
 ## Runtime Impact Analysis
 
 The biggest objection to always-on profiling is production risk. This section breaks down exactly what the profiler does at runtime, what it costs, and how it compares to Dynatrace's agent model.
