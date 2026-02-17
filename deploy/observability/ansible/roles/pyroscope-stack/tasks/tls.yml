@@ -1,0 +1,132 @@
+---
+# TLS deployment: generate/copy certificates, deploy Envoy reverse proxy.
+# Included by main.yml when tls_enabled is true.
+
+# ---- Firewall (TLS ports) ----
+
+- name: Open Pyroscope TLS port in firewalld
+  ansible.posix.firewalld:
+    port: "{{ tls_port_pyroscope }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: firewalld_active | default(false)
+
+- name: Open Grafana TLS port in firewalld
+  ansible.posix.firewalld:
+    port: "{{ tls_port_grafana }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: firewalld_active | default(false) and not skip_grafana | bool
+
+# ---- Certificate directory ----
+
+- name: Create TLS certificate directory
+  ansible.builtin.file:
+    path: "{{ tls_cert_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- Self-signed certificate ----
+
+- name: Generate self-signed certificate
+  when: tls_self_signed | bool
+  block:
+    - name: Check if existing cert is still valid
+      ansible.builtin.command:
+        cmd: openssl x509 -in {{ tls_cert_dir }}/cert.pem -checkend 604800
+      register: cert_check
+      failed_when: false
+      changed_when: false
+
+    - name: Generate self-signed cert + key
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509
+          -newkey rsa:2048
+          -nodes
+          -days 365
+          -subj "/CN={{ ansible_hostname }}"
+          -addext "subjectAltName=DNS:{{ ansible_hostname }},DNS:localhost,IP:{{ ansible_default_ipv4.address | default('127.0.0.1') }},IP:127.0.0.1"
+          -keyout {{ tls_cert_dir }}/key.pem
+          -out {{ tls_cert_dir }}/cert.pem
+      when: cert_check.rc != 0
+      changed_when: true
+
+    - name: Set certificate file permissions
+      ansible.builtin.file:
+        path: "{{ tls_cert_dir }}/{{ item.name }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {name: cert.pem, mode: "0644"}
+        - {name: key.pem, mode: "0600"}
+      when: cert_check.rc != 0
+
+    - name: Warn about self-signed certificate
+      ansible.builtin.debug:
+        msg:
+          - "==========================================================="
+          - " SELF-SIGNED CERTIFICATE — NOT FOR PRODUCTION"
+          - " Java agents will need TLS trust configured."
+          - " For production, use tls_cert_src/tls_key_src with"
+          - " enterprise CA certificates."
+          - "==========================================================="
+
+# ---- Provided certificates (enterprise CA) ----
+
+- name: Copy provided TLS certificates
+  when: not tls_self_signed | bool and tls_cert_src is defined
+  block:
+    - name: Copy TLS certificate
+      ansible.builtin.copy:
+        src: "{{ tls_cert_src }}"
+        dest: "{{ tls_cert_dir }}/cert.pem"
+        mode: "0644"
+
+    - name: Copy TLS private key
+      ansible.builtin.copy:
+        src: "{{ tls_key_src }}"
+        dest: "{{ tls_cert_dir }}/key.pem"
+        mode: "0600"
+
+# ---- Envoy configuration ----
+
+- name: Generate Envoy TLS proxy configuration
+  ansible.builtin.template:
+    src: envoy.yaml.j2
+    dest: "{{ tls_cert_dir }}/envoy.yaml"
+    mode: "0644"
+
+# ---- Envoy container ----
+
+- name: Pull Envoy image
+  community.docker.docker_image:
+    name: "{{ envoy_image }}"
+    source: pull
+    force_source: true
+  retries: "{{ docker_pull_retries }}"
+  delay: "{{ docker_pull_delay }}"
+  register: envoy_pull
+  until: envoy_pull is not failed
+
+- name: Run Envoy TLS proxy container
+  community.docker.docker_container:
+    name: "{{ envoy_container_name }}"
+    image: "{{ envoy_image }}"
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host
+    volumes:
+      - "{{ tls_cert_dir }}/envoy.yaml:/etc/envoy/envoy.yaml:ro{{ docker_volume_suffix }}"
+      - "{{ tls_cert_dir }}:/etc/envoy/tls:ro{{ docker_volume_suffix }}"
+
+- name: Wait for Envoy to become ready
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:9901/ready"
+    method: GET
+    status_code: 200
+  register: envoy_health
+  until: envoy_health.status == 200
+  retries: 6
+  delay: 5

@@ -1,0 +1,76 @@
+---
+# defaults/main.yml — Safe defaults for pyroscope-stack role.
+# Override in inventory group_vars, host_vars, or playbook vars.
+
+# --- Deployment mode ---
+# "full-stack" = deploy Pyroscope + Grafana on this host
+# "add-to-existing" = add datasource + dashboards to existing Grafana
+pyroscope_mode: full-stack
+
+# --- Pyroscope container ---
+pyroscope_image: grafana/pyroscope:latest
+pyroscope_port: 4040
+pyroscope_volume: pyroscope-data
+pyroscope_container_name: pyroscope
+
+# Pyroscope URL (auto-detected in full-stack mode)
+# pyroscope_url: http://pyroscope.corp:4040
+
+# --- Grafana container (full-stack mode) ---
+grafana_image: grafana/grafana:11.5.2
+grafana_port: 3000
+grafana_volume: grafana-data
+grafana_container_name: grafana
+grafana_admin_password: admin
+grafana_plugins:
+  - grafana-pyroscope-app
+  - grafana-pyroscope-datasource
+
+# --- Grafana config mode (full-stack mode) ---
+# "mounted" = stock image with config as host volume mounts (default — survives image upgrades)
+# "baked"   = build custom image with config baked in
+grafana_config_mode: mounted
+grafana_config_dir: /opt/pyroscope/grafana
+
+# --- Grafana (add-to-existing mode) ---
+# grafana_url: http://grafana.corp:3000
+# grafana_api_key: ""
+grafana_method: api          # "api" or "provisioning"
+grafana_provisioning_dir: /etc/grafana/provisioning
+grafana_dashboard_dir: /var/lib/grafana/dashboards
+
+# --- Skip Grafana (Pyroscope-only deployment) ---
+skip_grafana: false
+
+# --- Image transfer (air-gapped / no registry) ---
+# docker_load_path: /tmp/pyroscope-stack-images.tar
+
+# --- TLS / HTTPS (Envoy reverse proxy) ---
+tls_enabled: false
+# tls_cert_src: /path/to/cert.pem      # Cert on Ansible control node
+# tls_key_src: /path/to/key.pem        # Key on Ansible control node
+tls_self_signed: false                   # Generate self-signed cert on target
+tls_cert_dir: /opt/pyroscope/tls
+tls_port_pyroscope: 4443
+tls_port_grafana: 443
+envoy_image: "envoyproxy/envoy:v1.31-latest"
+envoy_container_name: envoy-proxy
+
+# --- Docker pull retry ---
+docker_pull_retries: 3
+docker_pull_delay: 5
+
+# --- Health check ---
+health_check_timeout: 60
+health_check_interval: 5
+
+# --- Firewall ---
+# Set to true to open ports via firewalld (auto-detected if not set)
+# firewall_open_ports: true
+
+# --- Repo paths (on the Ansible control node) ---
+# These are used as src for copies and templates
+pyroscope_repo_root: "{{ playbook_dir }}/../../.."
+pyroscope_dashboards_src: "{{ pyroscope_repo_root }}/config/grafana/dashboards"
+pyroscope_provisioning_src: "{{ pyroscope_repo_root }}/config/grafana/provisioning"
+pyroscope_grafana_ini_src: "{{ pyroscope_repo_root }}/deploy/grafana/grafana.ini"

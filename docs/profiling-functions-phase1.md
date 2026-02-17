@@ -431,17 +431,17 @@ Wraps the Pyroscope HTTP API. No database. All BOR functions call through this S
 
 ## Project Structure
 
-| Project | Layer | Java Target |
-|---------|-------|-------------|
-| `pyroscope-bor` | BOR | 17 |
-| `pyroscope-bor-java11` | BOR | 11 |
-| `pyroscope-sor` | SOR | 17 |
-| `pyroscope-sor-java11` | SOR | 11 |
+| Subproject | Layer | Java Target |
+|------------|-------|-------------|
+| `faas-jvm21/bor` | BOR | 21 |
+| `faas-jvm11/bor` | BOR | 11 |
+| `faas-jvm21/sor` | SOR | 21 |
+| `faas-jvm11/sor` | SOR | 11 |
 
 ### BOR Source
 
 ```
-pyroscope-bor/src/main/java/com/pyroscope/bor/
+faas-jvm21/bor/src/main/java/com/pyroscope/bor/
 ├── AbstractFunctionVerticle.java    # HTTP lifecycle, health, param/error helpers
 ├── Main.java                        # Selects verticle by FUNCTION env var
 ├── SorClient.java                   # HTTP client for SOR communication
@@ -462,7 +462,7 @@ pyroscope-bor/src/main/java/com/pyroscope/bor/
 ### SOR Source (Phase 1 only)
 
 ```
-pyroscope-sor/src/main/java/com/pyroscope/sor/
+faas-jvm21/sor/src/main/java/com/pyroscope/sor/
 ├── AbstractFunctionVerticle.java
 ├── Main.java
 ├── ProfileType.java
@@ -530,10 +530,10 @@ PORT=8080
 ## Build and Test
 
 ```bash
-cd services/pyroscope-bor && ./gradlew shadowJar    # BOR fat JAR
-cd services/pyroscope-sor && ./gradlew shadowJar    # SOR fat JAR
-make compile                                         # Compile all
-make test-bor                                        # All BOR tests (no Docker needed)
+cd services && ./gradlew :faas-jvm21:bor:shadowJar    # BOR fat JAR
+cd services && ./gradlew :faas-jvm21:sor:shadowJar    # SOR fat JAR
+make compile                                                 # Compile all
+make test-bor                                                # All BOR tests (no Docker needed)
 ```
 
 | Test Class | What It Tests |

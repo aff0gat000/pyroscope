@@ -1,0 +1,13 @@
+apiVersion: 1
+
+providers:
+  - name: "pyroscope"
+    orgId: 1
+    folder: "Pyroscope"
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: {{ grafana_dashboard_dir }}/pyroscope
+      foldersFromFilesStructure: false

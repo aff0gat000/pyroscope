@@ -1,0 +1,12 @@
+---
+- name: Restart Grafana container
+  community.docker.docker_container:
+    name: "{{ grafana_container_name }}"
+    restart: true
+  when: grafana_container_name in (ansible_facts['docker_containers'] | default([]) | map(attribute='Name') | list)
+
+- name: Restart Grafana service
+  ansible.builtin.service:
+    name: grafana-server
+    state: restarted
+  when: grafana_method == 'provisioning'

@@ -1,0 +1,41 @@
+---
+# Entry point — dispatches to the correct task file based on pyroscope_mode.
+# Tags: preflight, deploy, stop, clean
+
+- name: Run pre-flight checks
+  ansible.builtin.include_tasks: preflight.yml
+  tags: [preflight, deploy]
+
+- name: Load Docker images from tar
+  when: docker_load_path is defined and docker_load_path | length > 0
+  tags: [deploy]
+  block:
+    - name: Check image tar exists
+      ansible.builtin.stat:
+        path: "{{ docker_load_path }}"
+      register: image_tar
+
+    - name: Fail if image tar not found
+      ansible.builtin.fail:
+        msg: "Image tar not found: {{ docker_load_path }}"
+      when: not image_tar.stat.exists
+
+    - name: Load Docker images from tar file
+      ansible.builtin.command:
+        cmd: docker load -i {{ docker_load_path }}
+      changed_when: true
+
+- name: Deploy full stack (Pyroscope + Grafana)
+  ansible.builtin.include_tasks: full-stack.yml
+  when: pyroscope_mode == 'full-stack'
+  tags: [deploy]
+
+- name: Deploy TLS proxy (Envoy)
+  ansible.builtin.include_tasks: tls.yml
+  when: pyroscope_mode == 'full-stack' and tls_enabled | bool
+  tags: [deploy]
+
+- name: Add Pyroscope to existing Grafana
+  ansible.builtin.include_tasks: add-to-existing.yml
+  when: pyroscope_mode == 'add-to-existing'
+  tags: [deploy]

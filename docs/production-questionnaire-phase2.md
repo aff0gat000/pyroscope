@@ -198,10 +198,10 @@ All functions are provided in two Java versions (Java 11 and Java 17). Each vers
 
 | Project | Unit Tests | Integration Tests | Total |
 |---------|-----------|-------------------|-------|
-| pyroscope-bor (Java 17) | 77 (5 classes) | 16 (4 classes) | 93 |
-| pyroscope-bor-java11 | 77 (5 classes) | 16 (4 classes) | 93 |
-| pyroscope-sor (Java 17) | 31 (2 classes) | 43 (4 classes) | 74 |
-| pyroscope-sor-java11 | 26 (2 classes) | 43 (4 classes) | 69 |
+| faas-jvm21/bor | 77 (5 classes) | 16 (4 classes) | 93 |
+| faas-jvm11/bor | 77 (5 classes) | 16 (4 classes) | 93 |
+| faas-jvm21/sor | 31 (2 classes) | 43 (4 classes) | 74 |
+| faas-jvm11/sor | 26 (2 classes) | 43 (4 classes) | 69 |
 | **Total** | **211** | **118** | **329** |
 
 SOR integration tests use Testcontainers to spin up a real PostgreSQL database (Docker required).

@@ -1,0 +1,29 @@
+---
+# Check status of the observability stack on all hosts.
+#
+# Usage:
+#   ansible-playbook -i inventory playbooks/status.yml
+
+- name: Check Pyroscope observability stack status
+  hosts: pyroscope_full_stack
+  become: true
+  gather_facts: false
+  tasks:
+    - name: Check Pyroscope container
+      community.docker.docker_container_info:
+        name: pyroscope
+      register: pyroscope_info
+      failed_when: false
+
+    - name: Check Grafana container
+      community.docker.docker_container_info:
+        name: grafana
+      register: grafana_info
+      failed_when: false
+
+    - name: Print status
+      ansible.builtin.debug:
+        msg:
+          - "Host: {{ inventory_hostname }}"
+          - "Pyroscope: {{ 'running' if (pyroscope_info.container.State.Running | default(false)) else 'stopped' }}"
+          - "Grafana:   {{ 'running' if (grafana_info.container.State.Running | default(false)) else 'stopped' }}"

@@ -290,12 +290,15 @@ The default `bash scripts/run.sh` pipeline generates load in two phases — befo
 
 ## Documentation
 
+See [docs/INDEX.md](docs/INDEX.md) for a full documentation map with learning paths.
+
 ### Getting Started
 
 | Document | Audience | Description |
 |----------|----------|-------------|
 | [docs/demo-guide.md](docs/demo-guide.md) | Everyone | Overview of the problem, solution, and what this project demonstrates |
 | [docs/demo-runbook.md](docs/demo-runbook.md) | Presenters | Step-by-step demo agenda with commands and talking points (20-25 min) |
+| [docs/reading-flame-graphs.md](docs/reading-flame-graphs.md) | Everyone | How to read flame graphs, terminology, and common patterns |
 
 ### Using Pyroscope and Grafana
 
@@ -306,19 +309,32 @@ The default `bash scripts/run.sh` pipeline generates load in two phases — befo
 | [docs/dashboard-guide.md](docs/dashboard-guide.md) | Engineers | Panel-by-panel reference for all 6 Grafana dashboards |
 | [docs/sample-queries.md](docs/sample-queries.md) | Engineers | Copy-paste queries for Pyroscope, Prometheus, and Grafana |
 
-### Operations and Implementation
+### FaaS BOR/SOR Functions
+
+| Document | Audience | Description |
+|----------|----------|-------------|
+| [docs/function-reference.md](docs/function-reference.md) | Engineers | BOR function API reference (triage, diff report, fleet search) |
+| [docs/function-architecture.md](docs/function-architecture.md) | Engineers | Project structure, design patterns, and Gradle build setup |
+| [docs/profiling-functions-phase1.md](docs/profiling-functions-phase1.md) | Engineers | Phase 1 functions — 3 BOR + 1 SOR, no database |
+| [docs/profiling-functions-phase2.md](docs/profiling-functions-phase2.md) | Engineers | Phase 2 functions — v2 BORs + 4 PostgreSQL-backed SORs |
+| [docs/production-questionnaire.md](docs/production-questionnaire.md) | Architects | Production onboarding questionnaires (Phase 1 + Phase 2) |
+
+### Deployment and Operations
 
 | Document | Audience | Description |
 |----------|----------|-------------|
 | [docs/continuous-profiling-runbook.md](docs/continuous-profiling-runbook.md) | SREs | Deploying Pyroscope, agent configuration, Grafana setup |
+| [docs/grafana-setup.md](docs/grafana-setup.md) | SREs | Connecting Grafana to Pyroscope via provisioning files |
+| [docs/monolithic-deployment-guide.md](docs/monolithic-deployment-guide.md) | SREs | Pyroscope monolithic deployment mind map and decision guide |
 | [docs/runbook.md](docs/runbook.md) | On-call | Incident response playbooks, operational procedures |
 | [docs/mttr-guide.md](docs/mttr-guide.md) | Managers/SREs | MTTR reduction workflow, bottleneck decision matrix |
 
-### Reference
+### Reference and Strategy
 
 | Document | Audience | Description |
 |----------|----------|-------------|
 | [docs/architecture.md](docs/architecture.md) | Architects | Service topology, data flow, JVM agent configuration |
+| [docs/continuous-profiling-rfc.md](docs/continuous-profiling-rfc.md) | Leadership | RFC for adopting continuous profiling with Grafana Pyroscope |
 | [docs/faas-server.md](docs/faas-server.md) | Engineers | FaaS runtime with deploy/undeploy lifecycle profiling |
 | [docs/endpoint-reference.md](docs/endpoint-reference.md) | Engineers | Complete endpoint list with curl examples |
 | [docs/pipeline.md](docs/pipeline.md) | Engineers | Pipeline stages, data flow, and configuration |
@@ -343,22 +359,47 @@ pyroscope/
 │       ├── FaasVerticle.java        # FaaS runtime, function lifecycle
 │       └── handlers/                # Additional workload handlers
 │
+├── services/                        # FaaS BOR/SOR functions (Vert.x)
+│   ├── build.gradle                 # Shared dependency versions + plugin config
+│   ├── settings.gradle              # Multi-project build (4 subprojects)
+│   ├── gradlew                      # Single shared Gradle wrapper
+│   ├── Makefile                     # Build + test targets
+│   ├── faas-jvm11/            # JVM 11 target (Phase 1)
+│   │   ├── bor/                     # BOR: triage, diff report, fleet search
+│   │   │   ├── src/                 # Java 11 source (POJOs, traditional switch)
+│   │   │   ├── build.gradle         # Slim — inherits from root
+│   │   │   └── Dockerfile           # eclipse-temurin:11
+│   │   └── sor/                     # SOR: profile data, baseline, history, registry, alert rule
+│   │       ├── src/                 # Java 11 source + Testcontainers tests
+│   │       ├── build.gradle         # Adds pg-client + testcontainers deps
+│   │       └── Dockerfile           # eclipse-temurin:11
+│   └── faas-jvm21/            # JVM 21 target (Phase 2)
+│       ├── bor/                     # Same functions, Java 17+ features (records, switch expressions)
+│       └── sor/                     # Same functions, Java 17+ features
+│
 ├── config/
 │   ├── grafana/
 │   │   ├── dashboards/              # 6 Grafana dashboards (JSON)
-│   │   └── provisioning/            # Datasources + dashboard provider
+│   │   └── provisioning/            # Datasources, dashboard provider, plugins
 │   ├── prometheus/
 │   │   ├── prometheus.yaml          # Scrape config for 9 services
 │   │   └── alerts.yaml              # 6 alert rules
-│   └── pyroscope/pyroscope.yaml     # Pyroscope server config
+│   └── pyroscope/
+│       ├── pyroscope.properties     # Java agent config (shared across services)
+│       └── pyroscope.yaml           # Pyroscope server config
 │
-├── deploy/                          # Production deployment configs
-│   ├── monolithic/                  # Single-node Pyroscope server
+├── deploy/
+│   ├── monolithic/                  # Single-node Pyroscope server (VM/EC2)
+│   ├── grafana/                     # Standalone Grafana image build
+│   ├── observability/               # Unified Pyroscope + Grafana deployment
+│   │   ├── deploy.sh               # Bash: VM, local, K8s, OpenShift
+│   │   ├── ansible/                # Ansible role + playbooks (same functionality)
+│   │   └── README.md               # Modes, targets, quick start
 │   └── microservices/               # Distributed Pyroscope deployment
 │       ├── vm/                      # Docker Compose + NFS (for VMs/EC2)
 │       └── openshift/               # Helm chart (for OpenShift 4.x)
 │
-├── docs/                            # 14 guides (demos, runbooks, architecture)
+├── docs/                            # 25 guides — see docs/INDEX.md
 │
 ├── postman/                         # Postman collection + environment
 │

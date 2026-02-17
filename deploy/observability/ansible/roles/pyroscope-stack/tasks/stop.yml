@@ -1,0 +1,25 @@
+---
+# Stop containers (preserve volumes/data).
+
+- name: Stop Envoy TLS proxy container
+  community.docker.docker_container:
+    name: "{{ envoy_container_name }}"
+    state: absent
+  failed_when: false
+
+- name: Stop Grafana container
+  community.docker.docker_container:
+    name: "{{ grafana_container_name }}"
+    state: absent
+  failed_when: false
+  when: not skip_grafana | bool
+
+- name: Stop Pyroscope container
+  community.docker.docker_container:
+    name: "{{ pyroscope_container_name }}"
+    state: absent
+  failed_when: false
+
+- name: Report stop result
+  ansible.builtin.debug:
+    msg: "Stack stopped on {{ inventory_hostname }} (volumes preserved)"

@@ -1,0 +1,16 @@
+dependencies {
+    implementation "io.vertx:vertx-pg-client:${vertxVersion}"
+    testImplementation 'org.testcontainers:testcontainers:1.19.8'
+    testImplementation 'org.testcontainers:junit-jupiter:1.19.8'
+    testImplementation 'org.testcontainers:postgresql:1.19.8'
+}
+
+jar {
+    manifest {
+        attributes 'Main-Class': 'com.pyroscope.sor.Main'
+    }
+}
+
+shadowJar {
+    archiveBaseName.set('pyroscope-sor-jvm11')
+}

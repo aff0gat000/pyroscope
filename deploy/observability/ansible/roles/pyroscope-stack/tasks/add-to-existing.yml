@@ -1,0 +1,227 @@
+---
+# Add Pyroscope to an existing Grafana instance.
+# Supports two methods:
+#   grafana_method: api           — uses Grafana HTTP API (no restart needed)
+#   grafana_method: provisioning  — writes provisioning files (restart needed)
+
+- name: Set default Pyroscope URL
+  ansible.builtin.set_fact:
+    pyroscope_url: "http://pyroscope:{{ pyroscope_port }}"
+  when: pyroscope_url is not defined
+
+# ===========================================================================
+#  API method
+# ===========================================================================
+
+- name: Deploy via Grafana API
+  when: grafana_method == 'api'
+  block:
+    - name: Set Grafana auth header (API key)
+      ansible.builtin.set_fact:
+        grafana_auth: "Bearer {{ grafana_api_key }}"
+      when: grafana_api_key is defined and grafana_api_key | length > 0
+
+    - name: Set Grafana auth header (basic auth)
+      ansible.builtin.set_fact:
+        grafana_auth: "Basic {{ ('admin:' + grafana_admin_password) | b64encode }}"
+      when: grafana_api_key is not defined or grafana_api_key | length == 0
+
+    - name: Check Grafana is reachable
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/health"
+        method: GET
+        status_code: 200
+      register: grafana_health_check
+
+    - name: Install Pyroscope datasource plugin
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/plugins/grafana-pyroscope-datasource/install"
+        method: POST
+        headers:
+          Authorization: "{{ grafana_auth }}"
+          Content-Type: application/json
+        body_format: json
+        body: {}
+        status_code: [200, 409]
+      register: plugin_ds_result
+      failed_when: false
+
+    - name: Install Pyroscope app plugin
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/plugins/grafana-pyroscope-app/install"
+        method: POST
+        headers:
+          Authorization: "{{ grafana_auth }}"
+          Content-Type: application/json
+        body_format: json
+        body: {}
+        status_code: [200, 409]
+      register: plugin_app_result
+      failed_when: false
+
+    - name: Check if Pyroscope datasource exists
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/datasources/name/Pyroscope"
+        method: GET
+        headers:
+          Authorization: "{{ grafana_auth }}"
+        status_code: [200, 404]
+      register: existing_ds
+
+    - name: Create Pyroscope datasource
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/datasources"
+        method: POST
+        headers:
+          Authorization: "{{ grafana_auth }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: Pyroscope
+          type: grafana-pyroscope-datasource
+          uid: pyroscope-ds
+          access: proxy
+          url: "{{ pyroscope_url }}"
+          isDefault: false
+          editable: true
+        status_code: [200, 409]
+      when: existing_ds.status == 404
+
+    - name: Update existing Pyroscope datasource
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/datasources/{{ existing_ds.json.id }}"
+        method: PUT
+        headers:
+          Authorization: "{{ grafana_auth }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          name: Pyroscope
+          type: grafana-pyroscope-datasource
+          uid: pyroscope-ds
+          access: proxy
+          url: "{{ pyroscope_url }}"
+          isDefault: false
+          editable: true
+        status_code: [200]
+      when: existing_ds.status == 200
+
+    - name: Create Pyroscope dashboard folder
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/folders"
+        method: POST
+        headers:
+          Authorization: "{{ grafana_auth }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          title: Pyroscope
+          uid: pyroscope-folder
+        status_code: [200, 409]
+      register: folder_result
+
+    - name: Get Pyroscope folder ID
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/folders/pyroscope-folder"
+        method: GET
+        headers:
+          Authorization: "{{ grafana_auth }}"
+        status_code: [200]
+      register: folder_info
+
+    - name: Find dashboard JSON files
+      ansible.builtin.find:
+        paths: "{{ pyroscope_dashboards_src }}"
+        patterns: "*.json"
+      delegate_to: localhost
+      become: false
+      register: dashboard_files
+
+    - name: Read dashboard JSON files
+      ansible.builtin.slurp:
+        src: "{{ item.path }}"
+      delegate_to: localhost
+      become: false
+      loop: "{{ dashboard_files.files }}"
+      register: dashboard_contents
+
+    - name: Import dashboards via API
+      ansible.builtin.uri:
+        url: "{{ grafana_url }}/api/dashboards/db"
+        method: POST
+        headers:
+          Authorization: "{{ grafana_auth }}"
+          Content-Type: application/json
+        body_format: json
+        body:
+          dashboard: "{{ item.content | b64decode | from_json }}"
+          folderId: "{{ folder_info.json.id }}"
+          overwrite: true
+          message: "Imported by Ansible"
+        status_code: [200]
+      loop: "{{ dashboard_contents.results }}"
+      loop_control:
+        label: "{{ item.item.path | basename }}"
+      register: import_results
+      failed_when: false
+
+    - name: Report API import results
+      ansible.builtin.debug:
+        msg:
+          - "Pyroscope integration complete (API method)"
+          - "Datasource: {{ pyroscope_url }}"
+          - "Dashboards imported: {{ import_results.results | selectattr('status', 'equalto', 200) | list | length }}"
+
+# ===========================================================================
+#  Provisioning method
+# ===========================================================================
+
+- name: Deploy via provisioning files
+  when: grafana_method == 'provisioning'
+  block:
+    - name: Create provisioning directories
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ grafana_provisioning_dir }}/datasources"
+        - "{{ grafana_provisioning_dir }}/dashboards"
+        - "{{ grafana_provisioning_dir }}/plugins"
+        - "{{ grafana_dashboard_dir }}/pyroscope"
+
+    - name: Write Pyroscope datasource provisioning
+      ansible.builtin.template:
+        src: datasource.yaml.j2
+        dest: "{{ grafana_provisioning_dir }}/datasources/pyroscope.yaml"
+        mode: "0644"
+      notify: Restart Grafana service
+
+    - name: Write Pyroscope plugin provisioning
+      ansible.builtin.template:
+        src: plugins.yaml.j2
+        dest: "{{ grafana_provisioning_dir }}/plugins/pyroscope.yaml"
+        mode: "0644"
+      notify: Restart Grafana service
+
+    - name: Write Pyroscope dashboard provider
+      ansible.builtin.template:
+        src: dashboard-provider.yaml.j2
+        dest: "{{ grafana_provisioning_dir }}/dashboards/pyroscope.yaml"
+        mode: "0644"
+      notify: Restart Grafana service
+
+    - name: Copy dashboard JSON files
+      ansible.builtin.copy:
+        src: "{{ pyroscope_dashboards_src }}/"
+        dest: "{{ grafana_dashboard_dir }}/pyroscope/"
+        mode: "0644"
+      notify: Restart Grafana service
+
+    - name: Report provisioning results
+      ansible.builtin.debug:
+        msg:
+          - "Provisioning files written"
+          - "Grafana must be restarted to pick up changes"
+          - "Also ensure plugins are installed:"
+          - "  GF_INSTALL_PLUGINS={{ grafana_plugins | join(',') }}"

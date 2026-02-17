@@ -1,0 +1,37 @@
+---
+# Shared variables for all pyroscope-related hosts.
+# Override per-host in host_vars/ or inline in hosts.yml.
+
+# --- Deployment mode ---
+# "full-stack" or "add-to-existing"
+pyroscope_mode: full-stack
+
+# --- Pyroscope ---
+pyroscope_image: grafana/pyroscope:latest
+pyroscope_port: 4040
+pyroscope_volume: pyroscope-data
+# Override if Pyroscope is on a different host than Grafana
+# pyroscope_url: http://pyroscope.corp:4040
+
+# --- Grafana ---
+grafana_image: grafana/grafana:11.5.2
+grafana_port: 3000
+grafana_volume: grafana-data
+grafana_admin_password: admin
+grafana_plugins:
+  - grafana-pyroscope-app
+  - grafana-pyroscope-datasource
+
+# --- Grafana (add-to-existing mode) ---
+# grafana_url: http://grafana.corp:3000
+# grafana_api_key: ""
+# grafana_method: api  # or "provisioning"
+# grafana_provisioning_dir: /etc/grafana/provisioning
+# grafana_dashboard_dir: /var/lib/grafana/dashboards
+
+# --- Repo paths (on the Ansible control node) ---
+# These are relative to the repo root and used as src for copies/templates
+pyroscope_repo_root: "{{ playbook_dir }}/../../.."
+pyroscope_dashboards_src: "{{ pyroscope_repo_root }}/config/grafana/dashboards"
+pyroscope_provisioning_src: "{{ pyroscope_repo_root }}/config/grafana/provisioning"
+pyroscope_grafana_ini_src: "{{ pyroscope_repo_root }}/deploy/grafana/grafana.ini"

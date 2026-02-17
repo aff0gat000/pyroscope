@@ -1,0 +1,37 @@
+---
+# Full cleanup — stop containers, remove volumes, images, certs, and mounted config.
+
+- name: Stop containers
+  ansible.builtin.include_tasks: stop.yml
+
+- name: Remove Pyroscope volume
+  community.docker.docker_volume:
+    name: "{{ pyroscope_volume }}"
+    state: absent
+
+- name: Remove Grafana volume
+  community.docker.docker_volume:
+    name: "{{ grafana_volume }}"
+    state: absent
+  when: not skip_grafana | bool
+
+- name: Remove grafana-pyroscope image
+  community.docker.docker_image:
+    name: grafana-pyroscope
+    state: absent
+
+- name: Remove mounted config directory
+  ansible.builtin.file:
+    path: "{{ grafana_config_dir }}"
+    state: absent
+  when: grafana_config_mode == 'mounted' and not skip_grafana | bool
+
+- name: Remove TLS certificate directory
+  ansible.builtin.file:
+    path: "{{ tls_cert_dir }}"
+    state: absent
+  when: tls_enabled | bool
+
+- name: Report cleanup result
+  ansible.builtin.debug:
+    msg: "Full cleanup complete on {{ inventory_hostname }} (containers, volumes, images, config removed)"

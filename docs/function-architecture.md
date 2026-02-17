@@ -8,14 +8,14 @@ Project structure, design patterns, and build setup for the BOR and SOR services
 
 Four independent Gradle projects under `services/`. Each produces a fat JAR (Shadow plugin) deployable as a standalone service.
 
-| Project | Layer | Java Target | Description |
-|---------|-------|-------------|-------------|
-| `pyroscope-bor` | BOR | 17 | Business logic: triage, diff report, fleet search |
-| `pyroscope-bor-java11` | BOR | 11 | Same functionality, Java 11 compatible |
-| `pyroscope-sor` | SOR | 17 | Data access: Pyroscope API wrapper + PostgreSQL CRUD |
-| `pyroscope-sor-java11` | SOR | 11 | Same functionality, Java 11 compatible |
+| Subproject | Layer | Java Target | Description |
+|------------|-------|-------------|-------------|
+| `faas-jvm21/bor` | BOR | 21 | Business logic: triage, diff report, fleet search |
+| `faas-jvm11/bor` | BOR | 11 | Same functionality, Java 11 compatible |
+| `faas-jvm21/sor` | SOR | 21 | Data access: Pyroscope API wrapper + PostgreSQL CRUD |
+| `faas-jvm11/sor` | SOR | 11 | Same functionality, Java 11 compatible |
 
-Java 17 versions use records and switch expressions; Java 11 versions use manual POJOs and traditional switch. Both expose the same accessor signatures (`.name()`, `.selfSamples()`).
+Java 21 versions use records and switch expressions; Java 11 versions use manual POJOs and traditional switch. Both expose the same accessor signatures (`.name()`, `.selfSamples()`).
 
 ---
 
@@ -259,7 +259,7 @@ Wraps the Pyroscope HTTP API. `extractTopFunctions()` parses the 4-int-stride fl
 ## BOR Source Structure
 
 ```
-pyroscope-bor/src/main/java/com/pyroscope/bor/
+faas-jvm21/bor/src/main/java/com/pyroscope/bor/
 ├── AbstractFunctionVerticle.java    # Base verticle with HTTP server lifecycle
 ├── Main.java                        # Entry point — selects verticle by FUNCTION env var
 ├── SorClient.java                   # HTTP client for SOR communication
@@ -283,7 +283,7 @@ pyroscope-bor/src/main/java/com/pyroscope/bor/
 ## SOR Source Structure
 
 ```
-pyroscope-sor/src/main/java/com/pyroscope/sor/
+faas-jvm21/sor/src/main/java/com/pyroscope/sor/
 ├── AbstractFunctionVerticle.java    # Base verticle with HTTP server lifecycle
 ├── Main.java                        # Entry point — selects verticle by FUNCTION env var
 ├── DbClient.java                    # Reactive PostgreSQL client with retry logic
@@ -372,7 +372,7 @@ CRUD for profiling-based alert rules. Table: `alert_rule`.
 
 ## Database Schema
 
-Four tables in a single PostgreSQL database. Schema DDL is at `services/pyroscope-sor/src/test/resources/schema.sql`.
+Four tables in a single PostgreSQL database. Schema DDL is at `services/faas-jvm21/sor/src/test/resources/schema.sql`.
 
 ```mermaid
 erDiagram
@@ -457,7 +457,7 @@ Tests use the same class names and assertions across both versions.
 
 ### Gradle
 
-Each project has its own `gradlew` (Gradle 7.6.4). Standard commands: `./gradlew test`, `./gradlew shadowJar`, `./gradlew clean`.
+A single `gradlew` (Gradle 7.6.4) in `services/` builds all four subprojects. Standard commands: `./gradlew :faas-jvm21:bor:test`, `./gradlew :faas-jvm21:bor:shadowJar`, `./gradlew clean`.
 
 ### Makefile
 
@@ -469,10 +469,12 @@ Each project has its own `gradlew` (Gradle 7.6.4). Standard commands: `./gradlew
 | `make test-unit` | Run unit tests only | No |
 | `make test-bor` | Run all BOR tests | No |
 | `make test-sor` | Run all SOR tests | Yes |
-| `make test-bor-21` | pyroscope-bor tests only | No |
-| `make test-bor-11` | pyroscope-bor-java11 tests only | No |
-| `make test-sor-21` | pyroscope-sor tests only | Yes |
-| `make test-sor-11` | pyroscope-sor-java11 tests only | Yes |
+| `make test-jvm21-bor` | JVM 21 BOR tests only | No |
+| `make test-jvm11-bor` | JVM 11 BOR tests only | No |
+| `make test-jvm21-sor` | JVM 21 SOR tests only | Yes |
+| `make test-jvm11-sor` | JVM 11 SOR tests only | Yes |
+| `make test-jvm11` | All JVM 11 tests | Yes |
+| `make test-jvm21` | All JVM 21 tests | Yes |
 | `make compile` | Compile all projects | No |
 | `make clean` | Clean all build artifacts | No |
 

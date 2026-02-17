@@ -5,5 +5,5 @@ datasources:
     type: grafana-pyroscope-datasource
     uid: pyroscope-ds
     access: proxy
-    url: http://pyroscope:4040    # Replaced at deploy time with actual Pyroscope URL
+    url: {{ pyroscope_url }}
     editable: true

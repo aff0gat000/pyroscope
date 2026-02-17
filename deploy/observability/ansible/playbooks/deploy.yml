@@ -1,0 +1,32 @@
+---
+# Deploy Pyroscope observability stack.
+#
+# Usage:
+#   # Full-stack on all pyroscope VMs
+#   ansible-playbook -i inventory playbooks/deploy.yml
+#
+#   # Add to existing Grafana
+#   ansible-playbook -i inventory playbooks/deploy.yml \
+#       -e pyroscope_mode=add-to-existing \
+#       -e grafana_url=http://grafana.corp:3000 \
+#       -e grafana_api_key=eyJrIj...
+#
+#   # Target specific hosts
+#   ansible-playbook -i inventory playbooks/deploy.yml --limit vm01.corp.example.com
+#
+#   # Check mode (dry run)
+#   ansible-playbook -i inventory playbooks/deploy.yml --check
+
+- name: Deploy Pyroscope observability stack
+  hosts: pyroscope_full_stack
+  become: true
+  roles:
+    - role: pyroscope-stack
+      pyroscope_mode: full-stack
+
+- name: Add Pyroscope to existing Grafana
+  hosts: pyroscope_add_to_existing
+  become: true
+  roles:
+    - role: pyroscope-stack
+      pyroscope_mode: add-to-existing

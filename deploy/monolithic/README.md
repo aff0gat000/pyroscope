@@ -977,7 +977,7 @@ Use this when your VM cannot reach Docker Hub (e.g., `i/o timeout` during `docke
 
 ## Idempotency and Safety
 
-All three deployment options are safe to run on a VM with existing services:
+All four deployment options are safe to run on a VM with existing services:
 
 - **Only manages its own container.** The container is named `pyroscope`. No other containers are affected.
 - **Port binding is scoped.** Only binds port 4040 (or your override). If that port is taken, Docker will fail with a clear error — it will not steal the port.
@@ -1056,17 +1056,147 @@ Or as an environment variable:
 PYROSCOPE_SERVER_ADDRESS=http://<PYROSCOPE_VM_IP>:4040
 ```
 
+## Connecting Grafana
+
+To visualize profiles in Grafana, add Pyroscope as a datasource and optionally import the pre-built dashboards from this repo. The setup uses Grafana's config-file provisioning — no manual UI clicks needed.
+
+**Requirements:** Grafana 9.x+ and network access from Grafana to Pyroscope on port 4040.
+
+**Quick start:**
+
+1. Copy `config/grafana/provisioning/plugins/plugins.yaml` to Grafana's provisioning directory
+2. Copy `config/grafana/provisioning/datasources/datasources.yaml` and update the Pyroscope URL
+3. Copy `config/grafana/dashboards/*.json` to Grafana's dashboard directory
+4. Copy `config/grafana/provisioning/dashboards/dashboards.yaml` to Grafana's provisioning directory
+5. Restart Grafana: `systemctl restart grafana-server`
+
+See [docs/grafana-setup.md](../../docs/grafana-setup.md) for the full step-by-step guide, including troubleshooting and a description of each dashboard.
+
 ## Day-2 Operations
 
-If you deployed with the script (Option A) and copied `deploy.sh` to `/opt/pyroscope/`:
+### Health check
 
 ```bash
-docker logs -f pyroscope                     # View logs
-bash /opt/pyroscope/deploy.sh status         # Check status and health
-bash /opt/pyroscope/deploy.sh restart        # Restart with fresh image
-bash /opt/pyroscope/deploy.sh stop           # Stop (data preserved)
-bash /opt/pyroscope/deploy.sh clean          # Full cleanup (deletes data)
+# From the Pyroscope VM
+curl -s http://localhost:4040/ready && echo " OK"
+
+# From inside the container (no curl needed)
+docker exec pyroscope wget -q --spider http://localhost:4040/ready && echo " OK"
+
+# From another server (verify network connectivity)
+curl -s http://<PYROSCOPE_VM_IP>:4040/ready && echo " OK"
 ```
+
+### View logs
+
+```bash
+# Last 100 lines
+docker logs --tail 100 pyroscope
+
+# Follow logs in real time (Ctrl+C to stop)
+docker logs -f pyroscope
+
+# Logs from the last hour
+docker logs --since 1h pyroscope
+
+# Filter for errors
+docker logs pyroscope 2>&1 | grep -i error
+```
+
+### Start / stop / restart
+
+**With the deploy script** (if you copied `deploy.sh` to `/opt/pyroscope/`):
+
+```bash
+bash /opt/pyroscope/deploy.sh status          # Check status and health
+bash /opt/pyroscope/deploy.sh stop            # Stop (data preserved)
+bash /opt/pyroscope/deploy.sh start           # Start (rebuild image)
+bash /opt/pyroscope/deploy.sh restart         # Stop + start
+```
+
+**Manual Docker commands:**
+
+```bash
+# Stop the container (data volume preserved)
+docker stop pyroscope
+
+# Start a stopped container
+docker start pyroscope
+
+# Restart the container
+docker restart pyroscope
+
+# Remove the container entirely (data volume still preserved)
+docker rm -f pyroscope
+```
+
+### Config changes
+
+If `pyroscope.yaml` is bind-mounted from `/opt/pyroscope/pyroscope.yaml` (Options C pull-only and D):
+
+```bash
+vi /opt/pyroscope/pyroscope.yaml       # Edit config
+docker restart pyroscope               # Pick up changes
+```
+
+If the config is baked into the image (Options A, B, and C build):
+
+```bash
+# Edit pyroscope.yaml in /opt/pyroscope, rebuild the image, then replace the container
+cd /opt/pyroscope
+docker build -t pyroscope-server .
+docker rm -f pyroscope
+docker run -d --name pyroscope --restart unless-stopped \
+    -p 4040:4040 -v pyroscope-data:/data pyroscope-server
+```
+
+### Disk usage monitoring
+
+```bash
+# Check the pyroscope-data volume size
+docker system df -v 2>/dev/null | grep pyroscope-data
+
+# Check overall Docker disk usage
+docker system df
+```
+
+### Backup profiling data
+
+```bash
+# Create a compressed backup of all profiling data
+docker run --rm \
+    -v pyroscope-data:/data:ro \
+    -v "$(pwd)":/backup \
+    alpine tar czf /backup/pyroscope-backup-$(date +%Y%m%d).tar.gz -C /data .
+```
+
+This creates `pyroscope-backup-YYYYMMDD.tar.gz` in the current directory. The Pyroscope container can remain running during backup (the data directory is mounted read-only in the backup container).
+
+### Restore profiling data
+
+```bash
+# Stop the Pyroscope container first
+docker stop pyroscope
+
+# Restore from backup (overwrites existing data)
+docker run --rm \
+    -v pyroscope-data:/data \
+    -v "$(pwd)":/backup:ro \
+    alpine sh -c "rm -rf /data/* && tar xzf /backup/pyroscope-backup-YYYYMMDD.tar.gz -C /data"
+
+# Start Pyroscope again
+docker start pyroscope
+```
+
+### Full cleanup
+
+With the script:
+
+```bash
+bash /opt/pyroscope/deploy.sh clean
+```
+
+Or see the [cleanup and uninstall](#cleanup-and-uninstall) section under Option D for manual steps.
 
 If you deployed manually (Option B), see the [manual day-2 operations](#manual-day-2-operations) section above.
 

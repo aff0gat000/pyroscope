@@ -1,0 +1,69 @@
+---
+# Pre-flight checks — validate the target host is ready for deployment.
+
+- name: Gather OS facts
+  ansible.builtin.setup:
+    gather_subset:
+      - distribution
+      - selinux
+
+- name: Print host info
+  ansible.builtin.debug:
+    msg: >-
+      Host={{ inventory_hostname }}
+      OS={{ ansible_distribution }} {{ ansible_distribution_version }}
+      Mode={{ pyroscope_mode }}
+      User={{ ansible_user }}
+
+- name: Check Docker is installed
+  ansible.builtin.command: docker --version
+  register: docker_version
+  changed_when: false
+  failed_when: docker_version.rc != 0
+
+- name: Check Docker daemon is running
+  ansible.builtin.command: docker info
+  register: docker_info
+  changed_when: false
+  failed_when: docker_info.rc != 0
+
+- name: Print Docker version
+  ansible.builtin.debug:
+    msg: "{{ docker_version.stdout }}"
+
+- name: Detect SELinux enforcing mode
+  ansible.builtin.set_fact:
+    selinux_enforcing: "{{ ansible_selinux.status == 'enabled' and ansible_selinux.mode == 'enforcing' }}"
+  when: ansible_selinux is defined and ansible_selinux.status is defined
+
+- name: Default SELinux to non-enforcing
+  ansible.builtin.set_fact:
+    selinux_enforcing: false
+  when: selinux_enforcing is not defined
+
+- name: Set Docker volume SELinux flag
+  ansible.builtin.set_fact:
+    docker_volume_suffix: "{{ ':z' if selinux_enforcing else '' }}"
+
+- name: Print SELinux status
+  ansible.builtin.debug:
+    msg: "SELinux enforcing={{ selinux_enforcing }}, volume suffix={{ docker_volume_suffix }}"
+
+- name: Check if firewalld is active
+  ansible.builtin.systemd:
+    name: firewalld
+  register: firewalld_status
+  failed_when: false
+
+- name: Set firewalld fact
+  ansible.builtin.set_fact:
+    firewalld_active: "{{ firewalld_status.status.ActiveState | default('inactive') == 'active' }}"
+
+- name: Validate add-to-existing parameters
+  ansible.builtin.assert:
+    that:
+      - grafana_url is defined and grafana_url | length > 0
+    fail_msg: >-
+      add-to-existing mode requires grafana_url.
+      Set it in host_vars or pass via -e grafana_url=http://grafana:3000
+  when: pyroscope_mode == 'add-to-existing' and grafana_method == 'api'

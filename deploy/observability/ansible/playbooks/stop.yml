@@ -1,0 +1,15 @@
+---
+# Stop the observability stack (preserve data).
+#
+# Usage:
+#   ansible-playbook -i inventory playbooks/stop.yml
+#   ansible-playbook -i inventory playbooks/stop.yml --limit vm01.corp.example.com
+
+- name: Stop Pyroscope observability stack
+  hosts: pyroscope_full_stack
+  become: true
+  tasks:
+    - name: Include stop tasks
+      ansible.builtin.include_role:
+        name: pyroscope-stack
+        tasks_from: stop.yml

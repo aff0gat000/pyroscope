@@ -1,0 +1,15 @@
+---
+# Full cleanup — stop containers, remove volumes and images.
+#
+# Usage:
+#   ansible-playbook -i inventory playbooks/clean.yml
+#   ansible-playbook -i inventory playbooks/clean.yml --limit vm01.corp.example.com
+
+- name: Clean up Pyroscope observability stack
+  hosts: pyroscope_full_stack
+  become: true
+  tasks:
+    - name: Include clean tasks
+      ansible.builtin.include_role:
+        name: pyroscope-stack
+        tasks_from: clean.yml

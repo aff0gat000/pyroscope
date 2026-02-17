@@ -16,7 +16,7 @@
 | Type of service | Intranet |
 | Hosted | Internal |
 | External deployment | No |
-| Expected Volume(s) | All functions are well under the 100 TPS threshold. Peak TPS is the Profile Data SOR at under 50 TPS due to fan-out from the 3 BOR functions; individual BOR functions are under 10 TPS each. All requests are on-demand and human-triggered (no batch, polling, or streaming). Expected daily volume is under 500 requests across all functions. Request and response payloads are small JSON (under 50 KB). No database and no persistent storage — the SOR is stateless and holds no data at rest. The single shared SOR is not a bottleneck; Vert.x is non-blocking and the serverless platform scales each function independently. |
+| Expected Volume(s) | All functions are well under the 100 TPS threshold. Peak TPS is the Profile Data SOR at under 50 TPS due to fan-out from the 3 BOR functions; individual BOR functions are under 10 TPS each. All requests are on-demand and human-triggered (no batch, polling, or streaming). Expected daily volume is under 500 requests across all functions. Request and response payloads are small JSON (under 50 KB). No database and no persistent storage — the SOR is stateless and holds no data at rest. The single shared SOR is not a bottleneck; Vert.x is non-blocking and the FaaS platform scales each function independently. |
 
 All functions are HTTP request/response only. No file upload/download, cron triggers, Kafka, or protobuf.
 
@@ -152,10 +152,10 @@ All functions are provided in two Java versions (Java 11 and Java 17). Each vers
 
 | Project | Unit Tests | Integration Tests | Total |
 |---------|-----------|-------------------|-------|
-| pyroscope-bor (Java 17) | 77 (5 classes) | 16 (4 classes) | 93 |
-| pyroscope-bor-java11 | 77 (5 classes) | 16 (4 classes) | 93 |
-| pyroscope-sor (Java 17) | 31 (2 classes) | — | 31 |
-| pyroscope-sor-java11 | 26 (2 classes) | — | 26 |
+| faas-jvm21/bor | 77 (5 classes) | 16 (4 classes) | 93 |
+| faas-jvm11/bor | 77 (5 classes) | 16 (4 classes) | 93 |
+| faas-jvm21/sor | 31 (2 classes) | — | 31 |
+| faas-jvm11/sor | 26 (2 classes) | — | 26 |
 | **Total** | **211** | **32** | **243** |
 
 BOR integration tests use mock HTTP servers (no Docker required). Phase 1 SOR (Profile Data) has unit tests only — no database to integration test.

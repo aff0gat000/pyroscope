@@ -249,7 +249,7 @@ CRUD for profiling-based alert rules. Table: `alert_rule`. Indexed on `(app_name
 
 ## Database Schema
 
-Four tables in a single PostgreSQL database. Schema DDL at `services/pyroscope-sor/src/test/resources/schema.sql`.
+Four tables in a single PostgreSQL database. Schema DDL at `services/faas-jvm21/sor/src/test/resources/schema.sql`.
 
 ```mermaid
 erDiagram
@@ -403,7 +403,7 @@ SOR integration tests require Docker (Testcontainers PostgreSQL).
 ```bash
 make test-sor    # All SOR tests (requires Docker)
 
-cd services/pyroscope-sor && ./gradlew test --tests '*BaselineVerticleIntegrationTest'
+cd services && ./gradlew :faas-jvm21:sor:test --tests '*BaselineVerticleIntegrationTest'
 ```
 
 | Test Class | What It Tests |

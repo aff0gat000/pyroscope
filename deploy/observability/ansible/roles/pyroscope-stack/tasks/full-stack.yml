@@ -1,0 +1,285 @@
+---
+# Full-stack deployment: Pyroscope + Grafana as Docker containers.
+#
+# Two Grafana config modes:
+#   grafana_config_mode: baked   — build custom image with config baked in
+#   grafana_config_mode: mounted — stock image with config as host volume mounts
+
+# ---- Firewall ----
+
+- name: Open Pyroscope port in firewalld (HTTP)
+  ansible.posix.firewalld:
+    port: "{{ pyroscope_port }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: firewalld_active | default(false) and not tls_enabled | bool
+
+- name: Open Grafana port in firewalld (HTTP)
+  ansible.posix.firewalld:
+    port: "{{ grafana_port }}/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: firewalld_active | default(false) and not tls_enabled | bool and not skip_grafana | bool
+
+# ---- Docker volumes ----
+
+- name: Create Pyroscope data volume
+  community.docker.docker_volume:
+    name: "{{ pyroscope_volume }}"
+    state: present
+
+- name: Create Grafana data volume
+  community.docker.docker_volume:
+    name: "{{ grafana_volume }}"
+    state: present
+  when: not skip_grafana | bool
+
+# ---- Pyroscope container ----
+
+- name: Pull Pyroscope image
+  community.docker.docker_image:
+    name: "{{ pyroscope_image }}"
+    source: pull
+    force_source: true
+  retries: "{{ docker_pull_retries }}"
+  delay: "{{ docker_pull_delay }}"
+  register: pyroscope_pull
+  until: pyroscope_pull is not failed
+
+- name: Run Pyroscope container
+  community.docker.docker_container:
+    name: "{{ pyroscope_container_name }}"
+    image: "{{ pyroscope_image }}"
+    state: started
+    restart_policy: unless-stopped
+    ports:
+      - "{{ '127.0.0.1:' if tls_enabled | bool else '' }}{{ pyroscope_port }}:4040"
+    volumes:
+      - "{{ pyroscope_volume }}:/data{{ docker_volume_suffix }}"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4040/ready"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+- name: Wait for Pyroscope to become healthy
+  ansible.builtin.uri:
+    url: "http://localhost:{{ pyroscope_port }}/ready"
+    method: GET
+    status_code: 200
+  register: pyroscope_health
+  until: pyroscope_health.status == 200
+  retries: "{{ (health_check_timeout | int / health_check_interval | int) | int }}"
+  delay: "{{ health_check_interval }}"
+
+# ---- Detect Pyroscope URL ----
+
+- name: Auto-detect Pyroscope URL
+  ansible.builtin.set_fact:
+    pyroscope_url: "http://{{ ansible_default_ipv4.address | default('localhost') }}:{{ pyroscope_port }}"
+  when: pyroscope_url is not defined
+
+# ===========================================================================
+#  Grafana — baked mode (custom image with config built in)
+# ===========================================================================
+
+- name: Deploy Grafana (baked config into image)
+  when: grafana_config_mode == 'baked' and not skip_grafana | bool
+  block:
+    - name: Create Grafana build directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: grafana-build-
+      register: grafana_build_dir
+
+    - name: Copy grafana.ini to build context
+      ansible.builtin.copy:
+        src: "{{ pyroscope_grafana_ini_src }}"
+        dest: "{{ grafana_build_dir.path }}/grafana.ini"
+        mode: "0644"
+
+    - name: Copy provisioning files to build context
+      ansible.builtin.copy:
+        src: "{{ pyroscope_provisioning_src }}/"
+        dest: "{{ grafana_build_dir.path }}/provisioning/"
+        mode: "0644"
+
+    - name: Copy dashboards to build context
+      ansible.builtin.copy:
+        src: "{{ pyroscope_dashboards_src }}/"
+        dest: "{{ grafana_build_dir.path }}/dashboards/"
+        mode: "0644"
+
+    - name: Update Pyroscope URL in datasource config (baked)
+      ansible.builtin.replace:
+        path: "{{ grafana_build_dir.path }}/provisioning/datasources/datasources.yaml"
+        regexp: 'http://pyroscope:4040'
+        replace: "{{ pyroscope_url }}"
+
+    - name: Generate Grafana Dockerfile
+      ansible.builtin.copy:
+        dest: "{{ grafana_build_dir.path }}/Dockerfile"
+        mode: "0644"
+        content: |
+          FROM {{ grafana_image }}
+          COPY grafana.ini /etc/grafana/grafana.ini
+          COPY provisioning/ /etc/grafana/provisioning/
+          COPY dashboards/ /var/lib/grafana/dashboards/
+          ENV GF_INSTALL_PLUGINS={{ grafana_plugins | join(',') }}
+          ENV GF_SECURITY_ADMIN_PASSWORD={{ grafana_admin_password }}
+          EXPOSE 3000
+          HEALTHCHECK --interval=15s --timeout=5s --start-period=30s --retries=3 \
+              CMD wget --spider -q http://localhost:3000/api/health || exit 1
+
+    - name: Build Grafana image with Pyroscope provisioning
+      community.docker.docker_image:
+        name: grafana-pyroscope
+        source: build
+        force_source: true
+        build:
+          path: "{{ grafana_build_dir.path }}"
+          pull: true
+
+    - name: Clean up Grafana build directory
+      ansible.builtin.file:
+        path: "{{ grafana_build_dir.path }}"
+        state: absent
+
+    - name: Run Grafana container (baked image)
+      community.docker.docker_container:
+        name: "{{ grafana_container_name }}"
+        image: grafana-pyroscope
+        state: started
+        restart_policy: unless-stopped
+        ports:
+          - "{{ '127.0.0.1:' if tls_enabled | bool else '' }}{{ grafana_port }}:3000"
+        volumes:
+          - "{{ grafana_volume }}:/var/lib/grafana{{ docker_volume_suffix }}"
+        healthcheck:
+          test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+          interval: 15s
+          timeout: 5s
+          start_period: 30s
+          retries: 3
+
+# ===========================================================================
+#  Grafana — mounted mode (stock image + host volume mounts)
+# ===========================================================================
+
+- name: Deploy Grafana (volume-mounted config)
+  when: grafana_config_mode == 'mounted' and not skip_grafana | bool
+  block:
+    - name: Create Grafana config directories on host
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ grafana_config_dir }}"
+        - "{{ grafana_config_dir }}/provisioning/datasources"
+        - "{{ grafana_config_dir }}/provisioning/dashboards"
+        - "{{ grafana_config_dir }}/provisioning/plugins"
+        - "{{ grafana_config_dir }}/dashboards"
+
+    - name: Copy grafana.ini to host config
+      ansible.builtin.copy:
+        src: "{{ pyroscope_grafana_ini_src }}"
+        dest: "{{ grafana_config_dir }}/grafana.ini"
+        mode: "0644"
+
+    - name: Copy provisioning files to host config
+      ansible.builtin.copy:
+        src: "{{ pyroscope_provisioning_src }}/"
+        dest: "{{ grafana_config_dir }}/provisioning/"
+        mode: "0644"
+
+    - name: Copy dashboards to host config
+      ansible.builtin.copy:
+        src: "{{ pyroscope_dashboards_src }}/"
+        dest: "{{ grafana_config_dir }}/dashboards/"
+        mode: "0644"
+
+    - name: Update Pyroscope URL in datasource config (mounted)
+      ansible.builtin.replace:
+        path: "{{ grafana_config_dir }}/provisioning/datasources/datasources.yaml"
+        regexp: 'http://pyroscope:4040'
+        replace: "{{ pyroscope_url }}"
+
+    - name: Pull Grafana image
+      community.docker.docker_image:
+        name: "{{ grafana_image }}"
+        source: pull
+        force_source: true
+      retries: "{{ docker_pull_retries }}"
+      delay: "{{ docker_pull_delay }}"
+      register: grafana_pull
+      until: grafana_pull is not failed
+
+    - name: Run Grafana container (volume-mounted config)
+      community.docker.docker_container:
+        name: "{{ grafana_container_name }}"
+        image: "{{ grafana_image }}"
+        state: started
+        restart_policy: unless-stopped
+        ports:
+          - "{{ '127.0.0.1:' if tls_enabled | bool else '' }}{{ grafana_port }}:3000"
+        volumes:
+          - "{{ grafana_volume }}:/var/lib/grafana{{ docker_volume_suffix }}"
+          - "{{ grafana_config_dir }}/grafana.ini:/etc/grafana/grafana.ini:ro{{ docker_volume_suffix }}"
+          - "{{ grafana_config_dir }}/provisioning:/etc/grafana/provisioning:ro{{ docker_volume_suffix }}"
+          - "{{ grafana_config_dir }}/dashboards:/var/lib/grafana/dashboards:ro{{ docker_volume_suffix }}"
+        env:
+          GF_INSTALL_PLUGINS: "{{ grafana_plugins | join(',') }}"
+          GF_SECURITY_ADMIN_PASSWORD: "{{ grafana_admin_password }}"
+        healthcheck:
+          test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/health"]
+          interval: 15s
+          timeout: 5s
+          start_period: 30s
+          retries: 3
+
+# ---- Wait for Grafana ----
+
+- name: Wait for Grafana to become healthy
+  ansible.builtin.uri:
+    url: "http://localhost:{{ grafana_port }}/api/health"
+    method: GET
+    status_code: 200
+  register: grafana_health
+  until: grafana_health.status == 200
+  retries: "{{ (90 / health_check_interval | int) | int }}"
+  delay: "{{ health_check_interval }}"
+  when: not skip_grafana | bool
+
+# ---- Summary ----
+
+- name: Set summary variables
+  ansible.builtin.set_fact:
+    _proto: "{{ 'https' if tls_enabled | bool else 'http' }}"
+    _host: "{{ ansible_default_ipv4.address | default('localhost') }}"
+    _pyro_port: "{{ tls_port_pyroscope if tls_enabled | bool else pyroscope_port }}"
+    _graf_port: "{{ tls_port_grafana if tls_enabled | bool else grafana_port }}"
+
+- name: Set Grafana summary line
+  ansible.builtin.set_fact:
+    _grafana_line: >-
+      {{ 'Grafana:   ' ~ _proto ~ '://' ~ _host ~ ':' ~ _graf_port
+      if not skip_grafana | bool
+      else 'Grafana:   skipped (--skip-grafana)' }}
+
+- name: Print deployment summary
+  ansible.builtin.debug:
+    msg: >-
+      =========================================
+       Observability stack is running{{ ' (HTTPS)' if tls_enabled | bool else '' }}
+      =========================================
+
+      Pyroscope: {{ _proto }}://{{ _host }}:{{ _pyro_port }}
+      {{ _grafana_line }}
+      {{ 'Login:     admin / ' ~ grafana_admin_password if not skip_grafana | bool else '' }}
+
+      Configure Java services with:
+        PYROSCOPE_SERVER_ADDRESS={{ _proto }}://{{ _host }}:{{ _pyro_port }}

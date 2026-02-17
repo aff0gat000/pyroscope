@@ -1,0 +1,52 @@
+plugins {
+    id 'com.github.johnrengelman.shadow' version '7.1.2' apply false
+}
+
+subprojects {
+    apply plugin: 'java'
+    apply plugin: 'com.github.johnrengelman.shadow'
+
+    group = 'com.pyroscope'
+    version = '1.0.0'
+
+    ext {
+        vertxVersion = '4.5.8'
+    }
+
+    repositories {
+        mavenCentral()
+    }
+
+    dependencies {
+        implementation "io.vertx:vertx-core:${vertxVersion}"
+        implementation "io.vertx:vertx-web:${vertxVersion}"
+        implementation "io.vertx:vertx-web-client:${vertxVersion}"
+
+        testImplementation "io.vertx:vertx-junit5:${vertxVersion}"
+        testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
+        testImplementation 'org.assertj:assertj-core:3.26.0'
+    }
+
+    test {
+        useJUnitPlatform()
+    }
+
+    shadowJar {
+        archiveClassifier.set('')
+        archiveVersion.set('1.0.0-fat')
+        mergeServiceFiles()
+    }
+}
+
+// JVM 11 subprojects
+configure(subprojects.findAll { it.path.startsWith(':faas-jvm11') }) {
+    sourceCompatibility = '11'
+    targetCompatibility = '11'
+}
+
+// JVM 21 subprojects — compiled with JDK 17 (source/target 17),
+// deployed on JVM 21 via Dockerfile (temurin:21-jre-alpine)
+configure(subprojects.findAll { it.path.startsWith(':faas-jvm21') }) {
+    sourceCompatibility = '17'
+    targetCompatibility = '17'
+}
