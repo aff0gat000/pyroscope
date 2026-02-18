@@ -93,17 +93,20 @@ graph TD
     C -->|OpenShift| M["helm install pyroscope<br/>deploy/microservices/openshift/helm/"]
 ```
 
-| Mode | Environment | Method | Go to |
-|------|-------------|--------|-------|
-| Monolith | VM | Manual docker CLI | [Section 7](#7-monolith-manual-vm-deployment) |
-| Monolith | VM | Bash script (`deploy.sh`) | [Section 8](#8-monolith-bash-script-on-vm) |
-| Monolith | VM | Ansible role | [Section 9](#9-monolith-ansible-on-vm) |
-| Monolith | Kubernetes | `deploy.sh --target k8s` | [Section 10a](#10a-kubernetes-with-kubectl) |
-| Monolith | OpenShift | `deploy.sh --target openshift` | [Section 10b](#10b-openshift-with-oc) |
-| Monolith | Local dev | `deploy.sh --target local` | [Section 11](#11-monolith-local-docker-compose) |
-| Microservices | VM | Docker Compose | [Section 12a](#12a-vm-with-docker-compose) |
-| Microservices | Kubernetes | kubectl manifests | [Section 12b](#12b-kubernetes) |
-| Microservices | OpenShift | Helm chart | [Section 12c](#12c-openshift) |
+| Mode | Environment | Method | Command | Guide |
+|------|-------------|--------|---------|-------|
+| Monolith | VM | Manual | `docker run -d --name pyroscope -p 4040:4040 -v pyroscope-data:/data grafana/pyroscope:1.18.0` | [Section 7](#7-monolith-manual-vm-deployment) |
+| Monolith | VM | Bash script | `bash deploy.sh full-stack --target vm` | [Section 8](#8-monolith-bash-script-on-vm) |
+| Monolith | VM | Ansible | `ansible-playbook -i inventory playbooks/deploy.yml` | [Section 9](#9-monolith-ansible-on-vm) |
+| Monolith | Kubernetes | Bash script | `bash deploy.sh full-stack --target k8s --namespace monitoring` | [Section 10a](#10a-kubernetes-with-kubectl) |
+| Monolith | OpenShift | Bash script | `bash deploy.sh full-stack --target openshift --namespace monitoring` | [Section 10b](#10b-openshift-with-oc) |
+| Monolith | Local dev | Bash script | `bash deploy.sh full-stack --target local` | [Section 11](#11-monolith-local-docker-compose) |
+| Microservices | VM | Docker Compose | `cd deploy/microservices/vm && bash deploy.sh` | [Section 12a](#12a-vm-with-docker-compose) |
+| Microservices | Kubernetes | kubectl | `kubectl apply -f deploy/microservices/k8s/` | [Section 12b](#12b-kubernetes) |
+| Microservices | OpenShift | Helm | `helm install pyroscope deploy/microservices/openshift/helm/ --namespace pyroscope --create-namespace` | [Section 12c](#12c-openshift) |
+
+> **Note:** Ansible is supported for VM deployments only. Kubernetes and OpenShift have native
+> tooling (kubectl, Helm, GitOps) that is more appropriate than wrapping in Ansible modules.
 
 ---
 
@@ -227,8 +230,8 @@ Add these options inline or configure `~/.ssh/config`.
 **Inline (per command):**
 
 ```bash
-ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa operator@<vm-hostname>
-scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa file.tar operator@<vm-hostname>:/tmp/
+ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa operator@<hostname>
+scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa file.tar operator@<hostname>:/tmp/
 ```
 
 **Recommended: `~/.ssh/config`** (applies to all commands automatically):
@@ -297,10 +300,10 @@ docker save -o pyroscope-stack-images.tar \
     grafana/grafana:11.5.2
 
 # Transfer to VM
-scp pyroscope-stack-images.tar operator@<vm-hostname>:/tmp/
+scp pyroscope-stack-images.tar operator@<hostname>:/tmp/
 
 # ---- On the target VM (as root) ----
-ssh operator@<vm-hostname>
+ssh operator@<hostname>
 pbrun /bin/su -
 
 # Load images
@@ -355,10 +358,10 @@ Single VM, no Grafana.
 docker pull grafana/pyroscope:1.18.0
 docker save -o pyroscope-images.tar grafana/pyroscope:1.18.0
 
-scp pyroscope-images.tar operator@<vm-hostname>:/tmp/
+scp pyroscope-images.tar operator@<hostname>:/tmp/
 
 # ---- On the target VM (as root) ----
-ssh operator@<vm-hostname>
+ssh operator@<hostname>
 pbrun /bin/su -
 
 docker load -i /tmp/pyroscope-images.tar
@@ -375,7 +378,7 @@ docker run -d \
 curl -s http://localhost:4040/ready && echo " OK"
 ```
 
-Configure Java agents: `PYROSCOPE_SERVER_ADDRESS=http://<vm-hostname>:4040`.
+Configure Java agents: `PYROSCOPE_SERVER_ADDRESS=http://<hostname>:4040`.
 
 ### 7b-multi. HTTP Pyroscope only: multiple VMs
 
@@ -422,13 +425,13 @@ docker load -i /tmp/pyroscope-stack-images.tar
 
 # Generate self-signed certificate
 mkdir -p /opt/pyroscope/tls
-VM_IP=$(hostname -I | awk '{print $1}')
-VM_HOSTNAME=$(hostname)
+HOST_IP=$(hostname -I | awk '{print $1}')
+HOST_FQDN=$(hostname -f)
 
 openssl req -x509 \
     -newkey rsa:2048 -nodes -days 365 \
-    -subj "/CN=${VM_HOSTNAME}" \
-    -addext "subjectAltName=DNS:${VM_HOSTNAME},DNS:localhost,IP:${VM_IP},IP:127.0.0.1" \
+    -subj "/CN=${HOST_FQDN}" \
+    -addext "subjectAltName=DNS:${HOST_FQDN},DNS:localhost,IP:${HOST_IP},IP:127.0.0.1" \
     -keyout /opt/pyroscope/tls/key.pem \
     -out /opt/pyroscope/tls/cert.pem
 
@@ -511,10 +514,10 @@ bash deploy.sh save-images
 # Output: pyroscope-stack-images.tar
 
 # Transfer to VM
-scp pyroscope-stack-images.tar operator@<vm-hostname>:/tmp/
+scp pyroscope-stack-images.tar operator@<hostname>:/tmp/
 
 # SSH to VM and become root
-ssh operator@<vm-hostname>
+ssh operator@<hostname>
 pbrun /bin/su -
 
 # Run from the repo checkout on the VM
@@ -968,7 +971,7 @@ The Grafana Pyroscope datasource URL depends on where Grafana runs:
 | Grafana location | Datasource URL |
 |------------------|----------------|
 | Same VM (Docker Compose) | `http://query-frontend:4040` (container name) |
-| Different VM | `http://PYROSCOPE_VM_IP:4041` (query-frontend mapped port) |
+| Different VM | `http://<pyroscope-host>:4041` (query-frontend mapped port) |
 | Same K8s cluster | `http://pyroscope-query-frontend.pyroscope.svc:4040` |
 | External to K8s | Use Ingress or port-forward |
 
@@ -1274,7 +1277,7 @@ bash deploy.sh clean
 ```bash
 # 1. Save new images on workstation
 bash build-and-push.sh --version 1.19.0 --save
-scp pyroscope-server-1.19.0.tar operator@<vm-hostname>:/tmp/
+scp pyroscope-server-1.19.0.tar operator@<hostname>:/tmp/
 
 # 2. On VM: load new image
 docker load -i /tmp/pyroscope-server-1.19.0.tar
