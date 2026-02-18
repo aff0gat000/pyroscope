@@ -37,12 +37,12 @@ Both Dockerfiles produce the same result: a Pyroscope server image with `pyrosco
 
 ## Option A: Build and Push with Script (Recommended)
 
-Run all steps from your **workstation** in the `deploy/monolithic/` directory.
+Run all steps from your **workstation** in the `deploy/monolith/` directory.
 
 ### Step 1: Check available Pyroscope versions
 
 ```bash
-cd deploy/monolithic
+cd deploy/monolith
 bash build-and-push.sh --list-tags
 ```
 
@@ -151,7 +151,7 @@ Docker:
 
 ## Option B: Build and Push Manually (Without Script)
 
-Run steps 1-5 on your **workstation** in the `deploy/monolithic/` directory. Run steps 6-9 on the **VM**.
+Run steps 1-5 on your **workstation** in the `deploy/monolith/` directory. Run steps 6-9 on the **VM**.
 
 ### Step 1: Choose a version
 
@@ -167,7 +167,7 @@ curl -s "https://hub.docker.com/v2/repositories/grafana/pyroscope/tags/?page_siz
 ### Step 2: Build the image
 
 ```bash
-cd deploy/monolithic
+cd deploy/monolith
 
 docker build \
     --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
@@ -299,7 +299,7 @@ Since the official image does not have `pyroscope.yaml` baked in, copy it to the
 
 ```bash
 ssh operator@vm01.corp.example.com "mkdir -p /opt/pyroscope"
-scp deploy/monolithic/pyroscope.yaml operator@vm01.corp.example.com:/opt/pyroscope/pyroscope.yaml
+scp deploy/monolith/pyroscope.yaml operator@vm01.corp.example.com:/opt/pyroscope/pyroscope.yaml
 ```
 
 ### Step 6: SSH to the VM and pull the image
@@ -353,7 +353,7 @@ Run steps 1-3 on your **workstation**. Run steps 4-7 on the **VM**.
 ### Steps 1-2: Build and export (with script)
 
 ```bash
-cd deploy/monolithic
+cd deploy/monolith
 bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save
 ```
 
@@ -366,7 +366,7 @@ bash build-and-push.sh --version 1.18.0 --platform linux/amd64 --save /tmp/pyros
 ### Steps 1-2: Build and export (manually)
 
 ```bash
-cd deploy/monolithic
+cd deploy/monolith
 
 docker build --platform linux/amd64 \
     --build-arg BASE_IMAGE=grafana/pyroscope:1.18.0 \
@@ -384,7 +384,7 @@ scp pyroscope-server-1.18.0.tar \
     operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
 
 # Also copy pyroscope.yaml so you can edit config without rebuilding
-scp deploy/monolithic/pyroscope.yaml \
+scp deploy/monolith/pyroscope.yaml \
     operator@vm01.corp.example.com:/tmp/pyroscope-deploy/
 ```
 
@@ -498,7 +498,7 @@ The Dockerfile uses a multi-stage build: stage 1 copies the Pyroscope binary fro
 **Alpine (default, recommended):**
 
 ```bash
-cd deploy/monolithic
+cd deploy/monolith
 
 docker build -f Dockerfile.custom \
     --build-arg PYROSCOPE_VERSION=1.18.0 \
@@ -577,7 +577,7 @@ Or manually:
 
 ```bash
 docker build --build-arg BASE_IMAGE=grafana/pyroscope:1.19.0 \
-    -t pyroscope-server:1.19.0 deploy/monolithic/
+    -t pyroscope-server:1.19.0 deploy/monolith/
 
 docker tag pyroscope-server:1.19.0 \
     company.corp.com/docker-proxy/pyroscope/pyroscope-server:1.19.0

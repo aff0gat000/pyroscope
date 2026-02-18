@@ -121,20 +121,26 @@ Deploy to validate core profiling value before requesting PostgreSQL infrastruct
 | Diff Report | BOR | `ReadPyroscopeDiffReport.v1` | Profile Data SOR |
 | Fleet Search | BOR | `ReadPyroscopeFleetSearch.v1` | Profile Data SOR |
 
-```
-                  ┌──────────────────────────────────────────────┐
-  Phase 1         │              BOR (1 JAR)                     │
-                  │  Triage    DiffReport    FleetSearch          │
-                  └──────────────┬───────────────────────────────┘
-                                 │ HTTP
-                  ┌──────────────▼───────────────────────────────┐
-                  │              SOR (1 JAR)                     │
-                  │           ProfileData                        │
-                  └──────────────┬───────────────────────────────┘
-                                 │ HTTP
-                  ┌──────────────▼───────────────────────────────┐
-                  │           Pyroscope                          │
-                  └─────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph BOR["BOR (1 JAR)"]
+        T["Triage"]
+        D["DiffReport"]
+        F["FleetSearch"]
+    end
+
+    subgraph SOR["SOR (1 JAR)"]
+        PD["ProfileData"]
+    end
+
+    PYRO["Pyroscope"]
+
+    BOR -->|HTTP| SOR
+    SOR -->|HTTP| PYRO
+
+    style BOR fill:#e3f2fd,stroke:#2196f3
+    style SOR fill:#e8f5e9,stroke:#4caf50
+    style PYRO fill:#fff3e0,stroke:#ff9800
 ```
 
 ### Phase 2 — With PostgreSQL (8 functions)

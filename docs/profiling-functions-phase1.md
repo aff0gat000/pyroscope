@@ -28,20 +28,26 @@ graph LR
     PD --> PY
 ```
 
-```
-┌──────────────────────────────────────────────┐
-│              BOR (1 JAR)                     │
-│  Triage    DiffReport    FleetSearch          │
-└──────────────┬───────────────────────────────┘
-               │ HTTP
-┌──────────────▼───────────────────────────────┐
-│              SOR (1 JAR)                     │
-│           ProfileData                        │
-└──────────────┬───────────────────────────────┘
-               │ HTTP
-┌──────────────▼───────────────────────────────┐
-│           Pyroscope                          │
-└──────────────────────────────────────────────┘
+```mermaid
+graph TD
+    subgraph BOR["BOR (1 JAR)"]
+        T["Triage"]
+        D["DiffReport"]
+        F["FleetSearch"]
+    end
+
+    subgraph SOR["SOR (1 JAR)"]
+        PD["ProfileData"]
+    end
+
+    PY["Pyroscope"]
+
+    BOR -->|HTTP| SOR
+    SOR -->|HTTP| PY
+
+    style BOR fill:#e3f2fd,stroke:#2196f3
+    style SOR fill:#e8f5e9,stroke:#4caf50
+    style PY fill:#fff3e0,stroke:#ff9800
 ```
 
 | Function | Layer | FUNCTION env var | What it does |

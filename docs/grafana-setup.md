@@ -2,24 +2,24 @@
 
 Step-by-step guide for adding the Pyroscope datasource and pre-built dashboards to an existing Grafana instance. Two methods: **API** (no restart, no file access needed) and **provisioning files** (file-based, requires restart).
 
-> **Don't have Grafana yet?** See [deploy/observability/](../deploy/observability/README.md) for a full-stack deployment that includes Grafana with Pyroscope pre-configured.
+> **Don't have Grafana yet?** See [deploy/monolith/](../deploy/monolith/README.md) for a full-stack deployment that includes Grafana with Pyroscope pre-configured.
 
 > **Want to automate this?** Both methods are fully automated in `deploy.sh`:
 > ```bash
 > # API method (no restart)
-> bash deploy/observability/deploy.sh add-to-existing \
+> bash deploy/monolith/deploy.sh add-to-existing \
 >     --grafana-url http://grafana.corp:3000 \
 >     --grafana-api-key eyJrIj... \
 >     --pyroscope-url http://pyroscope.corp:4040
 >
 > # Provisioning method (requires restart)
-> bash deploy/observability/deploy.sh add-to-existing \
+> bash deploy/monolith/deploy.sh add-to-existing \
 >     --method provisioning \
 >     --pyroscope-url http://pyroscope.corp:4040 \
 >     --grafana-provisioning-dir /etc/grafana/provisioning \
 >     --grafana-dashboard-dir /var/lib/grafana/dashboards
 > ```
-> The Ansible role provides the same functionality — see [ansible/README.md](../deploy/observability/ansible/README.md).
+> The Ansible role provides the same functionality — see [ansible/README.md](../deploy/monolith/ansible/README.md).
 
 ## Prerequisites
 
@@ -67,11 +67,18 @@ curl -s -X POST http://grafana.corp:3000/api/auth/keys \
 
 Save the returned `key` value. Alternatively, use basic auth with `admin:<password>` in the steps below.
 
+> **Security best practice:** Never pass API keys or passwords as CLI flags — they are visible in `ps` output and shell history. Use environment variables instead:
+> ```bash
+> export GRAFANA_API_KEY="eyJrIj..."
+> # Then reference ${GRAFANA_API_KEY} in curl commands below
+> ```
+> For Ansible, use `ansible-vault` to encrypt `grafana_api_key` values.
+
 ### Step 2: Install Pyroscope plugins
 
 ```bash
 GRAFANA_URL="http://grafana.corp:3000"
-API_KEY="eyJrIj..."  # or use -u admin:password instead of -H Authorization
+API_KEY="${GRAFANA_API_KEY:-eyJrIj...}"  # Set via: export GRAFANA_API_KEY=<key>
 
 # Install datasource plugin
 curl -s -X POST "${GRAFANA_URL}/api/plugins/grafana-pyroscope-datasource/install" \
@@ -335,7 +342,7 @@ journalctl -u grafana-server --since "5 minutes ago" | grep -iE "provision|pyros
 Both methods are available in the Ansible role:
 
 ```bash
-cd deploy/observability/ansible
+cd deploy/monolith/ansible
 
 # API method
 ansible-playbook -i inventory playbooks/deploy.yml \

@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: pyroscope-config
+  namespace: pyroscope
+  labels:
+    app.kubernetes.io/name: pyroscope
+data:
+  config.yaml: |
+    server:
+      http_listen_port: 4040
+
+    storage:
+      backend: filesystem
+      filesystem:
+        dir: /data/pyroscope
+
+    memberlist:
+      join_members:
+        - pyroscope-ingester-headless:7946
+
+    self_profiling:
+      disable_push: true

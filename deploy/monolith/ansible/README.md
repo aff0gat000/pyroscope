@@ -36,7 +36,7 @@ all:
 ### 2. Deploy
 
 ```bash
-cd deploy/observability/ansible
+cd deploy/monolith/ansible
 
 # Dry run (check mode)
 ansible-playbook -i inventory playbooks/deploy.yml --check
@@ -165,8 +165,11 @@ Adds Pyroscope datasource and dashboards to an existing Grafana via API. No Graf
 ```bash
 ansible-playbook -i inventory playbooks/deploy.yml \
     -e grafana_url=http://grafana.corp:3000 \
-    -e grafana_api_key=eyJrIj...
+    -e grafana_api_key="{{ vault_grafana_api_key }}" \
+    --ask-vault-pass
 ```
+
+> **Security:** Never pass API keys as `-e grafana_api_key=<plaintext>` — they appear in process listings and Ansible logs. Use `ansible-vault` to encrypt secrets and reference them with `{{ vault_grafana_api_key }}`.
 
 Or configure per-host in `inventory/hosts.yml`:
 
@@ -175,7 +178,7 @@ pyroscope_add_to_existing:
   hosts:
     grafana01.corp.example.com:
       grafana_url: http://localhost:3000
-      grafana_api_key: "eyJrIj..."
+      grafana_api_key: "{{ vault_grafana_api_key }}"
 ```
 
 ### Add to existing Grafana (provisioning method)
@@ -228,9 +231,9 @@ Override in `inventory/group_vars/pyroscope.yml`, `host_vars/`, or via `-e`.
 |----------|---------|-------------|
 | `grafana_image` | `grafana/grafana:11.5.2` | Grafana Docker image |
 | `grafana_port` | `3000` | Grafana host port |
-| `grafana_admin_password` | `admin` | Grafana admin password |
+| `grafana_admin_password` | `admin` | Grafana admin password (**use ansible-vault**) |
 | `grafana_url` | - | Existing Grafana URL |
-| `grafana_api_key` | - | Grafana API key |
+| `grafana_api_key` | - | Grafana API key (**use ansible-vault**) |
 | `grafana_method` | `api` | `api` or `provisioning` |
 | `grafana_config_mode` | `mounted` | `baked` (custom image) or `mounted` (host volume mounts) |
 | `grafana_config_dir` | `/opt/pyroscope/grafana` | Host directory for mounted config |
@@ -357,16 +360,16 @@ Copy or symlink the role into your playbook's `roles/` directory:
 
 ```bash
 # Option A: Copy the role
-cp -r deploy/observability/ansible/roles/pyroscope-stack /path/to/your/playbook/roles/
+cp -r deploy/monolith/ansible/roles/pyroscope-stack /path/to/your/playbook/roles/
 
 # Option B: Symlink (keeps it in sync with this repo)
-ln -s /path/to/pyroscope/deploy/observability/ansible/roles/pyroscope-stack \
+ln -s /path/to/pyroscope/deploy/monolith/ansible/roles/pyroscope-stack \
       /path/to/your/playbook/roles/pyroscope-stack
 
 # Option C: Use roles_path in ansible.cfg
 # ansible.cfg
 # [defaults]
-# roles_path = /path/to/pyroscope/deploy/observability/ansible/roles
+# roles_path = /path/to/pyroscope/deploy/monolith/ansible/roles
 ```
 
 ### Step 2: Add the role to your playbook

@@ -514,4 +514,6 @@ if [ "${DO_SAVE}" = true ]; then
     echo ""
     info "To change config later: edit /opt/pyroscope/pyroscope.yaml, then docker restart pyroscope"
     echo ""
+    info "Then deploy: bash deploy.sh full-stack --target vm --load-images <tar-path> --pyroscope-image ${LOCAL_TAG}"
+    echo ""
 fi

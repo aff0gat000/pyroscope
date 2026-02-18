@@ -4,7 +4,7 @@ set -uo pipefail
 # step_run() so failures produce actionable diagnostics instead of silent exits.
 
 # ---------------------------------------------------------------------------
-# deploy.sh — Deploy Pyroscope + Grafana observability stack
+# deploy.sh — Deploy Pyroscope (monolith mode) with optional Grafana
 #
 # Designed for enterprise VMs (RHEL, CentOS, Ubuntu) accessed via:
 #   ssh operator@vm01.corp && pbrun /bin/su -
@@ -84,6 +84,7 @@ ENVOY_CONTAINER_NAME="envoy-proxy"
 PYROSCOPE_URL="${PYROSCOPE_URL:-}"
 PYROSCOPE_PORT="${PYROSCOPE_PORT:-4040}"
 PYROSCOPE_IMAGE="${PYROSCOPE_IMAGE:-grafana/pyroscope:latest}"
+PYROSCOPE_CONFIG="${PYROSCOPE_CONFIG:-}"
 PYROSCOPE_VOLUME="${PYROSCOPE_VOLUME:-pyroscope-data}"
 
 # Grafana settings
@@ -1059,16 +1060,28 @@ do_full_stack_vm() {
     step "[${current_step}/${total_steps}] Deploying Pyroscope..."
     remove_container "pyroscope"
     ensure_volume "${PYROSCOPE_VOLUME}"
+    local config_mount=""
+    local config_cmd=""
+    if [ -n "${PYROSCOPE_CONFIG}" ]; then
+        if [ ! -f "${PYROSCOPE_CONFIG}" ]; then
+            die "Pyroscope config file not found: ${PYROSCOPE_CONFIG}"
+        fi
+        config_mount="-v ${PYROSCOPE_CONFIG}:/etc/pyroscope/config.yaml:ro${zflag}"
+        config_cmd="-config.file=/etc/pyroscope/config.yaml"
+        info "Mounting Pyroscope config: ${PYROSCOPE_CONFIG}"
+    fi
     if [ "${DRY_RUN}" = true ]; then
-        info "[DRY RUN] would run: docker run -d --name pyroscope -p ${pyroscope_bind} ${PYROSCOPE_IMAGE}"
+        info "[DRY RUN] would run: docker run -d --name pyroscope -p ${pyroscope_bind} ${config_mount} ${PYROSCOPE_IMAGE} ${config_cmd}"
     else
         docker_pull_with_retry "${PYROSCOPE_IMAGE}"
+        # shellcheck disable=SC2086
         docker run -d \
             --name pyroscope \
             --restart unless-stopped \
             -p "${pyroscope_bind}" \
             -v "${PYROSCOPE_VOLUME}:/data${zflag}" \
-            "${PYROSCOPE_IMAGE}" || die "Failed to start pyroscope container"
+            ${config_mount} \
+            "${PYROSCOPE_IMAGE}" ${config_cmd} || die "Failed to start pyroscope container"
         wait_for_health "pyroscope" "http://localhost:4040/ready" 60
     fi
 
@@ -1796,11 +1809,13 @@ Options:
   Pyroscope:
   --pyroscope-url <url>          Pyroscope server URL
   --pyroscope-port <port>        Host port (default: 4040)
+  --pyroscope-image <image>      Docker image (default: grafana/pyroscope:latest)
+  --pyroscope-config <path>      Mount custom pyroscope.yaml into container
 
   Grafana:
   --grafana-url <url>            Existing Grafana URL (for add-to-existing)
-  --grafana-api-key <key>        Grafana API key (for API method)
-  --grafana-admin-password <pw>  Admin password (default: admin)
+  --grafana-api-key <key>        Grafana API key (prefer GRAFANA_API_KEY env var)
+  --grafana-admin-password <pw>  Admin password (prefer GRAFANA_ADMIN_PASSWORD env var)
   --grafana-port <port>          Host port (default: 3000)
   --grafana-provisioning-dir <d> Provisioning directory (for provisioning method)
   --grafana-dashboard-dir <d>    Dashboard directory (for provisioning method)
@@ -1851,8 +1866,22 @@ Examples:
   bash deploy.sh add-to-existing --grafana-url http://grafana:3000 \
       --grafana-api-key eyJrIj... --pyroscope-url http://pyroscope:4040
 
+  # Custom Pyroscope image with pinned version
+  bash deploy.sh full-stack --target vm \
+      --pyroscope-image pyroscope-server:1.18.0 \
+      --pyroscope-config /opt/pyroscope/pyroscope.yaml
+
   # Kubernetes (persistent — default)
   bash deploy.sh full-stack --target k8s --namespace monitoring
+
+  # OpenShift with routes
+  bash deploy.sh full-stack --target openshift --namespace monitoring
+
+Companion script for image building:
+  bash build-and-push.sh --version 1.18.0 --save         # Build + export tar
+  bash build-and-push.sh --version 1.18.0 --push         # Build + push to registry
+  bash build-and-push.sh --list-tags                      # List available versions
+  See DOCKER-BUILD.md for full image building guide.
 USAGE
     exit 0
 }
@@ -1879,9 +1908,10 @@ main() {
             --pyroscope-url)            PYROSCOPE_URL="$2"; shift 2 ;;
             --pyroscope-port)           PYROSCOPE_PORT="$2"; shift 2 ;;
             --pyroscope-image)          PYROSCOPE_IMAGE="$2"; shift 2 ;;
+            --pyroscope-config)         PYROSCOPE_CONFIG="${2:?--pyroscope-config requires a path}"; shift 2 ;;
             --grafana-url)              GRAFANA_URL="$2"; shift 2 ;;
-            --grafana-api-key)          GRAFANA_API_KEY="$2"; shift 2 ;;
-            --grafana-admin-password)   GRAFANA_ADMIN_PASSWORD="$2"; shift 2 ;;
+            --grafana-api-key)          GRAFANA_API_KEY="$2"; _API_KEY_FROM_CLI=true; shift 2 ;;
+            --grafana-admin-password)   GRAFANA_ADMIN_PASSWORD="$2"; _ADMIN_PW_FROM_CLI=true; shift 2 ;;
             --grafana-port)             GRAFANA_PORT="$2"; shift 2 ;;
             --grafana-image)            GRAFANA_IMAGE="$2"; shift 2 ;;
             --grafana-provisioning-dir) GRAFANA_PROVISIONING_DIR="$2"; shift 2 ;;
@@ -1914,6 +1944,16 @@ main() {
 
     if [ "${DRY_RUN}" = true ]; then
         warn "DRY RUN mode — no changes will be made"
+    fi
+
+    # Warn about secrets passed as CLI flags (visible in ps output and shell history)
+    if [ "${_API_KEY_FROM_CLI:-false}" = true ]; then
+        warn "API key passed via --grafana-api-key flag (visible in 'ps' and shell history)."
+        warn "Recommended: export GRAFANA_API_KEY=<key> instead."
+    fi
+    if [ "${_ADMIN_PW_FROM_CLI:-false}" = true ]; then
+        warn "Password passed via --grafana-admin-password flag (visible in 'ps' and shell history)."
+        warn "Recommended: export GRAFANA_ADMIN_PASSWORD=<password> instead."
     fi
 
     # Dispatch

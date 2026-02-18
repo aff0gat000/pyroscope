@@ -42,8 +42,9 @@ graph TB
 | Environment | Path | How it works |
 |-------------|------|-------------|
 | **VM / Docker Compose** | [`vm/`](vm/) | Docker Compose on bare-metal or EC2; NFS bind-mounted into containers |
+| **Kubernetes** | [`k8s/`](k8s/) | Helm chart for vanilla Kubernetes clusters with a ReadWriteMany PVC |
 | **OpenShift** | [`openshift/`](openshift/) | Helm chart deploying Kubernetes Deployments with a ReadWriteMany PVC |
 
-Both environments use identical Pyroscope component topology (9 services) and NFS-backed filesystem storage.
+All environments use identical Pyroscope component topology (9 services) and NFS-backed filesystem storage.
 
-For monolithic mode (single-node) deployments, see [`../monolithic/`](../monolithic/).
+For monolith mode (single-node) deployments, see [`../monolith/`](../monolith/).
