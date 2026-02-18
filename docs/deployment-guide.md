@@ -9,10 +9,10 @@ OpenShift, Docker Compose, TLS, air-gapped, and Ansible automation.
 ## Table of Contents
 
 - **Part 1: Decision Trees** -- [1. What are you deploying?](#1-what-are-you-deploying) | [2. Server mode](#2-pyroscope-server-mode) | [3. Grafana integration](#3-grafana-integration) | [4. Environment and method](#4-environment-and-deployment-method) | [5. Enterprise concerns](#5-enterprise-concerns)
-- **Part 2: Quick Reference** -- [6a. Monolith](#6a-monolith-quick-reference) | [6b. Microservices](#6b-microservices-quick-reference) | [6c. Sample apps](#6c-sample-apps-quick-reference)
+- **Part 2: Quick Reference** -- [6a. Monolith](#6a-monolith-quick-reference) | [6b. Microservices](#6b-microservices-quick-reference) | [6c. Sample apps](#6c-sample-apps-and-agent-instrumentation-quick-reference)
 - **Part 3: Pyroscope Server** -- [SSH config](#ssh-configuration) | [HTTP vs HTTPS config](#pyroscope-server-configuration-http-vs-https) | [7. Manual VM](#7-monolith-manual-vm-deployment) | [8. Bash script](#8-monolith-bash-script-on-vm) | [9. Ansible](#9-monolith-ansible-on-vm) | [10. K8s/OpenShift](#10-monolith-kubernetes-and-openshift) | [11. Local Compose](#11-monolith-local-docker-compose) | [12. Microservices](#12-microservices-mode)
-- **Part 4: Sample Apps** -- [13. Bank app](#13-bank-app-demo-9-services) | [14. FaaS server](#14-faas-server-only)
-- **Part 5: Java Agent** -- [15. Agent configuration](#15-java-agent-configuration)
+- **Part 4: Sample Apps** -- [13. Microservices demo](#13-microservices-demo-bank-app) | [14. FaaS runtime demo](#14-faas-runtime-demo)
+- **Part 5: Agent Instrumentation** -- [15. Agent instrumentation](#15-agent-instrumentation)
 - **Part 6: Reference** -- [16. TLS architecture](#16-tls-architecture) | [17. Port reference](#17-port-reference) | [18. Day-2 operations](#18-day-2-operations) | [19. File map](#19-file-map)
 
 ---
@@ -23,16 +23,20 @@ OpenShift, Docker Compose, TLS, air-gapped, and Ansible automation.
 
 ```mermaid
 graph TD
-    A{What are you deploying?} -->|Pyroscope server| B[Go to Tree 2]
-    A -->|Pyroscope + sample apps| C[Go to Tree 2, then Part 4]
-    A -->|Java agent into existing apps| D[Section 15: Java Agent]
+    A{What are you deploying?} -->|Pyroscope server<br/>profiling backend| B{Sample workloads?}
+    A -->|Agent instrumentation<br/>Pyroscope already running| F["Add agent to existing JVMs<br/>Section 15"]
+
+    B -->|Server only| C["Deploy Pyroscope server<br/>Tree 2"]
+    B -->|"Microservices demo<br/>9 services · 1 JVM per container"| D["docker compose up -d<br/>Tree 2 → Section 13"]
+    B -->|"FaaS runtime demo<br/>1 JVM · dynamic function verticles"| E["docker compose up -d faas-server pyroscope<br/>Tree 2 → Section 14"]
 ```
 
-| Outcome | Go to |
-|---------|-------|
-| Pyroscope server (monolith or microservices) | [Tree 2: Server mode](#2-pyroscope-server-mode) |
-| Pyroscope server + sample bank app or FaaS | [Tree 2](#2-pyroscope-server-mode), then [Section 13](#13-bank-app-demo-9-services) or [Section 14](#14-faas-server-only) |
-| Java agent into existing JVM apps | [Section 15: Java Agent Configuration](#15-java-agent-configuration) |
+| Scenario | Architecture | What you get | Command | Guide |
+|----------|-------------|--------------|---------|-------|
+| **Pyroscope server only** | — | Profiling backend (monolith or microservices) | `bash deploy.sh full-stack --target vm` | [Tree 2: Server mode](#2-pyroscope-server-mode) |
+| **Microservices demo** | Service-per-container (9 JVMs) | Bank app + Pyroscope + Prometheus + Grafana | `docker compose up -d` | [Tree 2](#2-pyroscope-server-mode), then [Section 13](#13-microservices-demo-bank-app) |
+| **FaaS runtime demo** | Single-JVM function host | FaaS server + Pyroscope (11 built-in functions) | `docker compose up -d faas-server pyroscope` | [Tree 2](#2-pyroscope-server-mode), then [Section 14](#14-faas-runtime-demo) |
+| **Agent instrumentation** | Any (monolith, microservices, FaaS, batch) | Pyroscope Java agent in existing JVMs | `JAVA_TOOL_OPTIONS="-javaagent:/path/to/pyroscope.jar"` | [Section 15: Agent instrumentation](#15-agent-instrumentation) |
 
 ---
 
@@ -205,18 +209,18 @@ All commands run from `deploy/monolith/` unless otherwise noted.
 
 ---
 
-## 6c. Sample apps quick reference
+## 6c. Sample apps and agent instrumentation quick reference
 
-| I want to... | Command |
-|---|---|
-| Full bank demo (all 9 services + Pyroscope + Grafana) | `docker compose up -d` (from repo root) |
-| Start specific services | `docker compose up -d pyroscope grafana order-service payment-service` |
-| FaaS server only | `docker compose up -d faas-server pyroscope` |
-| Invoke a FaaS function | `curl -X POST http://localhost:8088/fn/invoke/fibonacci` |
-| Burst test | `curl -X POST "http://localhost:8088/fn/burst/fibonacci?count=100"` |
-| Add agent to existing app (Docker) | Set `JAVA_TOOL_OPTIONS="-javaagent:/path/to/pyroscope.jar"` -- see [Section 15](#15-java-agent-configuration) |
-| Add agent to existing app (K8s) | Init container pattern -- see [Section 15f](#15f-kubernetes-init-container-pattern) |
-| Stop all sample apps | `docker compose down` (from repo root) |
+| I want to... | Architecture | Command |
+|---|---|---|
+| **Microservices demo** (9 services + Pyroscope + Grafana) | Service-per-container | `docker compose up -d` (from repo root) |
+| Start specific microservices | Service-per-container | `docker compose up -d pyroscope grafana order-service payment-service` |
+| **FaaS runtime demo** (1 JVM + Pyroscope) | Single-JVM function host | `docker compose up -d faas-server pyroscope` |
+| Invoke a FaaS function | — | `curl -X POST http://localhost:8088/fn/invoke/fibonacci` |
+| Burst test (100 concurrent) | — | `curl -X POST "http://localhost:8088/fn/burst/fibonacci?count=100"` |
+| **Agent instrumentation** (Docker) | Any existing JVM | `JAVA_TOOL_OPTIONS="-javaagent:/path/to/pyroscope.jar"` — [Section 15](#15-agent-instrumentation) |
+| **Agent instrumentation** (K8s) | Any existing JVM | Init container pattern — [Section 15f](#15f-kubernetes-init-container-pattern) |
+| Stop all sample apps | — | `docker compose down` (from repo root) |
 
 ---
 
@@ -979,11 +983,15 @@ The Grafana Pyroscope datasource URL depends on where Grafana runs:
 
 # Part 4: Sample App Deployment
 
-## 13. Bank app demo (9 services)
+## 13. Microservices demo (bank app)
 
-The repo root `docker-compose.yaml` deploys a bank enterprise demo: Pyroscope + Prometheus
-+ Grafana + 9 Java services. All services use the same Docker image with different
-`VERTICLE` env vars. All have the Pyroscope Java agent pre-configured via `JAVA_TOOL_OPTIONS`.
+**Architecture:** Service-per-container — 9 long-running JVMs, each hosting one service.
+All services share a single Docker image; the `VERTICLE` environment variable selects
+which service verticle to run. Each JVM has the Pyroscope Java agent pre-attached
+via `JAVA_TOOL_OPTIONS`.
+
+The repo root `docker-compose.yaml` deploys the full stack: Pyroscope + Prometheus
++ Grafana + 9 Java services.
 
 ```bash
 # From the repo root:
@@ -1024,10 +1032,12 @@ docker compose down
 
 ---
 
-## 14. FaaS server only
+## 14. FaaS runtime demo
 
-The FaaS server deploys and undeploys short-lived Vert.x verticle "functions" on demand.
-It produces different profiling signatures than long-running services.
+**Architecture:** Single-JVM function host — one JVM dynamically deploys and undeploys
+short-lived Vert.x verticle "functions" on demand via HTTP. Produces distinct profiling
+signatures compared to long-running services: classloader activity, deployment lifecycle
+overhead, short-burst compute, and concurrent deploy/undeploy contention.
 
 ```bash
 # Start FaaS server + Pyroscope only
@@ -1045,9 +1055,13 @@ including all 11 built-in functions and their profiling signatures.
 
 ---
 
-# Part 5: Adding Java Agent to Existing Apps
+# Part 5: Agent Instrumentation for Existing Workloads
 
-## 15. Java agent configuration
+## 15. Agent instrumentation
+
+**Architecture:** Non-invasive, agent-based profiling — attach the Pyroscope Java agent
+to any existing JVM without code changes. Supports any application architecture:
+monolith, microservices, FaaS runtime, batch jobs, or legacy applications.
 
 ### 15a. Download the agent
 
