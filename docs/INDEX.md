@@ -60,7 +60,7 @@ The `services/` directory contains FaaS profiling analysis functions built on Ve
 
 | Document | Description |
 |----------|-------------|
-| [monolith-deployment-guide.md](monolith-deployment-guide.md) | Pyroscope monolith deployment — decision trees and step-by-step guide |
+| [deployment-guide.md](deployment-guide.md) | Comprehensive deployment guide — decision trees, quick reference, step-by-step for all scenarios |
 | [deploy/monolith/README.md](../deploy/monolith/README.md) | Monolith Pyroscope server — deploy.sh, build-and-push.sh, Ansible |
 | [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
 | [deploy/microservices/README.md](../deploy/microservices/README.md) | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
@@ -87,7 +87,7 @@ The `services/` directory contains FaaS profiling analysis functions built on Ve
 4. [dashboard-guide.md](dashboard-guide.md) — know which Grafana panels to highlight
 
 ### "I want to deploy Pyroscope in production"
-1. [monolith-deployment-guide.md](monolith-deployment-guide.md) — choose deployment option
+1. [deployment-guide.md](deployment-guide.md) — choose deployment option
 2. [deploy/monolith/README.md](../deploy/monolith/README.md) — deploy via bash script or manual (VM, K8s, OpenShift)
 3. [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) — deploy via Ansible (enterprise VMs)
 4. [deploy/microservices/README.md](../deploy/microservices/README.md) — distributed deployment (VM, K8s, OpenShift)
