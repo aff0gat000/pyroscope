@@ -31,12 +31,12 @@ graph TD
     B -->|"FaaS runtime demo<br/>1 JVM · dynamic function verticles"| E["docker compose up -d faas-server pyroscope<br/>Tree 2 → Section 14"]
 ```
 
-| Scenario | Architecture | What you get | Command | Guide |
-|----------|-------------|--------------|---------|-------|
-| **Pyroscope server only** | — | Profiling backend (monolith or microservices) | `bash deploy.sh full-stack --target vm` | [Tree 2: Server mode](#2-pyroscope-server-mode) |
-| **Microservices demo** | Service-per-container (9 JVMs) | Bank app + Pyroscope + Prometheus + Grafana | `docker compose up -d` | [Tree 2](#2-pyroscope-server-mode), then [Section 13](#13-microservices-demo-bank-app) |
-| **FaaS runtime demo** | Single-JVM function host | FaaS server + Pyroscope (11 built-in functions) | `docker compose up -d faas-server pyroscope` | [Tree 2](#2-pyroscope-server-mode), then [Section 14](#14-faas-runtime-demo) |
-| **Agent instrumentation** | Any (monolith, microservices, FaaS, batch) | Pyroscope Java agent in existing JVMs | `JAVA_TOOL_OPTIONS="-javaagent:/path/to/pyroscope.jar"` | [Section 15: Agent instrumentation](#15-agent-instrumentation) |
+| Scenario | Architecture | What you get | Next step |
+|----------|-------------|--------------|-----------|
+| **Pyroscope server only** | — | Profiling backend (monolith or microservices) | [Tree 2: Choose server mode](#2-pyroscope-server-mode) → [Tree 3: Grafana](#3-grafana-integration) → [Tree 4: Environment](#4-environment-and-deployment-method) |
+| **Microservices demo** | Service-per-container (9 JVMs) | Bank app + Pyroscope + Prometheus + Grafana | [Tree 2](#2-pyroscope-server-mode) → [Section 13](#13-microservices-demo-bank-app): `docker compose up -d` |
+| **FaaS runtime demo** | Single-JVM function host | FaaS server + Pyroscope (11 built-in functions) | [Tree 2](#2-pyroscope-server-mode) → [Section 14](#14-faas-runtime-demo): `docker compose up -d faas-server pyroscope` |
+| **Agent instrumentation** | Any (monolith, microservices, FaaS, batch) | Pyroscope Java agent in existing JVMs | [Section 15](#15-agent-instrumentation): `JAVA_TOOL_OPTIONS="-javaagent:pyroscope.jar"` |
 
 ---
 
