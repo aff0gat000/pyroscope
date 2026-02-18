@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: pyroscope-stack
+  author: platform-team
+  description: Deploy Pyroscope continuous profiling server with optional Grafana
+  license: Apache-2.0
+  min_ansible_version: "2.12"
+  platforms:
+    - name: EL
+      versions: [8, 9]
+    - name: Ubuntu
+      versions: [focal, jammy, noble]
+    - name: Debian
+      versions: [bookworm]
+
+dependencies: []

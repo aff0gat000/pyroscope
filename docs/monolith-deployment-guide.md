@@ -10,7 +10,7 @@ and `observability-deployment-guide.md` with a single source of truth.
 |------|---------|
 | `deploy.sh` | Lifecycle script -- deploy, status, stop, clean, logs |
 | `build-and-push.sh` | Build, tag, push, save Docker images |
-| `deploy-test.sh` | 45 unit tests for deploy.sh (no root/Docker needed) |
+| `deploy-test.sh` | 41 unit tests for deploy.sh (no root/Docker needed) |
 | `Dockerfile` | Standard build (official grafana/pyroscope base) |
 | `Dockerfile.custom` | Custom base image (Alpine, UBI, Debian) |
 | `pyroscope.yaml` | Server config (filesystem storage, port 4040) |
@@ -48,6 +48,19 @@ graph TD
     H -->|Ansible| N["ansible-playbook playbooks/deploy.yml<br/>See Section 7"]
 ```
 
+**Jump to step-by-step instructions:**
+
+| Outcome | Pyroscope + Grafana | Pyroscope only |
+|---------|--------------------:|---------------:|
+| **Manual docker CLI** | [Section 5a](#5a-http-with-grafana-full-stack) | [Section 5b](#5b-http-without-grafana-pyroscope-only--single-vm) / [5b-multi](#5b-multi-http-without-grafana--multiple-vms) |
+| **Bash script** | [Section 6b](#6b-deploysh-examples-for-each-scenario) | [Section 6b](#6b-deploysh-examples-for-each-scenario) (line: `--skip-grafana`) |
+| **Ansible** | [Section 7c](#7c-playbook-examples) | [Section 7c](#7c-playbook-examples) (line: `skip_grafana=true`) |
+| **Local dev** | [Section 6b](#6b-deploysh-examples-for-each-scenario) (line: `--target local`) | -- |
+| **Kubernetes** | [Section 8a](#8a-kubernetes-with-kubectl) | [Section 8a](#8a-kubernetes-with-kubectl) + `--skip-grafana` |
+| **OpenShift** | [Section 8b](#8b-openshift-with-oc) | [Section 8b](#8b-openshift-with-oc) + `--skip-grafana` |
+| **Add to existing Grafana (API)** | [Section 6b](#6b-deploysh-examples-for-each-scenario) | -- |
+| **Add to existing Grafana (files)** | [Section 6b](#6b-deploysh-examples-for-each-scenario) | -- |
+
 ---
 
 ## 2. Decision Tree: Image Source
@@ -70,6 +83,16 @@ graph TD
     I -->|Yes| J["bash build-and-push.sh<br/>--version 1.18.0 --push"]
     I -->|No| K["Use stock image<br/>+ mount pyroscope.yaml at runtime"]
 ```
+
+**Jump to image workflow instructions:**
+
+| Outcome | Command | Details |
+|---------|---------|---------|
+| **Stock save/load (air-gapped, no registry)** | `bash deploy.sh save-images` → `scp` → `--load-images` | [Section 5b](#5b-http-without-grafana-pyroscope-only--single-vm), [Section 6a](#6a-ssh--pbrun-workflow) |
+| **Build + push to registry** | `bash build-and-push.sh --version 1.18.0 --push` | [DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) |
+| **Build + docker save/load** | `bash build-and-push.sh --version 1.18.0 --save` → `scp` → `docker load` | [DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) |
+| **Pull directly from Docker Hub** | `docker pull grafana/pyroscope:1.18.0` | [Section 5a](#5a-http-with-grafana-full-stack) |
+| **Custom base image (UBI/Alpine)** | `docker build -f Dockerfile.custom ...` | [DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) |
 
 ### Cross-platform builds
 
@@ -97,6 +120,14 @@ graph TD
     C -->|Yes| E["<b>HTTPS with CA certs</b><br/>--tls --tls-cert cert.pem --tls-key key.pem<br/>Envoy terminates TLS on :4443 and :443"]
     C -->|Not yet| F["<b>HTTPS with self-signed cert</b><br/>--tls --tls-self-signed<br/>Auto-generated cert, good for dev/demo<br/>Java agents need trust config"]
 ```
+
+**Jump to TLS instructions:**
+
+| Outcome | Manual | Bash | Ansible | Java agent config |
+|---------|--------|------|---------|-------------------|
+| **HTTP (default)** | [Section 5a](#5a-http-with-grafana-full-stack) / [5b](#5b-http-without-grafana-pyroscope-only--single-vm) | [Section 6b](#6b-deploysh-examples-for-each-scenario) | [Section 7c](#7c-playbook-examples) | [HTTP](#http) |
+| **HTTPS self-signed** | [Section 5c](#5c-https-with-self-signed-cert) | [Section 6b](#6b-deploysh-examples-for-each-scenario) (`--tls --tls-self-signed`) | [Section 7c](#7c-playbook-examples) (`tls_self_signed=true`) | [HTTPS self-signed](#https-with-self-signed-certificate) |
+| **HTTPS CA certs** | -- | [Section 6b](#6b-deploysh-examples-for-each-scenario) (`--tls --tls-cert --tls-key`) | [Section 7c](#7c-playbook-examples) (`tls_cert_src`, `tls_key_src`) | [HTTPS CA cert](#https-with-ca-signed-certificate) |
 
 ---
 
@@ -200,12 +231,24 @@ docker run -d \
 curl -s http://localhost:3000/api/health
 ```
 
-### 5b. HTTP without Grafana (Pyroscope only)
+### 5b. HTTP without Grafana (Pyroscope only) — single VM
 
 ```bash
-# ---- On the target VM (as root) ----
+# ---- On your workstation (has internet) ----
 
-docker load -i /tmp/pyroscope-stack-images.tar
+# Pull only the Pyroscope image (no Grafana needed)
+docker pull grafana/pyroscope:1.18.0
+docker save -o pyroscope-images.tar grafana/pyroscope:1.18.0
+
+# Transfer to VM
+scp pyroscope-images.tar operator@vm01.corp:/tmp/
+
+# ---- On the target VM (as root) ----
+ssh operator@vm01.corp
+pbrun /bin/su -
+
+# Load image, create volume, start Pyroscope
+docker load -i /tmp/pyroscope-images.tar
 docker volume create pyroscope-data
 
 docker run -d \
@@ -215,7 +258,55 @@ docker run -d \
     -v pyroscope-data:/data \
     grafana/pyroscope:1.18.0
 
-curl -s http://localhost:4040/ready
+# Verify
+curl -s http://localhost:4040/ready && echo " OK"
+```
+
+Result: Pyroscope on `:4040`, no Grafana. Point Java agents at `http://VM_IP:4040`.
+
+### 5b-multi. HTTP without Grafana — multiple VMs
+
+Same image tar, deployed to each VM independently. Each VM runs its own Pyroscope instance.
+
+```bash
+# ---- On your workstation (has internet) ----
+
+docker pull grafana/pyroscope:1.18.0
+docker save -o pyroscope-images.tar grafana/pyroscope:1.18.0
+
+# Transfer to all target VMs
+for vm in vm01.corp vm02.corp vm03.corp; do
+    scp pyroscope-images.tar operator@${vm}:/tmp/
+done
+
+# ---- On each target VM (as root) ----
+# Repeat on each VM, or use a loop from your workstation:
+for vm in vm01.corp vm02.corp vm03.corp; do
+    ssh operator@${vm} "pbrun /bin/su - -c '
+        docker load -i /tmp/pyroscope-images.tar
+        docker volume create pyroscope-data
+        docker run -d \
+            --name pyroscope \
+            --restart unless-stopped \
+            -p 4040:4040 \
+            -v pyroscope-data:/data \
+            grafana/pyroscope:1.18.0
+    '"
+done
+
+# Verify all VMs
+for vm in vm01.corp vm02.corp vm03.corp; do
+    echo -n "${vm}: "
+    curl -s http://${vm}:4040/ready && echo " OK" || echo " FAIL"
+done
+```
+
+Configure Java agents per-service to point at the nearest Pyroscope VM:
+
+```bash
+PYROSCOPE_SERVER_ADDRESS=http://vm01.corp:4040
+# or as JVM system property:
+-Dpyroscope.server.address=http://vm01.corp:4040
 ```
 
 ### 5c. HTTPS with self-signed cert

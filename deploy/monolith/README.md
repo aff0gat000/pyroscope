@@ -60,11 +60,39 @@ bash deploy.sh full-stack --target vm \
 
 Result: Pyroscope on `:4040`, Grafana on `:3000` with 6 dashboards pre-loaded.
 
-### VM with HTTP (Pyroscope only)
+### VM with HTTP (Pyroscope only) — single VM
 
 ```bash
+# On a machine with internet access -- save only the Pyroscope image
+bash deploy.sh save-images --skip-grafana
+
+# Transfer to VM
+scp pyroscope-stack-images.tar operator@vm01.corp.example.com:/tmp/
+
+# SSH to VM, elevate, deploy
+ssh operator@vm01.corp.example.com
+pbrun /bin/su -
 bash deploy.sh full-stack --target vm --skip-grafana \
     --load-images /tmp/pyroscope-stack-images.tar
+```
+
+Result: Pyroscope on `:4040`, no Grafana. Configure Java agents: `PYROSCOPE_SERVER_ADDRESS=http://VM_IP:4040`.
+
+### VM with HTTP (Pyroscope only) — multiple VMs
+
+```bash
+# Save images once, transfer to all VMs
+bash deploy.sh save-images --skip-grafana
+for vm in vm01 vm02 vm03; do
+    scp pyroscope-stack-images.tar operator@${vm}.corp.example.com:/tmp/
+done
+
+# Deploy on each VM
+for vm in vm01 vm02 vm03; do
+    ssh operator@${vm}.corp.example.com "pbrun /bin/su - -c \
+        'bash deploy.sh full-stack --target vm --skip-grafana \
+        --load-images /tmp/pyroscope-stack-images.tar'"
+done
 ```
 
 ### VM with HTTPS (self-signed)
@@ -581,7 +609,7 @@ docker system df
 |------|---------|
 | `deploy.sh` | Deployment lifecycle script (deploy, status, stop, clean, logs, save-images) |
 | `build-and-push.sh` | Image lifecycle script (build, tag, push, save, list-tags, clean) |
-| `deploy-test.sh` | 45 mock-based unit tests for deploy.sh (no root/Docker needed) |
+| `deploy-test.sh` | 41 mock-based unit tests for deploy.sh (no root/Docker needed) |
 | `Dockerfile` | Production image from official `grafana/pyroscope` base |
 | `Dockerfile.custom` | Custom base image (Alpine, UBI, Debian) multi-stage build |
 | `pyroscope.yaml` | Pyroscope server config (filesystem storage at `/data`, port 4040) |

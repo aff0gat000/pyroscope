@@ -222,7 +222,7 @@ if [ "${DO_CLEAN}" = true ]; then
     # Remove image
     if docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -q "^${IMAGE_NAME}:"; then
         info "Removing image: ${IMAGE_NAME}"
-        docker rmi $(docker images --format '{{.Repository}}:{{.Tag}}' | grep "^${IMAGE_NAME}:") 2>/dev/null || true
+        docker images --format '{{.Repository}}:{{.Tag}}' | grep "^${IMAGE_NAME}:" | xargs -r docker rmi 2>/dev/null || true
         ok "Image removed"
     else
         info "No image named '${IMAGE_NAME}' found — skipping"
@@ -491,7 +491,7 @@ fi
 if [ "${DO_SAVE}" = true ]; then
     info "Saving image to ${SAVE_PATH}..."
     docker save -o "${SAVE_PATH}" "${LOCAL_TAG}"
-    SAVE_SIZE=$(ls -lh "${SAVE_PATH}" | awk '{print $5}')
+    SAVE_SIZE=$(du -h "${SAVE_PATH}" | cut -f1)
     ok "Saved: ${SAVE_PATH} (${SAVE_SIZE})"
     echo ""
     info "Copy to your VM and load:"

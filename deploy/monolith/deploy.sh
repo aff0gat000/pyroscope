@@ -572,7 +572,10 @@ docker_pull_with_retry() {
 
 # ---- Image transfer (save/load for air-gapped VMs) -------------------------
 cmd_save_images() {
-    local images=("${PYROSCOPE_IMAGE}" "${GRAFANA_IMAGE}")
+    local images=("${PYROSCOPE_IMAGE}")
+    if [ "${SKIP_GRAFANA}" != true ]; then
+        images+=("${GRAFANA_IMAGE}")
+    fi
     if [ "${TLS_ENABLED}" = true ]; then
         images+=("${ENVOY_IMAGE}")
     fi
@@ -590,7 +593,7 @@ cmd_save_images() {
         || die "docker save failed"
 
     local size
-    size=$(ls -lh "${save_path}" | awk '{print $5}')
+    size=$(du -h "${save_path}" | cut -f1)
     ok "Saved ${#images[@]} image(s) to ${save_path} (${size})"
     echo ""
     info "Transfer to target VM:"

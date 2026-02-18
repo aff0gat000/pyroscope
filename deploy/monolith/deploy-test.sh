@@ -547,6 +547,21 @@ run_deploy save-images --tls >/dev/null 2>&1 || true
 assert_file_contains "save-images --tls includes envoy" "${DOCKER_LOG}" "envoy"
 teardown
 
+# save-images --skip-grafana excludes grafana image
+setup
+run_deploy save-images --skip-grafana >/dev/null 2>&1 || true
+assert_file_contains "save-images --skip-grafana pulls pyroscope" "${DOCKER_LOG}" "pyroscope"
+# Verify grafana is NOT in docker save command (last docker save call should not contain grafana)
+TOTAL=$((TOTAL + 1))
+if grep "docker save" "${DOCKER_LOG}" | grep -q "grafana/grafana"; then
+    FAILED=$((FAILED + 1))
+    printf '  \033[31mFAIL\033[0m  save-images --skip-grafana excludes grafana\n'
+else
+    PASSED=$((PASSED + 1))
+    printf '  \033[32mPASS\033[0m  save-images --skip-grafana excludes grafana\n'
+fi
+teardown
+
 # ===========================================================================
 #  K8s / OpenShift (4 tests)
 # ===========================================================================
