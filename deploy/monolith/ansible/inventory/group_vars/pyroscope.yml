@@ -7,7 +7,7 @@
 pyroscope_mode: full-stack
 
 # --- Pyroscope ---
-pyroscope_image: grafana/pyroscope:latest
+pyroscope_image: grafana/pyroscope:1.18.0
 pyroscope_port: 4040
 pyroscope_volume: pyroscope-data
 # Override if Pyroscope is on a different host than Grafana
