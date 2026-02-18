@@ -10,7 +10,7 @@ OpenShift, Docker Compose, TLS, air-gapped, and Ansible automation.
 
 - **Part 1: Decision Trees** -- [1. What are you deploying?](#1-what-are-you-deploying) | [2. Server mode](#2-pyroscope-server-mode) | [3. Grafana integration](#3-grafana-integration) | [4. Environment and method](#4-environment-and-deployment-method) | [5. Enterprise concerns](#5-enterprise-concerns)
 - **Part 2: Quick Reference** -- [6a. Monolith](#6a-monolith-quick-reference) | [6b. Microservices](#6b-microservices-quick-reference) | [6c. Sample apps](#6c-sample-apps-quick-reference)
-- **Part 3: Pyroscope Server** -- [7. Manual VM](#7-monolith-manual-vm-deployment) | [8. Bash script](#8-monolith-bash-script-on-vm) | [9. Ansible](#9-monolith-ansible-on-vm) | [10. K8s/OpenShift](#10-monolith-kubernetes-and-openshift) | [11. Local Compose](#11-monolith-local-docker-compose) | [12. Microservices](#12-microservices-mode)
+- **Part 3: Pyroscope Server** -- [SSH config](#ssh-configuration) | [HTTP vs HTTPS config](#pyroscope-server-configuration-http-vs-https) | [7. Manual VM](#7-monolith-manual-vm-deployment) | [8. Bash script](#8-monolith-bash-script-on-vm) | [9. Ansible](#9-monolith-ansible-on-vm) | [10. K8s/OpenShift](#10-monolith-kubernetes-and-openshift) | [11. Local Compose](#11-monolith-local-docker-compose) | [12. Microservices](#12-microservices-mode)
 - **Part 4: Sample Apps** -- [13. Bank app](#13-bank-app-demo-9-services) | [14. FaaS server](#14-faas-server-only)
 - **Part 5: Java Agent** -- [15. Agent configuration](#15-java-agent-configuration)
 - **Part 6: Reference** -- [16. TLS architecture](#16-tls-architecture) | [17. Port reference](#17-port-reference) | [18. Day-2 operations](#18-day-2-operations) | [19. File map](#19-file-map)
@@ -219,12 +219,72 @@ All commands run from `deploy/monolith/` unless otherwise noted.
 
 # Part 3: Step-by-Step: Pyroscope Server
 
+## SSH configuration
+
+Enterprise environments often require RSA key algorithm compatibility for SSH connections.
+Add these options inline or configure `~/.ssh/config`.
+
+**Inline (per command):**
+
+```bash
+ssh -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa operator@<vm-hostname>
+scp -o HostKeyAlgorithms=+ssh-rsa -o PubkeyAcceptedAlgorithms=+ssh-rsa file.tar operator@<vm-hostname>:/tmp/
+```
+
+**Recommended: `~/.ssh/config`** (applies to all commands automatically):
+
+```
+# ~/.ssh/config — Pyroscope deployment targets
+Host pyro-* *.example.com
+    User operator
+    HostKeyAlgorithms +ssh-rsa
+    PubkeyAcceptedAlgorithms +ssh-rsa
+```
+
+With this config, all `ssh`/`scp` commands in this guide work without extra flags.
+Replace the `Host` pattern with your actual hostname pattern (e.g., `*.corp.mycompany.com`).
+
+---
+
+## Pyroscope server configuration (HTTP vs HTTPS)
+
+The Pyroscope server always listens on HTTP internally (port 4040). The `pyroscope.yaml`
+config file is **identical** for HTTP and HTTPS deployments:
+
+```yaml
+# deploy/monolith/pyroscope.yaml — same for HTTP and HTTPS
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data
+
+server:
+  http_listen_port: 4040
+
+self_profiling:
+  disable_push: true
+```
+
+For HTTPS deployments, TLS is terminated by an **Envoy reverse proxy** in front of
+Pyroscope. Pyroscope itself never handles TLS. This means:
+
+- No config changes needed for Pyroscope when switching between HTTP and HTTPS
+- Grafana on the same host still connects to Pyroscope via `http://localhost:4040`
+- Only external clients (Java agents, browsers) use the HTTPS endpoint (`:4443`)
+
+See [Section 16: TLS architecture](#16-tls-architecture) for diagrams.
+
+---
+
 ## 7. Monolith: Manual VM deployment
 
 Manual `docker` CLI commands. No scripts required. Good for understanding the deployment
 or for environments where third-party scripts cannot be used.
 
 ### 7a. HTTP with Grafana (full stack)
+
+> **SSH note:** If your environment requires RSA key compatibility, add SSH options
+> or configure `~/.ssh/config` — see [SSH configuration](#ssh-configuration) below.
 
 ```bash
 # ---- On your workstation (has internet) ----
@@ -237,10 +297,10 @@ docker save -o pyroscope-stack-images.tar \
     grafana/grafana:11.5.2
 
 # Transfer to VM
-scp pyroscope-stack-images.tar operator@vm01.corp:/tmp/
+scp pyroscope-stack-images.tar operator@<vm-hostname>:/tmp/
 
 # ---- On the target VM (as root) ----
-ssh operator@vm01.corp
+ssh operator@<vm-hostname>
 pbrun /bin/su -
 
 # Load images
@@ -295,10 +355,10 @@ Single VM, no Grafana.
 docker pull grafana/pyroscope:1.18.0
 docker save -o pyroscope-images.tar grafana/pyroscope:1.18.0
 
-scp pyroscope-images.tar operator@vm01.corp:/tmp/
+scp pyroscope-images.tar operator@<vm-hostname>:/tmp/
 
 # ---- On the target VM (as root) ----
-ssh operator@vm01.corp
+ssh operator@<vm-hostname>
 pbrun /bin/su -
 
 docker load -i /tmp/pyroscope-images.tar
@@ -315,7 +375,7 @@ docker run -d \
 curl -s http://localhost:4040/ready && echo " OK"
 ```
 
-Configure Java agents: `PYROSCOPE_SERVER_ADDRESS=http://VM_IP:4040`.
+Configure Java agents: `PYROSCOPE_SERVER_ADDRESS=http://<vm-hostname>:4040`.
 
 ### 7b-multi. HTTP Pyroscope only: multiple VMs
 
@@ -325,12 +385,14 @@ Configure Java agents: `PYROSCOPE_SERVER_ADDRESS=http://VM_IP:4040`.
 docker pull grafana/pyroscope:1.18.0
 docker save -o pyroscope-images.tar grafana/pyroscope:1.18.0
 
-for vm in vm01.corp vm02.corp vm03.corp; do
+TARGETS="vm01.example.com vm02.example.com vm03.example.com"  # replace with your hostnames
+
+for vm in ${TARGETS}; do
     scp pyroscope-images.tar operator@${vm}:/tmp/
 done
 
 # ---- Deploy on each VM ----
-for vm in vm01.corp vm02.corp vm03.corp; do
+for vm in ${TARGETS}; do
     ssh operator@${vm} "pbrun /bin/su - -c '
         docker load -i /tmp/pyroscope-images.tar
         docker volume create pyroscope-data
@@ -344,7 +406,7 @@ for vm in vm01.corp vm02.corp vm03.corp; do
 done
 
 # Verify all VMs
-for vm in vm01.corp vm02.corp vm03.corp; do
+for vm in ${TARGETS}; do
     echo -n "${vm}: "
     curl -s http://${vm}:4040/ready && echo " OK" || echo " FAIL"
 done
@@ -449,10 +511,10 @@ bash deploy.sh save-images
 # Output: pyroscope-stack-images.tar
 
 # Transfer to VM
-scp pyroscope-stack-images.tar operator@vm01.corp:/tmp/
+scp pyroscope-stack-images.tar operator@<vm-hostname>:/tmp/
 
 # SSH to VM and become root
-ssh operator@vm01.corp
+ssh operator@<vm-hostname>
 pbrun /bin/su -
 
 # Run from the repo checkout on the VM
@@ -517,11 +579,24 @@ bash deploy.sh full-stack --target vm --dry-run
 
 ### 8c. Verify after deploy
 
+**HTTP deployment:**
+
 ```bash
 bash deploy.sh status --target vm
 curl -s http://localhost:4040/ready        # Pyroscope
 curl -s http://localhost:3000/api/health   # Grafana (if deployed)
 ```
+
+**HTTPS deployment** (TLS via Envoy):
+
+```bash
+bash deploy.sh status --target vm
+curl -ks https://localhost:4443/ready       # Pyroscope via Envoy
+curl -ks https://localhost:443/api/health   # Grafana via Envoy (if deployed)
+```
+
+> **Note:** The Pyroscope server config (`pyroscope.yaml`) is identical for HTTP and
+> HTTPS. TLS is handled by the Envoy proxy — see [SSH and config notes](#pyroscope-server-configuration-http-vs-https).
 
 ---
 
@@ -1199,7 +1274,7 @@ bash deploy.sh clean
 ```bash
 # 1. Save new images on workstation
 bash build-and-push.sh --version 1.19.0 --save
-scp pyroscope-server-1.19.0.tar operator@vm01.corp:/tmp/
+scp pyroscope-server-1.19.0.tar operator@<vm-hostname>:/tmp/
 
 # 2. On VM: load new image
 docker load -i /tmp/pyroscope-server-1.19.0.tar
