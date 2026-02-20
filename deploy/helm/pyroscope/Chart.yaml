@@ -1,0 +1,15 @@
+apiVersion: v2
+name: pyroscope
+description: >
+  Pyroscope continuous profiling — unified chart for monolith and
+  microservices modes on Kubernetes and OpenShift Container Platform.
+type: application
+version: 1.0.0
+appVersion: "1.18.0"
+keywords:
+  - pyroscope
+  - profiling
+  - observability
+home: https://grafana.com/docs/pyroscope/latest/
+sources:
+  - https://github.com/grafana/pyroscope

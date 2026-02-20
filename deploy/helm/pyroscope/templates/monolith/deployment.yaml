@@ -1,0 +1,45 @@
+{{- if eq .Values.mode "monolith" }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "pyroscope.fullname" . }}
+  labels:
+    {{- include "pyroscope.componentLabels" (dict "ctx" . "component" "monolith") | nindent 4 }}
+spec:
+  replicas: {{ .Values.monolith.replicas }}
+  selector:
+    matchLabels:
+      {{- include "pyroscope.selectorLabels" (dict "ctx" . "component" "monolith") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "pyroscope.componentLabels" (dict "ctx" . "component" "monolith") | nindent 8 }}
+    spec:
+      containers:
+        - name: pyroscope
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args:
+            - -config.file=/etc/pyroscope/config.yaml
+          ports:
+            - name: http
+              containerPort: 4040
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: http
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          volumeMounts:
+            - name: config
+              mountPath: /etc/pyroscope
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "pyroscope.fullname" . }}-config
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "pyroscope.fullname" . }}-data
+{{- end }}

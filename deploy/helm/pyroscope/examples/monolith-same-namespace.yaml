@@ -1,0 +1,23 @@
+# Minimal monolith deployment alongside existing applications.
+#
+# Usage:
+#   helm upgrade --install pyroscope deploy/helm/pyroscope/ \
+#       -n <your-app-namespace> \
+#       -f deploy/helm/pyroscope/examples/monolith-same-namespace.yaml
+#
+# Agent target: http://pyroscope.<namespace>.svc:4040
+
+mode: monolith
+
+image:
+  tag: "1.18.0"
+
+storage:
+  accessMode: ReadWriteOnce
+  size: 10Gi
+
+route:
+  enabled: true
+
+grafana:
+  location: external

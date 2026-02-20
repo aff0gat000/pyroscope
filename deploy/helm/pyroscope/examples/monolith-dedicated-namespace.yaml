@@ -1,0 +1,34 @@
+# Monolith in a dedicated namespace with NetworkPolicy allowing cross-namespace access.
+#
+# Usage:
+#   helm upgrade --install pyroscope deploy/helm/pyroscope/ \
+#       -n pyroscope --create-namespace \
+#       -f deploy/helm/pyroscope/examples/monolith-dedicated-namespace.yaml
+#
+# Agent target: http://pyroscope.pyroscope.svc:4040
+#
+# Edit networkPolicy.allowedNamespaces to list the namespaces that should
+# be able to push profiles to Pyroscope.
+
+mode: monolith
+
+image:
+  tag: "1.18.0"
+
+storage:
+  accessMode: ReadWriteOnce
+  size: 20Gi
+
+networkPolicy:
+  enabled: true
+  allowedNamespaces:
+    - kubernetes.io/metadata.name: my-app-namespace
+    # - kubernetes.io/metadata.name: monitoring
+
+route:
+  enabled: true
+
+grafana:
+  location: different-namespace
+  datasource:
+    enabled: false

@@ -42,9 +42,22 @@ graph TB
 | Environment | Path | How it works |
 |-------------|------|-------------|
 | **VM / Docker Compose** | [`vm/`](vm/) | Docker Compose on bare-metal or EC2; NFS bind-mounted into containers |
-| **Kubernetes** | [`k8s/`](k8s/) | Helm chart for vanilla Kubernetes clusters with a ReadWriteMany PVC |
-| **OpenShift** | [`openshift/`](openshift/) | Helm chart deploying Kubernetes Deployments with a ReadWriteMany PVC |
+| **Kubernetes / OpenShift** | [`../helm/pyroscope/`](../helm/pyroscope/) | Unified Helm chart supporting both monolith and microservices modes, OCP Routes and K8s Ingress |
 
-All environments use identical Pyroscope component topology (9 services) and NFS-backed filesystem storage.
+All environments use identical Pyroscope component topology (7 services) and NFS-backed filesystem storage.
 
-For monolith mode (single-node) deployments, see [`../monolith/`](../monolith/).
+For monolith mode (single-node) VM deployments, see [`../monolith/`](../monolith/).
+
+For Kubernetes/OpenShift monolith or microservices deployments, use the unified Helm chart:
+
+```bash
+# Microservices on OpenShift
+helm upgrade --install pyroscope ../helm/pyroscope/ \
+    -n pyroscope --create-namespace \
+    -f ../helm/pyroscope/examples/microservices-openshift.yaml
+
+# Microservices on Kubernetes
+helm upgrade --install pyroscope ../helm/pyroscope/ \
+    -n pyroscope --create-namespace \
+    -f ../helm/pyroscope/examples/microservices-kubernetes.yaml
+```

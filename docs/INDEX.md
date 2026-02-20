@@ -64,7 +64,7 @@ The `services/` directory contains FaaS profiling analysis functions built on Ve
 | [deploy/monolith/README.md](../deploy/monolith/README.md) | Monolith Pyroscope server — deploy.sh, build-and-push.sh, Ansible |
 | [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
 | [deploy/microservices/README.md](../deploy/microservices/README.md) | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
-| [deploy/microservices/k8s/](../deploy/microservices/k8s/) | Kubernetes plain manifests for microservices deployment |
+| [deploy/helm/pyroscope/](../deploy/helm/pyroscope/) | Unified Helm chart — monolith and microservices, OCP and K8s |
 
 ---
 

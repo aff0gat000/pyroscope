@@ -1,0 +1,72 @@
+Pyroscope {{ .Chart.AppVersion }} deployed in {{ .Values.mode }} mode.
+
+Namespace: {{ .Release.Namespace }}
+
+=== Agent Configuration ===
+
+Point your Pyroscope Java agents at:
+
+  {{ include "pyroscope.agentEndpoint" . }}
+
+Option 1 — Environment variable:
+
+  PYROSCOPE_SERVER_ADDRESS="{{ include "pyroscope.agentEndpoint" . }}"
+  PYROSCOPE_APPLICATION_NAME="<your-app-name>"
+  JAVA_TOOL_OPTIONS="-javaagent:/path/to/pyroscope.jar"
+
+Option 2 — Properties file (baked into image):
+
+  pyroscope.server.address={{ include "pyroscope.agentEndpoint" . }}
+  pyroscope.application.name=<your-app-name>
+  pyroscope.format=jfr
+
+=== Grafana Datasource ===
+{{- if eq .Values.grafana.location "external" }}
+
+Grafana is external to this cluster. Use the Route/Ingress URL as the datasource:
+{{- if .Values.route.enabled }}
+  oc get route {{ include "pyroscope.fullname" . }} -n {{ .Release.Namespace }} -o jsonpath='{.spec.host}'
+{{- end }}
+{{- if .Values.ingress.enabled }}
+  {{ .Values.ingress.host }}
+{{- end }}
+{{- else }}
+
+Grafana datasource URL:
+
+  {{ include "pyroscope.grafanaEndpoint" . }}
+{{- end }}
+{{- if .Values.grafana.datasource.enabled }}
+
+A datasource provisioning ConfigMap was created:
+  {{ include "pyroscope.fullname" . }}-grafana-datasource
+
+If Grafana's sidecar watches this namespace with the label
+grafana_datasource=1, the datasource is provisioned automatically.
+{{- end }}
+
+=== External Access ===
+{{- if .Values.route.enabled }}
+
+OpenShift Route:
+  oc get route {{ include "pyroscope.fullname" . }} -n {{ .Release.Namespace }}
+{{- end }}
+{{- if .Values.ingress.enabled }}
+
+Ingress:
+  {{ .Values.ingress.host }}
+{{- end }}
+
+=== Verify ===
+
+All pods running:
+  kubectl -n {{ .Release.Namespace }} get pods -l app.kubernetes.io/part-of={{ include "pyroscope.name" . }}
+
+Pyroscope ready:
+{{- if eq .Values.mode "microservices" }}
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "pyroscope.fullname" . }}-distributor -- \
+    wget -qO- http://localhost:4040/ready
+{{- else }}
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ include "pyroscope.fullname" . }} -- \
+    wget -qO- http://localhost:4040/ready
+{{- end }}

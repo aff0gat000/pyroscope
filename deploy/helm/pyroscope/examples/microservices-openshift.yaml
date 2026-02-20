@@ -1,0 +1,56 @@
+# Full HA microservices on OpenShift with RWX NFS storage.
+#
+# Usage:
+#   helm upgrade --install pyroscope deploy/helm/pyroscope/ \
+#       -n pyroscope --create-namespace \
+#       -f deploy/helm/pyroscope/examples/microservices-openshift.yaml
+#
+# Prerequisites:
+#   - ReadWriteMany storage provisioner (NFS, CephFS, OCS)
+#
+# Agent target: http://pyroscope-distributor.pyroscope.svc:4040
+
+mode: microservices
+
+image:
+  tag: "1.18.0"
+
+storage:
+  accessMode: ReadWriteMany
+  storageClassName: nfs-client   # Adjust to your cluster's RWX storage class
+  size: 50Gi
+
+distributor:
+  replicas: 1
+
+ingester:
+  replicas: 3
+
+querier:
+  replicas: 2
+
+queryFrontend:
+  replicas: 1
+
+queryScheduler:
+  replicas: 1
+
+compactor:
+  replicas: 1
+
+storeGateway:
+  replicas: 1
+
+networkPolicy:
+  enabled: true
+  allowedNamespaces:
+    - kubernetes.io/metadata.name: my-app-namespace
+
+route:
+  enabled: true
+
+ingress:
+  enabled: false
+
+grafana:
+  location: different-namespace

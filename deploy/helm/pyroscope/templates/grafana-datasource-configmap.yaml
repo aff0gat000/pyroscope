@@ -1,0 +1,19 @@
+{{- if .Values.grafana.datasource.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "pyroscope.fullname" . }}-grafana-datasource
+  labels:
+    {{- include "pyroscope.labels" . | nindent 4 }}
+    grafana_datasource: "1"
+data:
+  pyroscope-datasource.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Pyroscope
+        type: grafana-pyroscope-datasource
+        uid: pyroscope-ds
+        access: proxy
+        url: {{ include "pyroscope.grafanaEndpoint" . }}
+        editable: true
+{{- end }}

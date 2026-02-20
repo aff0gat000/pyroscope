@@ -8,7 +8,7 @@ OpenShift, Docker Compose, TLS, air-gapped, and Ansible automation.
 
 ## Table of Contents
 
-- **Part 1: Decision Trees** -- [1. What are you deploying?](#1-what-are-you-deploying) | [2. Server mode](#2-pyroscope-server-mode) | [3. Grafana integration](#3-grafana-integration) | [4. Environment and method](#4-environment-and-deployment-method) | [5. Enterprise concerns](#5-enterprise-concerns)
+- **Part 1: Decision Trees** -- [1. What are you deploying?](#1-what-are-you-deploying) | [2. Server mode](#2-pyroscope-server-mode) | [3. Grafana integration](#3-grafana-integration) | [4. Environment and method](#4-environment-and-deployment-method) | [5. Enterprise concerns](#5-enterprise-concerns) | [6. OpenShift Container Platform](#6-openshift-container-platform)
 - **Part 2: Quick Reference** -- [6a. Monolith](#6a-monolith-quick-reference) | [6b. Microservices](#6b-microservices-quick-reference) | [6c. Sample apps](#6c-sample-apps-and-agent-instrumentation-quick-reference)
 - **Part 3: Pyroscope Server** -- [SSH config](#ssh-configuration) | [HTTP vs HTTPS config](#pyroscope-server-configuration-http-vs-https) | [7. Manual VM](#7-monolith-manual-vm-deployment) | [8. Bash script](#8-monolith-bash-script-on-vm) | [9. Ansible](#9-monolith-ansible-on-vm) | [10. K8s/OpenShift](#10-monolith-kubernetes-and-openshift) | [11. Local Compose](#11-monolith-local-docker-compose) | [12. Microservices](#12-microservices-mode)
 - **Part 4: Sample Apps** -- [13. Microservices demo](#13-microservices-demo-bank-app) | [14. FaaS runtime demo](#14-faas-runtime-demo)
@@ -93,8 +93,8 @@ graph TD
     D -->|Ansible role| J["ansible-playbook<br/>Section 9"]
 
     C -->|VM / Docker Compose| K["cd deploy/microservices/vm<br/>bash deploy.sh"]
-    C -->|Kubernetes| L["kubectl apply -f deploy/microservices/k8s/"]
-    C -->|OpenShift| M["helm install pyroscope<br/>deploy/microservices/openshift/helm/"]
+    C -->|Kubernetes| L["helm install pyroscope deploy/helm/pyroscope/<br/>-f examples/microservices-kubernetes.yaml"]
+    C -->|OpenShift| M["helm install pyroscope deploy/helm/pyroscope/<br/>-f examples/microservices-openshift.yaml"]
 ```
 
 | Mode | Environment | Method | Command | Guide |
@@ -103,11 +103,11 @@ graph TD
 | Monolith | VM | Bash script | `bash deploy.sh full-stack --target vm` | [Section 8](#8-monolith-bash-script-on-vm) |
 | Monolith | VM | Ansible | `ansible-playbook -i inventory playbooks/deploy.yml` | [Section 9](#9-monolith-ansible-on-vm) |
 | Monolith | Kubernetes | Bash script | `bash deploy.sh full-stack --target k8s --namespace monitoring` | [Section 10a](#10a-kubernetes-with-kubectl) |
-| Monolith | OpenShift | Bash script | `bash deploy.sh full-stack --target openshift --namespace monitoring` | [Section 10b](#10b-openshift-with-oc) |
+| Monolith | OpenShift | Helm | `helm upgrade --install pyroscope deploy/helm/pyroscope/ -n monitoring -f examples/monolith-same-namespace.yaml` | [Section 10b](#10b-openshift-with-helm) |
 | Monolith | Local dev | Bash script | `bash deploy.sh full-stack --target local` | [Section 11](#11-monolith-local-docker-compose) |
 | Microservices | VM | Docker Compose | `cd deploy/microservices/vm && bash deploy.sh` | [Section 12a](#12a-vm-with-docker-compose) |
-| Microservices | Kubernetes | kubectl | `kubectl apply -f deploy/microservices/k8s/` | [Section 12b](#12b-kubernetes) |
-| Microservices | OpenShift | Helm | `helm install pyroscope deploy/microservices/openshift/helm/ --namespace pyroscope --create-namespace` | [Section 12c](#12c-openshift) |
+| Microservices | Kubernetes | Helm | `helm upgrade --install pyroscope deploy/helm/pyroscope/ -n pyroscope --create-namespace -f examples/microservices-kubernetes.yaml` | [Section 12b](#12b-kubernetes) |
+| Microservices | OpenShift | Helm | `helm upgrade --install pyroscope deploy/helm/pyroscope/ -n pyroscope --create-namespace -f examples/microservices-openshift.yaml` | [Section 12c](#12c-openshift) |
 
 > **Note:** Ansible is supported for VM deployments only. Kubernetes and OpenShift have native
 > tooling (kubectl, Helm, GitOps) that is more appropriate than wrapping in Ansible modules.
@@ -143,6 +143,53 @@ graph TD
 | HTTPS self-signed | `--tls --tls-self-signed` | [Section 7c](#7c-https-with-self-signed-cert) |
 | HTTPS CA certs | `--tls --tls-cert cert.pem --tls-key key.pem` | [Section 7d](#7d-https-with-ca-certs) |
 | Cross-platform (Mac ARM to Linux) | `--platform linux/amd64` | [DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) |
+
+---
+
+## 6. OpenShift Container Platform
+
+Decision trees for deploying Pyroscope on OCP 4.12+ using the unified Helm chart at `deploy/helm/pyroscope/`.
+
+### 6a-ocp. Server mode and namespace
+
+```mermaid
+graph TD
+    A{Server mode?} -->|"Monolith<br/>< 100 apps"| B{Namespace strategy?}
+    A -->|"Microservices<br/>> 100 apps, HA"| C{RWX storage available?}
+
+    B -->|Same namespace as apps| D["helm upgrade --install pyroscope deploy/helm/pyroscope/<br/>-n APP_NS -f examples/monolith-same-namespace.yaml<br/>Section 10b"]
+    B -->|Dedicated namespace| E{NetworkPolicy enforced?}
+
+    E -->|No| F["helm upgrade --install pyroscope deploy/helm/pyroscope/<br/>-n pyroscope --create-namespace<br/>-f examples/monolith-dedicated-namespace.yaml<br/>Section 10b"]
+    E -->|Yes| G["Edit allowedNamespaces in values file<br/>helm upgrade --install ... -f monolith-dedicated-namespace.yaml<br/>Section 10b"]
+
+    C -->|Yes| H["helm upgrade --install pyroscope deploy/helm/pyroscope/<br/>-n pyroscope --create-namespace<br/>-f examples/microservices-openshift.yaml<br/>Section 12c"]
+    C -->|No| I["Set up NFS provisioner first<br/>then return here"]
+```
+
+| Scenario | Example values file | Agent target URL |
+|----------|-------------------|-----------------|
+| Monolith, same namespace | `monolith-same-namespace.yaml` | `http://pyroscope.<namespace>.svc:4040` |
+| Monolith, dedicated namespace | `monolith-dedicated-namespace.yaml` | `http://pyroscope.pyroscope.svc:4040` |
+| Microservices, dedicated namespace | `microservices-openshift.yaml` | `http://pyroscope-distributor.pyroscope.svc:4040` |
+
+### 6b-ocp. Agent configuration
+
+```mermaid
+graph TD
+    A{How does the Pyroscope agent<br/>get the server address?} -->|Properties file<br/>baked into image| B["Set in pyroscope.properties during image build:<br/>pyroscope.server.address=http://pyroscope.NS.svc:4040"]
+    A -->|Environment variable<br/>in Deployment/DeploymentConfig| C["Set in pod spec:<br/>PYROSCOPE_SERVER_ADDRESS=http://pyroscope.NS.svc:4040"]
+    A -->|Init container<br/>agent JAR not in image| D["See Section 15f:<br/>Kubernetes init container pattern"]
+```
+
+### 6c-ocp. Grafana integration
+
+```mermaid
+graph TD
+    A{Where is Grafana?} -->|Same OCP cluster<br/>different namespace| B["Datasource URL:<br/>http://pyroscope.PYROSCOPE_NS.svc.cluster.local:4040"]
+    A -->|External<br/>outside OCP| C["Datasource URL:<br/>https://ROUTE_HOSTNAME<br/>oc get route pyroscope -n PYROSCOPE_NS"]
+    A -->|Not deployed yet| D["Use Pyroscope built-in UI:<br/>https://ROUTE_HOSTNAME"]
+```
 
 ---
 
@@ -202,10 +249,12 @@ All commands run from `deploy/monolith/` unless otherwise noted.
 | Stop microservices (VM) | `cd deploy/microservices/vm && bash deploy.sh stop` |
 | Clean microservices (VM) | `cd deploy/microservices/vm && bash deploy.sh clean` |
 | View logs (VM) | `cd deploy/microservices/vm && bash deploy.sh logs` |
-| Deploy on Kubernetes | `kubectl apply -f deploy/microservices/k8s/namespace.yaml && kubectl apply -f deploy/microservices/k8s/` |
-| Clean Kubernetes | `kubectl delete -f deploy/microservices/k8s/` |
-| Deploy on OpenShift | `helm install pyroscope deploy/microservices/openshift/helm/ --namespace pyroscope --create-namespace` |
-| Clean OpenShift | `helm uninstall pyroscope --namespace pyroscope` |
+| Deploy on Kubernetes | `helm upgrade --install pyroscope deploy/helm/pyroscope/ -n pyroscope --create-namespace -f deploy/helm/pyroscope/examples/microservices-kubernetes.yaml` |
+| Clean Kubernetes | `helm uninstall pyroscope -n pyroscope` |
+| Deploy on OpenShift (microservices) | `helm upgrade --install pyroscope deploy/helm/pyroscope/ -n pyroscope --create-namespace -f deploy/helm/pyroscope/examples/microservices-openshift.yaml` |
+| Deploy on OpenShift (monolith, same ns) | `helm upgrade --install pyroscope deploy/helm/pyroscope/ -n <app-ns> -f deploy/helm/pyroscope/examples/monolith-same-namespace.yaml` |
+| Deploy on OpenShift (monolith, dedicated ns) | `helm upgrade --install pyroscope deploy/helm/pyroscope/ -n pyroscope --create-namespace -f deploy/helm/pyroscope/examples/monolith-dedicated-namespace.yaml` |
+| Clean OpenShift | `helm uninstall pyroscope -n pyroscope` |
 
 ---
 
@@ -811,24 +860,53 @@ bash deploy.sh status --target k8s --namespace monitoring
 bash deploy.sh clean --target k8s --namespace monitoring
 ```
 
-### 10b. OpenShift with oc
+### 10b. OpenShift with Helm
+
+The unified Helm chart at `deploy/helm/pyroscope/` supports both monolith and microservices
+modes on OCP 4.12+. See [Tree 6](#6-openshift-container-platform) for the full decision tree.
+
+**Same namespace as existing apps (recommended starting point):**
 
 ```bash
-# Deploy (creates Routes automatically)
-bash deploy.sh full-stack --target openshift --namespace monitoring
-
-# The script creates:
-#   - Project (namespace)
-#   - ConfigMaps for Grafana provisioning and dashboards
-#   - Deployments + Services
-#   - OpenShift Routes for external access
-
-# Status (shows pods, services, routes)
-bash deploy.sh status --target openshift --namespace monitoring
-
-# Cleanup
-bash deploy.sh clean --target openshift --namespace monitoring
+helm upgrade --install pyroscope deploy/helm/pyroscope/ \
+    -n <your-app-namespace> \
+    -f deploy/helm/pyroscope/examples/monolith-same-namespace.yaml
 ```
+
+**Dedicated namespace:**
+
+```bash
+helm upgrade --install pyroscope deploy/helm/pyroscope/ \
+    -n pyroscope --create-namespace \
+    -f deploy/helm/pyroscope/examples/monolith-dedicated-namespace.yaml
+```
+
+**Verify:**
+
+```bash
+# Route URL
+oc get route pyroscope -n <namespace>
+
+# Pod status
+oc get pods -n <namespace> -l app.kubernetes.io/part-of=pyroscope
+
+# Readiness
+oc exec deploy/pyroscope -n <namespace> -- wget -qO- http://localhost:4040/ready
+```
+
+Agent push endpoint: `http://pyroscope.<namespace>.svc:4040`
+
+Configure via properties file (`pyroscope.server.address=...`) or environment variable
+(`PYROSCOPE_SERVER_ADDRESS=...`). See [Section 15](#15-agent-instrumentation).
+
+**Cleanup:**
+
+```bash
+helm uninstall pyroscope -n <namespace>
+```
+
+**Legacy approach:** `bash deploy.sh full-stack --target openshift` still works for
+VM-style `oc` commands without Helm.
 
 ---
 
@@ -933,36 +1011,40 @@ bash deploy.sh clean
 **Prerequisites:** ReadWriteMany (RWX) storage provisioner (NFS, CephFS, etc.).
 
 ```bash
-# Create namespace and apply all manifests
-kubectl apply -f deploy/microservices/k8s/namespace.yaml
-kubectl apply -f deploy/microservices/k8s/
+# Install with Helm
+helm upgrade --install pyroscope deploy/helm/pyroscope/ \
+    -n pyroscope --create-namespace \
+    -f deploy/helm/pyroscope/examples/microservices-kubernetes.yaml
+
+# Or generate raw manifests without Helm
+helm template pyroscope deploy/helm/pyroscope/ \
+    -f deploy/helm/pyroscope/examples/microservices-kubernetes.yaml \
+    --namespace pyroscope | kubectl apply -n pyroscope -f -
 
 # Verify
 kubectl -n pyroscope get pods
 
 # Cleanup
-kubectl delete -f deploy/microservices/k8s/
+helm uninstall pyroscope -n pyroscope
 ```
 
-Customize image tag, replicas, and storage class by editing the YAML files
-under `deploy/microservices/k8s/`. See [deploy/microservices/k8s/README.md](../deploy/microservices/k8s/README.md).
+Customize image tag, replicas, and storage class in a values file derived from
+`deploy/helm/pyroscope/examples/microservices-kubernetes.yaml`.
 
 ### 12c. OpenShift
 
 ```bash
-# Install via Helm
-helm install pyroscope deploy/microservices/openshift/helm/ \
-    --namespace pyroscope --create-namespace
-
-# With custom storage class
-helm install pyroscope deploy/microservices/openshift/helm/ \
+# Install via unified Helm chart (microservices mode)
+helm upgrade --install pyroscope deploy/helm/pyroscope/ \
     --namespace pyroscope --create-namespace \
-    --set storage.storageClassName=nfs-client \
-    --set storage.size=100Gi
+    -f deploy/helm/pyroscope/examples/microservices-openshift.yaml
 
-# Upgrade
-helm upgrade pyroscope deploy/microservices/openshift/helm/ \
-    --namespace pyroscope
+# With custom storage class override
+helm upgrade --install pyroscope deploy/helm/pyroscope/ \
+    --namespace pyroscope --create-namespace \
+    -f deploy/helm/pyroscope/examples/microservices-openshift.yaml \
+    --set storage.storageClassName=ocs-storagecluster-cephfs \
+    --set storage.size=100Gi
 
 # Uninstall
 helm uninstall pyroscope --namespace pyroscope
@@ -1408,10 +1490,9 @@ docker start pyroscope
 | `deploy/microservices/vm/deploy.sh` | Start/stop/logs/status/clean script |
 | `deploy/microservices/vm/pyroscope.yaml` | Microservices Pyroscope config |
 | `deploy/microservices/vm/README.md` | VM deployment reference |
-| `deploy/microservices/k8s/` | Kubernetes manifests (7 deployments, services, PVC) |
-| `deploy/microservices/k8s/README.md` | K8s deployment reference |
-| `deploy/microservices/openshift/helm/` | OpenShift Helm chart |
-| `deploy/microservices/openshift/README.md` | OpenShift deployment reference |
+| `deploy/helm/pyroscope/` | Unified Helm chart — monolith and microservices, OCP and K8s |
+| `deploy/helm/pyroscope/values.yaml` | All configuration knobs with inline documentation |
+| `deploy/helm/pyroscope/examples/` | Ready-to-use values files for 4 deployment scenarios |
 | `deploy/microservices/README.md` | Microservices overview |
 
 ### Grafana config

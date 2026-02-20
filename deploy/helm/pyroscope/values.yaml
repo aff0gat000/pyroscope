@@ -1,0 +1,116 @@
+# --------------------------------------------------------------------------
+# Release identity
+# --------------------------------------------------------------------------
+nameOverride: ""
+fullnameOverride: ""
+
+# --------------------------------------------------------------------------
+# Deployment mode
+# --------------------------------------------------------------------------
+# "monolith"      — single Deployment + single Service (< 100 apps, simpler ops)
+# "microservices" — 7 Deployments + 3 Services (> 100 apps, HA, requires RWX storage)
+mode: monolith
+
+# --------------------------------------------------------------------------
+# Image
+# --------------------------------------------------------------------------
+image:
+  repository: grafana/pyroscope
+  tag: "1.18.0"
+  pullPolicy: IfNotPresent
+
+# --------------------------------------------------------------------------
+# Storage
+# --------------------------------------------------------------------------
+storage:
+  # ReadWriteOnce for monolith (single writer).
+  # Override to ReadWriteMany for microservices (7 components share one PVC).
+  accessMode: ReadWriteOnce
+  # Empty = cluster default storage class. Set explicitly for NFS, e.g. "nfs-client".
+  storageClassName: ""
+  size: 10Gi
+
+# --------------------------------------------------------------------------
+# Monolith settings (ignored when mode: microservices)
+# --------------------------------------------------------------------------
+monolith:
+  replicas: 1
+
+# --------------------------------------------------------------------------
+# Microservices replica counts (ignored when mode: monolith)
+# --------------------------------------------------------------------------
+distributor:
+  replicas: 1
+
+ingester:
+  replicas: 3
+
+querier:
+  replicas: 2
+
+queryFrontend:
+  replicas: 1
+
+queryScheduler:
+  replicas: 1
+
+compactor:
+  replicas: 1
+
+storeGateway:
+  replicas: 1
+
+# --------------------------------------------------------------------------
+# OpenShift Route
+# Enabled by default for OCP. Set enabled: false on vanilla Kubernetes.
+# --------------------------------------------------------------------------
+route:
+  enabled: true
+  host: ""   # Empty = OpenShift auto-generates the hostname
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+
+# --------------------------------------------------------------------------
+# Kubernetes Ingress (alternative to Route for vanilla Kubernetes)
+# Set route.enabled: false and ingress.enabled: true on non-OCP clusters.
+# --------------------------------------------------------------------------
+ingress:
+  enabled: false
+  className: nginx
+  host: pyroscope.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "10m"
+  tls:
+    enabled: false
+    secretName: pyroscope-tls
+
+# --------------------------------------------------------------------------
+# NetworkPolicy
+# Enable when Pyroscope is in a dedicated namespace and other namespaces
+# need to push profiles to port 4040.
+# --------------------------------------------------------------------------
+networkPolicy:
+  enabled: false
+  # Each entry is a map of label key/value pairs that must match the source
+  # namespace. Example:
+  #   allowedNamespaces:
+  #     - kubernetes.io/metadata.name: my-app-namespace
+  #     - kubernetes.io/metadata.name: monitoring
+  allowedNamespaces: []
+
+# --------------------------------------------------------------------------
+# Grafana datasource provisioning
+# Creates a ConfigMap that Grafana's sidecar can pick up automatically.
+# --------------------------------------------------------------------------
+grafana:
+  # Where Grafana lives relative to Pyroscope:
+  #   "same-namespace"      — use short DNS name
+  #   "different-namespace" — use FQDN
+  #   "external"            — outside the cluster; use Route/Ingress URL
+  location: external
+
+  datasource:
+    enabled: false
+    # Override the auto-computed Pyroscope URL for the datasource.
+    urlOverride: ""

@@ -1,0 +1,20 @@
+{{- if eq .Values.mode "microservices" }}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "pyroscope.fullname" . }}-ingester-headless
+  labels:
+    {{- include "pyroscope.componentLabels" (dict "ctx" . "component" "ingester") | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  ports:
+    - name: http
+      port: 4040
+      targetPort: http
+    - name: memberlist
+      port: 7946
+      targetPort: memberlist
+  selector:
+    {{- include "pyroscope.selectorLabels" (dict "ctx" . "component" "ingester") | nindent 4 }}
+{{- end }}
