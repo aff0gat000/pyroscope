@@ -1,7 +1,7 @@
 # Dashboard Reference
 
 Reference for the five Grafana dashboards provisioned by this project.
-For production debugging workflows, see [runbook.md](runbook.md). For MTTR reduction and incident workflows, see [mttr-guide.md](mttr-guide.md).
+For production debugging workflows, see [runbook.md](runbook.md). For MTTR reduction and incident workflows, see [continuous-profiling-runbook.md](continuous-profiling-runbook.md).
 For ad-hoc Prometheus queries, see [sample-queries.md](sample-queries.md).
 
 Grafana version: 11.5.2. Dashboard URLs are printed in the run script banner.

@@ -1,102 +1,159 @@
 # Documentation Index
 
-21 documents organized by topic. Start with **Getting Started**, then follow the path for your use case.
+21 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
+documentation standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
 ---
 
-## Getting Started
+## How this documentation is organized
+
+Every document falls into one of four categories:
+
+```
+                  ┌──────────────────────┬──────────────────────┐
+                  │                      │                      │
+   Practical      │     TUTORIALS        │      HOW-TO          │
+   (doing)        │     Learning-        │      Task-           │
+                  │     oriented          │      oriented        │
+                  │                      │                      │
+                  ├──────────────────────┼──────────────────────┤
+                  │                      │                      │
+   Theoretical    │     EXPLANATION       │      REFERENCE       │
+   (understanding)│     Understanding-   │      Information-    │
+                  │     oriented          │      oriented        │
+                  │                      │                      │
+                  └──────────────────────┴──────────────────────┘
+                        Studying                Working
+```
+
+| Category | Purpose | When to use |
+|----------|---------|-------------|
+| **Tutorial** | Learn by doing — guided walkthroughs | You are new and want to get started |
+| **How-to** | Solve a specific task — step-by-step | You know what you want to do but need instructions |
+| **Explanation** | Understand concepts — why things work | You want deeper knowledge of how Pyroscope works |
+| **Reference** | Look up facts — APIs, ports, configs | You need specific details while working |
+
+---
+
+## Tutorials (learning-oriented)
+
+Start here if you are new to Pyroscope or continuous profiling.
 
 | Document | Description |
 |----------|-------------|
-| [demo-guide.md](demo-guide.md) | What this project is, the problem it solves, and what it demonstrates |
-| [demo-runbook.md](demo-runbook.md) | Step-by-step demo agenda with commands and talking points (20-25 min) |
+| [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview — what it is, what problem it solves, cost, adoption phases |
 | [reading-flame-graphs.md](reading-flame-graphs.md) | How to read flame graphs — axes, width, color, self vs total time |
-| [architecture.md](architecture.md) | Service topology, data flow, and JVM agent configuration |
+| [demo-runbook.md](demo-runbook.md) | Step-by-step demo agenda with commands and talking points (20-25 min) |
+| [profiling-scenarios.md](profiling-scenarios.md) | 6 hands-on scenarios with quick reference of all bottlenecks by service |
 
 ---
 
-## Bank App Demo (9 Microservices)
+## How-to guides (task-oriented)
 
-The `app/` directory contains a bank enterprise demo with 9 Vert.x services profiled by Pyroscope.
+Follow these when you have a specific goal.
 
 | Document | Description |
 |----------|-------------|
-| [profiling-scenarios.md](profiling-scenarios.md) | 6 hands-on scenarios with quick reference of all bottlenecks by service |
-| [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code → flame graph mapping for every service and endpoint |
-| [faas-server.md](faas-server.md) | FaaS runtime — function deploy/undeploy lifecycle profiling |
+| [deployment-guide.md](deployment-guide.md) | Deploy Pyroscope — decision trees, quick reference, step-by-step, firewall rules |
+| [continuous-profiling-runbook.md](continuous-profiling-runbook.md) | Agent configuration, Grafana integration, bottleneck analysis workflow |
+| [grafana-setup.md](grafana-setup.md) | Connect Grafana to Pyroscope via provisioning files |
+| [troubleshooting.md](troubleshooting.md) | Diagnose common issues — no data, empty flame graphs, connectivity, overhead |
+| [runbook.md](runbook.md) | Incident response playbooks and operational procedures |
+
+---
+
+## Explanation (understanding-oriented)
+
+Read these to deepen your understanding of Pyroscope internals and architecture.
+
+| Document | Description |
+|----------|-------------|
+| [architecture-guide.md](architecture-guide.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
+| [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint |
+| [pyroscope-study-guide.md](pyroscope-study-guide.md) | Expert mastery — internals, operations, competitive analysis, talking points |
+
+---
+
+## Reference (information-oriented)
+
+Look up specific facts while working.
+
+| Document | Description |
+|----------|-------------|
+| [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search, Phase 1/2 |
+| [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |
 | [endpoint-reference.md](endpoint-reference.md) | Complete endpoint list with curl examples for all 9 services |
 | [sample-queries.md](sample-queries.md) | Copy-paste queries for Pyroscope, Prometheus, and Grafana |
-
----
-
-## FaaS BOR/SOR Functions
-
-The `services/` directory contains FaaS profiling analysis functions built on Vert.x. Two JVM targets: `faas-jvm11/` (Phase 1) and `faas-jvm21/` (Phase 2).
-
-| Document | Description |
-|----------|-------------|
-| [function-reference.md](function-reference.md) | BOR function API reference — triage, diff report, fleet search |
-| [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |
-| [profiling-functions-phase1.md](profiling-functions-phase1.md) | Phase 1: 3 BOR + 1 SOR, no database |
-| [profiling-functions-phase2.md](profiling-functions-phase2.md) | Phase 2: v2 BORs + 4 PostgreSQL-backed SORs |
-| [production-questionnaire-phase1.md](production-questionnaire-phase1.md) | Production onboarding questionnaire — overview, Phase 1 volume estimates, deployment config, testing |
+| [dashboard-guide.md](dashboard-guide.md) | Panel-by-panel reference for all 6 Grafana dashboards |
+| [faas-server.md](faas-server.md) | FaaS runtime — function deploy/undeploy lifecycle profiling |
+| [production-questionnaire-phase1.md](production-questionnaire-phase1.md) | Production onboarding questionnaire — Phase 1 volume estimates, deployment config |
 | [production-questionnaire-phase2.md](production-questionnaire-phase2.md) | Phase 2 questionnaire — PostgreSQL SORs, upgrade path, test coverage |
 
 ---
 
-## Grafana and Dashboards
+## Deployment references
+
+Infrastructure-level READMEs for operators.
 
 | Document | Description |
 |----------|-------------|
-| [dashboard-guide.md](dashboard-guide.md) | Panel-by-panel reference for all 6 Grafana dashboards |
-| [grafana-setup.md](grafana-setup.md) | Connecting Grafana to Pyroscope via provisioning files |
-| [deploy/grafana/README.md](../deploy/grafana/README.md) | Standalone Grafana image build |
-| [deploy/monolith/README.md](../deploy/monolith/README.md) | Unified Pyroscope + Grafana deployment (VM, local, K8s, OpenShift) |
-| [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Ansible role for Pyroscope + Grafana on enterprise VMs |
-
----
-
-## Deployment
-
-| Document | Description |
-|----------|-------------|
-| [deployment-guide.md](deployment-guide.md) | Comprehensive deployment guide — decision trees, quick reference, step-by-step for all scenarios |
 | [deploy/monolith/README.md](../deploy/monolith/README.md) | Monolith Pyroscope server — deploy.sh, build-and-push.sh, Ansible |
 | [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
 | [deploy/microservices/README.md](../deploy/microservices/README.md) | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
 | [deploy/helm/pyroscope/](../deploy/helm/pyroscope/) | Unified Helm chart — monolith and microservices, OCP and K8s |
+| [deploy/grafana/README.md](../deploy/grafana/README.md) | Standalone Grafana image build |
 
 ---
 
-## Operations
+## By audience
 
-| Document | Description |
-|----------|-------------|
-| [continuous-profiling-runbook.md](continuous-profiling-runbook.md) | Deploying Pyroscope, agent configuration, Grafana integration |
-| [runbook.md](runbook.md) | Incident response playbooks and operational procedures |
-| [mttr-guide.md](mttr-guide.md) | MTTR reduction workflow and bottleneck decision matrix |
+### Leadership / project management
 
----
+> "Why should we fund this?"
 
-## Learning Paths
+1. [what-is-pyroscope.md](what-is-pyroscope.md) — business case, cost, risk assessment
+2. [pyroscope-study-guide.md § Talking Points](pyroscope-study-guide.md) — funding justification and competitive analysis
+3. [continuous-profiling-runbook.md](continuous-profiling-runbook.md) — MTTR reduction data
 
-### "I want to demo Pyroscope to my team"
-1. [demo-guide.md](demo-guide.md) — understand what to show
+### Operators / SREs
+
+> "How do I deploy and operate this?"
+
+1. [deployment-guide.md](deployment-guide.md) — choose deployment mode (decision trees 1-7)
+2. [architecture-guide.md](architecture-guide.md) — understand topology and port requirements
+3. [troubleshooting.md](troubleshooting.md) — diagnose issues
+4. [runbook.md](runbook.md) — incident response procedures
+
+### Developers
+
+> "How do I use profiling data to fix performance issues?"
+
+1. [reading-flame-graphs.md](reading-flame-graphs.md) — learn to read flame graphs
+2. [profiling-scenarios.md](profiling-scenarios.md) — hands-on exercises
+3. [code-to-profiling-guide.md](code-to-profiling-guide.md) — source code to flame graph mapping
+4. [sample-queries.md](sample-queries.md) — copy-paste queries
+
+### Demo presenters
+
+> "How do I show this to my team?"
+
+1. [what-is-pyroscope.md](what-is-pyroscope.md) — understand the value proposition
 2. [reading-flame-graphs.md](reading-flame-graphs.md) — learn to read flame graphs
-3. [demo-runbook.md](demo-runbook.md) — follow the step-by-step agenda
-4. [dashboard-guide.md](dashboard-guide.md) — know which Grafana panels to highlight
+3. [demo-runbook.md](demo-runbook.md) — follow the 20-minute agenda
+4. [dashboard-guide.md](dashboard-guide.md) — know which panels to highlight
 
-### "I want to deploy Pyroscope in production"
-1. [deployment-guide.md](deployment-guide.md) — choose deployment option
-2. [deploy/monolith/README.md](../deploy/monolith/README.md) — deploy via bash script or manual (VM, K8s, OpenShift)
-3. [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) — deploy via Ansible (enterprise VMs)
-4. [deploy/microservices/README.md](../deploy/microservices/README.md) — distributed deployment (VM, K8s, OpenShift)
-6. [grafana-setup.md](grafana-setup.md) — connect Grafana
-7. [runbook.md](runbook.md) — set up incident response
+### FaaS function developers
 
-### "I want to build FaaS profiling functions"
-1. [function-reference.md](function-reference.md) — understand the 3 BOR functions
+> "How do I build profiling analysis functions?"
+
+1. [function-reference.md](function-reference.md) — understand the 3 BOR functions and Phase 1/2
 2. [function-architecture.md](function-architecture.md) — learn the project structure
-3. [profiling-functions-phase1.md](profiling-functions-phase1.md) — start with Phase 1 (no database)
-4. [profiling-functions-phase2.md](profiling-functions-phase2.md) — add Phase 2 (PostgreSQL SORs)
-5. [production-questionnaire-phase1.md](production-questionnaire-phase1.md) — production onboarding
+3. [production-questionnaire-phase1.md](production-questionnaire-phase1.md) — production onboarding
+
+---
+
+## Tools
+
+| Tool | Description |
+|------|-------------|
+| [scripts/mermaid-to-svg.sh](../scripts/mermaid-to-svg.sh) | Convert Mermaid diagrams in docs to SVG images |

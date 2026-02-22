@@ -1,6 +1,26 @@
-# Pyroscope BOR Function Reference
+# Pyroscope BOR/SOR Function Reference
 
-Three functions on top of Pyroscope: triage (incident diagnosis), diff report (deploy comparison), fleet search (cross-service hotspots).
+Three BOR functions (triage, diff report, fleet search) and up to 5 SOR functions for data access.
+Deployed in two phases: Phase 1 requires only Pyroscope; Phase 2 adds PostgreSQL.
+
+## Deployment Phases
+
+| Capability | Phase 1 (No Database) | Phase 2 (PostgreSQL) |
+|-----------|:---------------------:|:--------------------:|
+| Profile diagnosis (triage) | v1 | v2 (+ baseline comparison) |
+| Deploy comparison (diff report) | v1 | v2 (+ threshold context) |
+| Fleet-wide hotspots (fleet search) | v1 | v2 (+ service ownership) |
+| Baseline thresholds | — | Yes (Baseline SOR) |
+| Triage audit trail | — | Yes (History SOR) |
+| Service ownership registry | — | Yes (Registry SOR) |
+| Profiling-based alert rules | — | Yes (AlertRule SOR) |
+| **Functions** | 3 BOR + 1 SOR | 3 BOR (v2) + 5 SOR |
+| **Infrastructure** | Pyroscope only | Pyroscope + PostgreSQL |
+
+**Start with Phase 1.** It requires no database and covers the core use cases. Add Phase 2
+when you need baselines, audit trails, or service ownership enrichment.
+
+---
 
 ## Architecture
 

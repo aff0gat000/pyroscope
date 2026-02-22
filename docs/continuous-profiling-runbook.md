@@ -524,6 +524,109 @@ After deploying a fix:
 3. The problematic frame should be narrower or absent
 4. Confirm the corresponding metric (CPU usage, p99 latency, GC pause rate) improved
 
+### Bottleneck decision matrix
+
+The `bottleneck` command classifies each service automatically. Each verdict maps to specific investigation steps:
+
+| Verdict | Symptoms | What the Flame Graph Shows | Fix Pattern |
+|---------|----------|---------------------------|-------------|
+| **CPU-BOUND** | High CPU rate, proportional latency increase | Wide bars at leaf functions (computation) | Algorithmic optimization, caching, async offload |
+| **GC-BOUND** | Moderate CPU, high GC rate, sawtooth heap | Wide bars in allocation flame graph | Reduce allocation rate, pre-size collections, object pooling |
+| **MEMORY-PRESSURE** | Heap > 75%, rising trend | Allocation flame graph shows dominant allocator | Fix leak (if rising) or increase heap (if bounded) |
+| **LOCK-BOUND** | Low CPU, high latency, rising threads | Mutex flame graph shows contended `synchronized` blocks | Narrow lock scope, use concurrent data structures, lock-free algorithms |
+| **I/O-BOUND** | Low CPU, high latency, nothing in profiles | Wall-clock flame graph shows `Thread.sleep` / network I/O | Connection pooling, timeouts, circuit breakers, async I/O |
+| **HEALTHY** | All metrics within thresholds | Balanced, no dominant bars | No action needed |
+
+### Cross-referencing profile types
+
+A single profile type rarely tells the full story. Cross-reference:
+
+```bash
+SERVICE=bank-order-service
+bash scripts/top-functions.sh cpu $SERVICE      # what's using CPU?
+bash scripts/top-functions.sh memory $SERVICE   # what's allocating?
+bash scripts/top-functions.sh mutex $SERVICE    # what's contending?
+```
+
+| CPU Elevated | Memory Elevated | Mutex Elevated | Diagnosis |
+|---------|-----------|-----------|-----------|
+| Yes | No | No | Pure computation — optimize the algorithm |
+| No | Yes | No | GC pressure — reduce allocations |
+| No | No | Yes | Lock contention — reduce synchronized scope |
+| Yes | Yes | No | Computation creating temp objects — optimize both |
+| No | No | No | Off-CPU — check wall-clock profile for I/O waits |
+| Yes | No | Yes | Threads spinning while waiting — lock + CPU issue |
+
+### Usage examples
+
+**Example 1: Find the method behind a CPU alert**
+
+```bash
+bash scripts/bottleneck.sh --service bank-api-gateway
+# → CPU-BOUND: MainVerticle.fibonacci at 62% self-time
+```
+
+Metrics indicate high CPU. Profiling identifies `fibonacci()` as recursive O(2^n).
+
+**Example 2: Distinguish real bottlenecks from noise**
+
+```bash
+bash scripts/run.sh bottleneck
+```
+
+If all services report HEALTHY with slightly elevated latency, the cause is infrastructure
+(network, DNS, load balancer). If one service reports CPU-BOUND or LOCK-BOUND, investigate there.
+
+**Example 3: Prove a fix worked**
+
+```bash
+bash scripts/run.sh compare
+```
+
+The Before vs After dashboard shows the problematic frame eliminated and p99 latency dropped.
+
+**Example 4: Capacity planning from profile data**
+
+Services where application code dominates CPU (vs JVM internals) are candidates for code
+optimization. Services where JVM internals dominate may need more resources or JVM tuning.
+
+**Example 5: Onboarding new engineers**
+
+```bash
+bash scripts/run.sh top cpu            # what does each service spend CPU on?
+bash scripts/run.sh top memory         # what allocates the most?
+bash scripts/run.sh top mutex          # where are the locks?
+```
+
+### CLI quick reference
+
+| Command | What it does | When to use |
+|---------|-------------|-------------|
+| `bash scripts/run.sh bottleneck` | Automated root-cause per service | First response to any alert |
+| `bash scripts/run.sh diagnose` | Full diagnostic (health + HTTP + profiles + alerts) | Full incident report |
+| `bash scripts/run.sh top cpu` | Top CPU functions across all services | Identify CPU hotspots |
+| `bash scripts/run.sh top memory` | Top allocators | Investigate GC pressure |
+| `bash scripts/run.sh top mutex` | Top contended locks | Investigate lock contention |
+| `bash scripts/run.sh health` | JVM health check with thresholds | Quick health scan |
+| `bash scripts/run.sh compare` | Before/after load comparison | Verify a fix worked |
+| `bash scripts/diagnose.sh --json` | Machine-readable diagnostic | Pipe to alerting, Slack, Jira |
+
+### Production readiness checklist
+
+- [ ] Profiling overhead < 10% per service (`bash scripts/run.sh benchmark`)
+- [ ] `bottleneck` command works against the running stack
+- [ ] Alert rules are tuned for your SLOs (see `config/prometheus/alerts.yaml`)
+- [ ] Team knows the 30-second triage workflow (`bottleneck` → flame graph → fix)
+- [ ] Grafana dashboards are bookmarked and accessible during incidents
+- [ ] `diagnose --json` output is integrated with your incident tooling
+
+### CI/CD integration (TODO)
+
+- [ ] Baseline snapshot script — query Pyroscope API for per-service top-N function shares, save as `baseline/profiles.json`
+- [ ] Regression gate script — deploy new build, generate load, diff against baseline, fail pipeline if any function share increased > 20%
+- [ ] GitHub Actions workflow — deploy → load → snapshot → compare → upload artifacts
+- [ ] PR comment bot — post summary table when regressions detected
+
 ---
 
 ## Overhead and Cost

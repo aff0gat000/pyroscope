@@ -6,7 +6,7 @@ Hands-on scenarios for identifying performance issues using Pyroscope flame grap
 
 - Stack running with load generation active (`bash scripts/run.sh`).
 - Grafana accessible at `http://localhost:3000`.
-- For related documentation, see [dashboard-guide.md](dashboard-guide.md) and [mttr-guide.md](mttr-guide.md).
+- For related documentation, see [dashboard-guide.md](dashboard-guide.md) and [continuous-profiling-runbook.md](continuous-profiling-runbook.md).
 
 ## Scenario 1: CPU hotspot from a recursive algorithm
 

@@ -8,12 +8,12 @@ OpenShift, Docker Compose, TLS, air-gapped, and Ansible automation.
 
 ## Table of Contents
 
-- **Part 1: Decision Trees** -- [1. What are you deploying?](#1-what-are-you-deploying) | [2. Server mode](#2-pyroscope-server-mode) | [3. Grafana integration](#3-grafana-integration) | [4. Environment and method](#4-environment-and-deployment-method) | [5. Enterprise concerns](#5-enterprise-concerns) | [6. OpenShift Container Platform](#6-openshift-container-platform)
+- **Part 1: Decision Trees** -- [1. What are you deploying?](#1-what-are-you-deploying) | [2. Server mode](#2-pyroscope-server-mode) | [3. Grafana integration](#3-grafana-integration) | [4. Environment and method](#4-environment-and-deployment-method) | [5. Enterprise concerns](#5-enterprise-concerns) | [5b. FIPS compliance](#5b-fips-140-2--140-3-compliance-future) | [6. OpenShift Container Platform](#6-openshift-container-platform) | [7-tree. Hybrid topology](#7-tree-hybrid-topology-vm-pyroscope--ocp-agents)
 - **Part 2: Quick Reference** -- [6a. Monolith](#6a-monolith-quick-reference) | [6b. Microservices](#6b-microservices-quick-reference) | [6c. Sample apps](#6c-sample-apps-and-agent-instrumentation-quick-reference)
 - **Part 3: Pyroscope Server** -- [SSH config](#ssh-configuration) | [HTTP vs HTTPS config](#pyroscope-server-configuration-http-vs-https) | [7. Manual VM](#7-monolith-manual-vm-deployment) | [8. Bash script](#8-monolith-bash-script-on-vm) | [9. Ansible](#9-monolith-ansible-on-vm) | [10. K8s/OpenShift](#10-monolith-kubernetes-and-openshift) | [11. Local Compose](#11-monolith-local-docker-compose) | [12. Microservices](#12-microservices-mode)
 - **Part 4: Sample Apps** -- [13. Microservices demo](#13-microservices-demo-bank-app) | [14. FaaS runtime demo](#14-faas-runtime-demo)
 - **Part 5: Agent Instrumentation** -- [15. Agent instrumentation](#15-agent-instrumentation)
-- **Part 6: Reference** -- [16. TLS architecture](#16-tls-architecture) | [17. Port reference](#17-port-reference) | [18. Day-2 operations](#18-day-2-operations) | [19. File map](#19-file-map)
+- **Part 6: Reference** -- [16. TLS architecture](#16-tls-architecture) | [17. Port reference](#17-port-reference) | [17a-e. Firewall rules](#17a-firewall-rules-monolith-on-vm-http) | [18. Day-2 operations](#18-day-2-operations) | [19. File map](#19-file-map) | [20. Troubleshooting](#20-troubleshooting-no-data-in-pyroscope-ui)
 
 ---
 
@@ -144,6 +144,96 @@ graph TD
 | HTTPS CA certs | `--tls --tls-cert cert.pem --tls-key key.pem` | [Section 7d](#7d-https-with-ca-certs) |
 | Cross-platform (Mac ARM to Linux) | `--platform linux/amd64` | [DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) |
 
+### 5b. FIPS 140-2 / 140-3 compliance (future)
+
+If your organization requires FIPS-validated cryptographic modules, Pyroscope must be
+compiled with a FIPS-compliant crypto backend. The standard Go crypto library is **not**
+FIPS-validated.
+
+```mermaid
+graph TD
+    A{FIPS requirement?} -->|No| B["Use upstream image<br/>grafana/pyroscope:1.18.0"]
+    A -->|Yes| C{Build strategy?}
+
+    C -->|"Go BoringCrypto<br/>(most common)"| D["GOEXPERIMENT=boringcrypto<br/>Statically links BoringSSL"]
+    C -->|"Red Hat Go Toolset<br/>(OpenSSL-backed)"| E["ubi8/go-toolset base<br/>Links system OpenSSL via dlopen"]
+    C -->|"Go 1.24+ native<br/>(newest)"| F["GOFIPS140=latest<br/>Built-in validated module"]
+```
+
+| Strategy | Go version | Crypto backend | Image overhead | Notes |
+|----------|-----------|---------------|---------------|-------|
+| **BoringCrypto** | 1.19+ | BoringSSL (Google, FIPS 140-2 #4407) | ~8 MB larger binary | Most widely adopted; static linking |
+| **Red Hat Go Toolset** | RHEL-shipped | System OpenSSL (Red Hat, FIPS 140-2 #4282) | Requires UBI base | Dynamic linking; auto-FIPS when OS is in FIPS mode |
+| **Go native FIPS** | 1.24+ | Go stdlib FIPS module (140-3 pending) | Minimal | Newest; validation still in progress |
+
+#### Dockerfile: BoringCrypto build
+
+```dockerfile
+# Stage 1: Build Pyroscope from source with FIPS crypto
+FROM golang:1.22-bookworm AS builder
+ARG PYROSCOPE_VERSION=v1.18.0
+
+RUN git clone --depth 1 --branch ${PYROSCOPE_VERSION} \
+      https://github.com/grafana/pyroscope.git /src
+WORKDIR /src
+
+# Enable BoringCrypto — swaps Go crypto with FIPS-validated BoringSSL
+ENV GOEXPERIMENT=boringcrypto
+RUN go build -tags requires_cgo -o /pyroscope ./cmd/pyroscope
+
+# Stage 2: Minimal runtime
+FROM gcr.io/distroless/base-debian12:nonroot
+COPY --from=builder /pyroscope /usr/bin/pyroscope
+ENTRYPOINT ["/usr/bin/pyroscope"]
+```
+
+#### Dockerfile: Red Hat Go Toolset build (UBI)
+
+```dockerfile
+FROM registry.access.redhat.com/ubi8/go-toolset:1.21 AS builder
+ARG PYROSCOPE_VERSION=v1.18.0
+
+RUN git clone --depth 1 --branch ${PYROSCOPE_VERSION} \
+      https://github.com/grafana/pyroscope.git /tmp/src
+WORKDIR /tmp/src
+
+# Red Hat Go Toolset patches Go to use OpenSSL; FIPS mode inherited from OS
+RUN go build -o /tmp/pyroscope ./cmd/pyroscope
+
+FROM registry.access.redhat.com/ubi8/ubi-micro:latest
+COPY --from=builder /tmp/pyroscope /usr/bin/pyroscope
+USER 65534
+ENTRYPOINT ["/usr/bin/pyroscope"]
+```
+
+#### Verifying FIPS mode
+
+```bash
+# Check OCP cluster FIPS mode
+oc debug node/$(oc get nodes -o jsonpath='{.items[0].metadata.name}') \
+    -- chroot /host fips-mode-setup --check
+
+# Verify binary uses BoringCrypto (look for "boringcrypto" in symbols)
+go tool nm pyroscope | grep -i boring
+
+# Verify at runtime (Go BoringCrypto sets this)
+curl -s http://localhost:4040/debug/vars | grep -i fips
+```
+
+#### FIPS compliance layers
+
+| Layer | Responsible party | How |
+|-------|------------------|-----|
+| **OS / node crypto** | OCP cluster admin | Install OCP with `fips: true` in install-config.yaml |
+| **TLS termination** | OCP Route / Envoy | Inherits node OpenSSL (FIPS-validated on FIPS nodes) |
+| **Application binary** | Image builder | Compile with BoringCrypto or Red Hat Go Toolset |
+| **Storage at rest** | Storage admin | FIPS-validated encryption at storage class level |
+| **Pod-to-pod traffic** | Service mesh | OpenShift Service Mesh / Istio mTLS with FIPS crypto |
+
+> **Note:** FIPS compliance is a future consideration. The upstream `grafana/pyroscope` image
+> works correctly for non-FIPS deployments. Only build a custom FIPS image if your compliance
+> framework explicitly requires FIPS 140-2/3 validated crypto modules.
+
 ---
 
 ## 6. OpenShift Container Platform
@@ -190,6 +280,147 @@ graph TD
     A -->|External<br/>outside OCP| C["Datasource URL:<br/>https://ROUTE_HOSTNAME<br/>oc get route pyroscope -n PYROSCOPE_NS"]
     A -->|Not deployed yet| D["Use Pyroscope built-in UI:<br/>https://ROUTE_HOSTNAME"]
 ```
+
+---
+
+## 7-tree. Hybrid topology: VM Pyroscope + OCP agents
+
+For deployments where Pyroscope runs on a VM (outside OCP) and receives profiling data
+from Java agents running inside an OCP cluster, with Grafana and Prometheus on separate VMs.
+
+### Architecture diagram
+
+```mermaid
+graph TB
+    subgraph OCP["OCP 4.12 Cluster"]
+        subgraph NS["App Namespace"]
+            FaaS["Vert.x FaaS Pod<br/>Java agent → pyroscope.jar<br/>pushes to VM:4040"]
+        end
+    end
+
+    subgraph PyroVM["Pyroscope VM"]
+        P[":4040 Pyroscope<br/>monolith mode"]
+    end
+
+    subgraph GrafVM["Grafana VM"]
+        G[":3000 Grafana<br/>pyroscope datasource"]
+    end
+
+    subgraph PromVM["Prometheus VM"]
+        PR[":9090 Prometheus<br/>scrapes /metrics"]
+    end
+
+    FaaS -->|"HTTP POST /ingest<br/>TCP 4040"| P
+    G -->|"HTTP GET /querier.v1.*<br/>TCP 4040"| P
+    PR -->|"HTTP GET /metrics<br/>TCP 4040"| P
+    G -->|"PromQL queries<br/>TCP 9090"| PR
+```
+
+### Decision tree
+
+```mermaid
+graph TD
+    A{Where is Pyroscope?} -->|"VM (container)<br/>outside OCP"| B{Grafana location?}
+
+    B -->|"Separate VM<br/>(existing Grafana)"| C{Prometheus?}
+    B -->|"Same VM as Pyroscope"| D["Deploy full-stack on VM<br/>Section 7a"]
+
+    C -->|"Separate VM<br/>(existing Prometheus)"| E["1. Deploy Pyroscope on VM → Section 7b<br/>2. Add datasource to Grafana → Section 6a quick ref<br/>3. Add scrape target to Prometheus<br/>4. Configure agent in OCP pods → Section 15"]
+    C -->|No Prometheus| F["1. Deploy Pyroscope on VM → Section 7b<br/>2. Add datasource to Grafana → Section 6a quick ref<br/>3. Configure agent in OCP pods → Section 15"]
+```
+
+### Step-by-step: VM Pyroscope + OCP agents + existing Grafana/Prometheus
+
+**Phase 1 — Deploy Pyroscope on VM** (use [Section 7b](#7b-http-pyroscope-only) or [Section 8](#8-monolith-bash-script-on-vm)):
+
+```bash
+# On the Pyroscope VM
+docker run -d \
+    --name pyroscope \
+    --restart unless-stopped \
+    -p 4040:4040 \
+    -v pyroscope-data:/data \
+    grafana/pyroscope:1.18.0
+
+# Verify
+curl -s http://localhost:4040/ready
+# Expected: ready
+```
+
+**Phase 2 — Configure Java agent in OCP pods:**
+
+The agent JAR is already baked into your Vert.x FaaS image. Configure the server address
+to point to the Pyroscope VM. Use either a properties file or environment variable:
+
+*Option A: Properties file (baked into image during build)*
+```properties
+# pyroscope.properties
+pyroscope.server.address=http://PYROSCOPE_VM_IP:4040
+pyroscope.application.name=vertx-faas-server
+pyroscope.format=jfr
+pyroscope.labels=env=production,namespace=APP_NS
+pyroscope.log.level=info
+```
+
+*Option B: Environment variable in DeploymentConfig/Deployment*
+```yaml
+env:
+  - name: PYROSCOPE_SERVER_ADDRESS
+    value: "http://PYROSCOPE_VM_IP:4040"
+  - name: PYROSCOPE_APPLICATION_NAME
+    value: "vertx-faas-server"
+  - name: PYROSCOPE_LOG_LEVEL
+    value: "info"
+```
+
+> **Key:** Replace `PYROSCOPE_VM_IP` with the actual IP or hostname of the Pyroscope VM
+> reachable from OCP worker nodes.
+
+**Phase 3 — Add Pyroscope datasource to existing Grafana:**
+
+```bash
+# On the Grafana VM — add via API
+curl -s -X POST http://localhost:3000/api/datasources \
+    -H "Content-Type: application/json" \
+    -H "Authorization: Bearer YOUR_GRAFANA_API_KEY" \
+    -d '{
+      "name": "Pyroscope",
+      "type": "grafana-pyroscope-datasource",
+      "uid": "pyroscope-ds",
+      "access": "proxy",
+      "url": "http://PYROSCOPE_VM_IP:4040",
+      "isDefault": false
+    }'
+```
+
+Or via provisioning file (copy to Grafana's provisioning/datasources/ directory):
+```yaml
+apiVersion: 1
+datasources:
+  - name: Pyroscope
+    type: grafana-pyroscope-datasource
+    uid: pyroscope-ds
+    access: proxy
+    url: http://PYROSCOPE_VM_IP:4040
+    isDefault: false
+    editable: true
+```
+
+**Phase 4 — Add Pyroscope scrape target to existing Prometheus:**
+
+Add to your `prometheus.yml`:
+```yaml
+scrape_configs:
+  - job_name: "pyroscope"
+    static_configs:
+      - targets: ["PYROSCOPE_VM_IP:4040"]
+```
+
+Reload Prometheus: `curl -X POST http://localhost:9090/-/reload`
+
+### Firewall rules for this topology
+
+See [Section 17: Port reference](#17-port-reference) for the complete firewall matrix.
 
 ---
 
@@ -1327,6 +1558,144 @@ graph LR
 | Stream Service | :8087 | `stream` |
 | FaaS Server | :8088 | `faas` |
 
+### 17a. Firewall rules: Monolith on VM (HTTP)
+
+Minimum rules for Pyroscope monolith on a VM receiving data from external agents.
+
+**Pyroscope VM — Ingress (inbound)**
+
+| Source | Port | Protocol | Purpose |
+|--------|------|----------|---------|
+| OCP worker nodes (agent pods) | TCP 4040 | HTTP | Agent push (`POST /ingest`) |
+| Grafana VM | TCP 4040 | HTTP | Datasource queries (`/querier.v1.*`) |
+| Prometheus VM | TCP 4040 | HTTP | Metrics scrape (`GET /metrics`) |
+| Admin workstation | TCP 4040 | HTTP | Pyroscope UI and `GET /ready` health check |
+
+**Pyroscope VM — Egress (outbound)**
+
+| Destination | Port | Protocol | Purpose |
+|-------------|------|----------|---------|
+| DNS server | TCP/UDP 53 | DNS | Container image pulls, hostname resolution |
+| Docker registry | TCP 443 | HTTPS | Image pulls (if not air-gapped) |
+
+> **No outbound connectivity to OCP is needed.** Agents push to Pyroscope (inbound);
+> Pyroscope never initiates connections to agents.
+
+**OCP cluster — Egress (outbound from pods)**
+
+| Destination | Port | Protocol | Purpose |
+|-------------|------|----------|---------|
+| Pyroscope VM | TCP 4040 | HTTP | Java agent push (`POST /ingest` every 10s) |
+
+> **OCP NetworkPolicy / EgressNetworkPolicy:** If your OCP project has a default-deny
+> egress policy, add an EgressNetworkPolicy or NetworkPolicy allowing TCP 4040 to
+> the Pyroscope VM IP.
+
+**Grafana VM — Egress (outbound)**
+
+| Destination | Port | Protocol | Purpose |
+|-------------|------|----------|---------|
+| Pyroscope VM | TCP 4040 | HTTP | Datasource queries (on-demand, user-driven) |
+
+**Prometheus VM — Egress (outbound)**
+
+| Destination | Port | Protocol | Purpose |
+|-------------|------|----------|---------|
+| Pyroscope VM | TCP 4040 | HTTP | Metrics scrape (every 15-30s, configurable) |
+
+### 17b. Firewall rules: Monolith on VM (HTTPS with Envoy)
+
+Same as 17a but replace port 4040 with port 4443 for all external traffic.
+Envoy terminates TLS and forwards to Pyroscope on `127.0.0.1:4040` internally.
+
+| Source | Port | Protocol | Purpose |
+|--------|------|----------|---------|
+| OCP worker nodes | TCP 4443 | HTTPS | Agent push |
+| Grafana VM | TCP 4443 | HTTPS | Datasource queries |
+| Prometheus VM | TCP 4443 | HTTPS | Metrics scrape |
+| Admin workstation | TCP 4443 | HTTPS | Pyroscope UI |
+
+### 17c. Firewall rules: Monolith on OCP (Helm chart)
+
+When Pyroscope runs inside OCP, traffic stays within the cluster network.
+
+**Intra-cluster (covered by OCP SDN, no firewall rules needed)**
+
+| Source | Destination | Port | Purpose |
+|--------|-------------|------|---------|
+| App pods (same namespace) | Pyroscope pod | TCP 4040 | Agent push |
+| Grafana pod (same/different namespace) | Pyroscope pod | TCP 4040 | Datasource queries |
+| Prometheus pod | Pyroscope pod | TCP 4040 | Metrics scrape |
+
+**External access (if Route is enabled)**
+
+| Source | Destination | Port | Purpose |
+|--------|-------------|------|---------|
+| External Grafana | OCP Route | TCP 443 | Datasource queries via Route |
+| Admin browser | OCP Route | TCP 443 | Pyroscope UI |
+
+> **NetworkPolicy:** If enabled in the Helm chart (`networkPolicy.enabled: true`), only
+> pods in the same namespace and explicitly listed namespaces can reach port 4040.
+
+### 17d. Firewall rules: Microservices mode (OCP/K8s)
+
+All inter-component traffic is intra-cluster. External rules same as 17c.
+
+**Intra-cluster (between Pyroscope components)**
+
+| Source | Destination | Port | Protocol | Purpose |
+|--------|-------------|------|----------|---------|
+| All components | Ingester headless service | TCP 7946 | Memberlist gossip | Hash ring coordination |
+| All components | Ingester headless service | UDP 7946 | Memberlist gossip | Ring state propagation |
+| Distributor | Ingester | TCP 4040 | HTTP | Profile write path |
+| Querier | Store-gateway | TCP 4040 | HTTP | Profile read path |
+| Querier | Ingester | TCP 4040 | HTTP | Recent profile read |
+| Query-frontend | Query-scheduler | TCP 4040 | HTTP | Query scheduling |
+| Query-scheduler | Querier | TCP 4040 | HTTP | Query dispatch |
+
+**External (agent push and Grafana query)**
+
+| Source | Destination | Port | Purpose |
+|--------|-------------|------|---------|
+| App pods | Distributor service | TCP 4040 | Agent push (`POST /ingest`) |
+| Grafana | Query-frontend service | TCP 4040 | Datasource queries |
+| Prometheus | Any component | TCP 4040 | Metrics scrape (`GET /metrics`) |
+
+### 17e. Firewall rules: Hybrid (VM Pyroscope + OCP agents)
+
+This is the [Tree 7](#7-tree-hybrid-topology-vm-pyroscope--ocp-agents) topology.
+
+```
+┌────────────────────────────┐
+│       OCP 4.12 Cluster     │
+│  ┌──────────────────────┐  │         ┌──────────────────┐
+│  │  Vert.x FaaS Pod     │  │         │  Pyroscope VM    │
+│  │  java agent ──────────│──│── 4040 →│  :4040 monolith  │
+│  └──────────────────────┘  │         └────────┬─────────┘
+│                            │                  │
+└────────────────────────────┘            4040 ↑│↑ 4040
+                                              │││
+                              ┌───────────────┘│└──────────────┐
+                              │                │               │
+                     ┌────────┴───────┐ ┌──────┴─────┐ ┌──────┴──────┐
+                     │ Grafana VM     │ │Prometheus  │ │ Admin       │
+                     │ :3000 → query  │ │VM :9090    │ │ browser     │
+                     └────────────────┘ │scrape      │ └─────────────┘
+                                        └────────────┘
+```
+
+**Summary: only TCP 4040 needs to be open on the Pyroscope VM from these sources:**
+
+| # | Source | Destination | Port | Direction | Purpose |
+|---|--------|-------------|------|-----------|---------|
+| 1 | OCP worker nodes | Pyroscope VM | TCP 4040 | Ingress on VM | Agent push (every 10s per pod) |
+| 2 | Grafana VM | Pyroscope VM | TCP 4040 | Ingress on VM | Datasource queries |
+| 3 | Prometheus VM | Pyroscope VM | TCP 4040 | Ingress on VM | Metrics scrape |
+| 4 | OCP app pods | Pyroscope VM IP | TCP 4040 | Egress from OCP | Same as #1, from OCP perspective |
+
+> **That's it — port 4040 is the only port needed for monolith mode.**
+> No gRPC (9095), no memberlist (7946), no embedded Grafana (4041).
+
 ---
 
 ## 18. Day-2 operations
@@ -1534,5 +1903,199 @@ docker start pyroscope
 | [docs/grafana-setup.md](grafana-setup.md) | Grafana configuration details |
 | [docs/dashboard-guide.md](dashboard-guide.md) | Dashboard usage guide |
 | [docs/reading-flame-graphs.md](reading-flame-graphs.md) | Flame graph interpretation |
-| [docs/architecture.md](architecture.md) | System architecture |
+| [README.md](../README.md) | System architecture, data flow, service catalog |
 | [docs/endpoint-reference.md](endpoint-reference.md) | API endpoint reference |
+
+---
+
+## 20. Troubleshooting: No data in Pyroscope UI
+
+If you have deployed Pyroscope and configured the Java agent but see no profiling data
+in the Pyroscope UI or Grafana, work through these steps in order.
+
+### Step 1: Is Pyroscope server running and healthy?
+
+```bash
+# From the Pyroscope VM (or any machine that can reach it)
+curl -sv http://PYROSCOPE_VM_IP:4040/ready
+```
+
+**Expected:** HTTP 200 with body `ready`
+
+If this fails:
+- Check the container is running: `docker ps | grep pyroscope`
+- Check container logs: `docker logs pyroscope`
+- Check the VM firewall allows inbound TCP 4040: `ss -tlnp | grep 4040`
+- Check `iptables` / `firewalld` rules: `firewall-cmd --list-ports` or `iptables -L -n | grep 4040`
+
+### Step 2: Can OCP pods reach Pyroscope?
+
+```bash
+# From inside an OCP pod (exec into the Vert.x FaaS pod)
+oc exec -it <pod-name> -n <namespace> -- curl -sv http://PYROSCOPE_VM_IP:4040/ready
+
+# If curl is not in the image, use nc:
+oc exec -it <pod-name> -n <namespace> -- nc -zv PYROSCOPE_VM_IP 4040
+
+# Or start a debug pod:
+oc run debug-net --rm -it --image=registry.access.redhat.com/ubi8/ubi-minimal \
+    -- curl -sv http://PYROSCOPE_VM_IP:4040/ready
+```
+
+**If this fails, traffic is blocked.** Check:
+
+1. **OCP egress rules:** Does the project have an EgressNetworkPolicy or NetworkPolicy
+   restricting outbound traffic?
+   ```bash
+   oc get egressnetworkpolicy -n <namespace>
+   oc get networkpolicy -n <namespace>
+   ```
+
+2. **OCP egress firewall (OVN-Kubernetes):**
+   ```bash
+   oc get egressfirewall -n <namespace>
+   ```
+
+3. **Corporate firewall / network appliance** between OCP and the VM subnet — this is
+   the most common blocker in enterprise environments. Work with your network team to
+   allow TCP 4040 from OCP worker node IPs to the Pyroscope VM.
+
+4. **Proxy settings:** If OCP routes external traffic through an HTTP proxy, the agent's
+   HTTP POST to the VM may be going through the proxy. Check `HTTP_PROXY` / `NO_PROXY`
+   env vars in the pod.
+
+### Step 3: Is the Java agent loaded?
+
+```bash
+# Check pod logs for agent startup messages
+oc logs <pod-name> -n <namespace> | grep -i "pyroscope\|async-profiler"
+```
+
+**Expected:** You should see lines like:
+```
+[pyroscope] INFO  io.pyroscope.javaagent.PyroscopeAgent - starting profiling...
+[pyroscope] INFO  io.pyroscope.javaagent.PyroscopeAgent - server address: http://...
+```
+
+If no agent messages appear:
+- Verify `JAVA_TOOL_OPTIONS` includes `-javaagent:/path/to/pyroscope.jar`
+- Verify the JAR exists at that path inside the container:
+  ```bash
+  oc exec <pod-name> -n <namespace> -- ls -la /path/to/pyroscope.jar
+  ```
+- Check if another agent or JVM flag is overriding `JAVA_TOOL_OPTIONS`
+
+### Step 4: Is the agent sending data?
+
+Enable debug logging to see push attempts:
+
+```bash
+# In the pod's environment (Deployment or properties file)
+PYROSCOPE_LOG_LEVEL=debug
+# or in pyroscope.properties:
+pyroscope.log.level=debug
+```
+
+Then check logs for:
+```bash
+oc logs <pod-name> -n <namespace> | grep -i "upload\|ingest\|push\|error\|fail"
+```
+
+**Look for:**
+- `uploaded profile` — agent is successfully sending data
+- `connection refused` — Pyroscope is unreachable (Step 2)
+- `timeout` — network latency or firewall silently dropping packets
+- `401` / `403` — authentication issue (if basic auth / tenant ID configured)
+
+### Step 5: Is the server address correct?
+
+```bash
+# Check what address the agent is configured with
+oc exec <pod-name> -n <namespace> -- env | grep -i pyroscope
+
+# If using a properties file:
+oc exec <pod-name> -n <namespace> -- cat /path/to/pyroscope.properties
+```
+
+Common mistakes:
+- Using `localhost:4040` (only works if Pyroscope is in the same pod)
+- Using a Kubernetes service DNS name for a VM-based Pyroscope (e.g., `pyroscope.monitoring.svc`)
+- Wrong IP/hostname for the Pyroscope VM
+- Missing port number (agent defaults to `http://localhost:4040`)
+
+### Step 6: Is Pyroscope receiving the data?
+
+```bash
+# On the Pyroscope VM — check if any application names exist
+curl -s 'http://localhost:4040/pyroscope/label-values?label=service_name'
+
+# Or check the /ingest endpoint with verbose logging
+docker logs pyroscope 2>&1 | grep -i "ingest\|error\|warn"
+
+# Check the Pyroscope config
+curl -s http://localhost:4040/config
+```
+
+If applications appear in the label-values response but not in the UI:
+- Check the **time range** in the UI — profiles only appear after the agent has been
+  running for at least one upload interval (default 10 seconds)
+- Check the **application name** filter matches what the agent sends
+
+### Step 7: Can Grafana reach Pyroscope?
+
+```bash
+# From the Grafana VM
+curl -sv http://PYROSCOPE_VM_IP:4040/ready
+
+# Test a query (same as Grafana datasource would)
+curl -s -X POST http://PYROSCOPE_VM_IP:4040/querier.v1.QuerierService/ProfileTypes \
+    -H "Content-Type: application/json" \
+    -d '{}'
+```
+
+In Grafana:
+- Go to **Connections → Data sources → Pyroscope → Test**
+- If "Data source is working" appears, Grafana can reach Pyroscope
+- Check the datasource URL matches `http://PYROSCOPE_VM_IP:4040`
+
+### Quick diagnostic script
+
+Run this from a machine with access to all components:
+
+```bash
+#!/bin/bash
+PYROSCOPE_HOST="PYROSCOPE_VM_IP"
+PYROSCOPE_PORT=4040
+
+echo "=== 1. Pyroscope server ==="
+curl -sf http://${PYROSCOPE_HOST}:${PYROSCOPE_PORT}/ready && echo " OK" || echo " FAIL"
+
+echo "=== 2. Known applications ==="
+curl -sf "http://${PYROSCOPE_HOST}:${PYROSCOPE_PORT}/pyroscope/label-values?label=service_name"
+echo
+
+echo "=== 3. Profile types ==="
+curl -sf -X POST "http://${PYROSCOPE_HOST}:${PYROSCOPE_PORT}/querier.v1.QuerierService/ProfileTypes" \
+    -H "Content-Type: application/json" -d '{}'
+echo
+
+echo "=== 4. Port listening ==="
+nc -zv ${PYROSCOPE_HOST} ${PYROSCOPE_PORT} 2>&1
+
+echo "=== 5. Pyroscope container logs (last 20 lines) ==="
+# Run this on the Pyroscope VM:
+# docker logs --tail 20 pyroscope
+```
+
+### Common root causes summary
+
+| Symptom | Likely cause | Fix |
+|---------|-------------|-----|
+| `curl: connection refused` from OCP pod | Firewall blocking TCP 4040 | Open firewall from OCP worker nodes to VM:4040 |
+| `curl: connection timed out` from OCP pod | Silent drop by firewall/ACL | Same as above; check corporate firewall |
+| Agent logs show no pyroscope messages | Agent JAR not loaded | Verify `-javaagent` in `JAVA_TOOL_OPTIONS` |
+| Agent logs show `connection refused` | Wrong address or server down | Fix `PYROSCOPE_SERVER_ADDRESS`; verify server running |
+| Server running, label-values returns `[]` | Agent not pushing (or pushing to wrong address) | Enable `PYROSCOPE_LOG_LEVEL=debug` on agent |
+| Label-values returns apps, UI shows no data | Wrong time range in UI | Select "Last 15 minutes" and refresh |
+| Grafana "No data" | Datasource URL wrong | Test datasource in Grafana settings |
+| Grafana "Plugin not found" | Pyroscope datasource plugin not installed | Install `grafana-pyroscope-datasource` plugin |

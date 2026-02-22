@@ -63,6 +63,36 @@ All 9 services are built from the **same Docker image**. The `VERTICLE` environm
 
 Each service has deliberately different CPU, memory, and lock characteristics so flame graphs show distinct patterns when compared side by side.
 
+### Observability Data Flow
+
+Three telemetry pipelines run simultaneously with zero code changes:
+
+```mermaid
+flowchart LR
+    subgraph jvm["Each JVM"]
+        APP["Vert.x Service\n:8080"]
+        PA["Pyroscope Agent\n-javaagent"]
+        JMX["JMX Exporter\n:9404"]
+        APP -.- PA
+    end
+
+    PY["Pyroscope\n:4040"]
+    PR["Prometheus\n:9090"]
+    GF["Grafana\n:3000"]
+
+    PA -->|"push profiles\nevery 10s"| PY
+    PR -->|"scrape :8080/metrics"| APP
+    PR -->|"scrape :9404"| JMX
+    PY --> GF
+    PR --> GF
+```
+
+| Pipeline | Agent | Transport | What It Captures |
+|----------|-------|-----------|-----------------|
+| **Continuous Profiling** | Pyroscope Java agent | Push to Pyroscope :4040 | CPU, allocation, mutex, wall clock flame graphs |
+| **JVM Metrics** | JMX Exporter on :9404 | Prometheus scrape | Heap, GC, threads, CPU, classloading, file descriptors |
+| **HTTP Metrics** | Vert.x Micrometer on :8080/metrics | Prometheus scrape | Request rate, latency percentiles, status codes |
+
 ### Service Endpoints
 
 <details>
@@ -219,7 +249,7 @@ bash scripts/run.sh bottleneck --json   # machine-readable for alerting pipeline
 
 The default full pipeline runs in **quiet mode**: each stage shows a single-line spinner with elapsed time, and on completion prints a "Ready" banner with Grafana/Pyroscope URLs. Use `--verbose` for full inline output or `--log-dir DIR` to persist stage logs to disk.
 
-See [docs/pipeline.md](docs/pipeline.md) for details on each stage.
+See `bash scripts/run.sh --help` for details on each stage.
 
 ### Option 1: Bash scripts (individual)
 
@@ -296,7 +326,7 @@ See [docs/INDEX.md](docs/INDEX.md) for a full documentation map with learning pa
 
 | Document | Audience | Description |
 |----------|----------|-------------|
-| [docs/demo-guide.md](docs/demo-guide.md) | Everyone | Overview of the problem, solution, and what this project demonstrates |
+| [docs/continuous-profiling-runbook.md](docs/continuous-profiling-runbook.md) | Everyone | What continuous profiling is, deployment, agent setup, MTTR reduction |
 | [docs/demo-runbook.md](docs/demo-runbook.md) | Presenters | Step-by-step demo agenda with commands and talking points (20-25 min) |
 | [docs/reading-flame-graphs.md](docs/reading-flame-graphs.md) | Everyone | How to read flame graphs, terminology, and common patterns |
 
@@ -315,9 +345,8 @@ See [docs/INDEX.md](docs/INDEX.md) for a full documentation map with learning pa
 |----------|----------|-------------|
 | [docs/function-reference.md](docs/function-reference.md) | Engineers | BOR function API reference (triage, diff report, fleet search) |
 | [docs/function-architecture.md](docs/function-architecture.md) | Engineers | Project structure, design patterns, and Gradle build setup |
-| [docs/profiling-functions-phase1.md](docs/profiling-functions-phase1.md) | Engineers | Phase 1 functions — 3 BOR + 1 SOR, no database |
-| [docs/profiling-functions-phase2.md](docs/profiling-functions-phase2.md) | Engineers | Phase 2 functions — v2 BORs + 4 PostgreSQL-backed SORs |
-| [docs/production-questionnaire.md](docs/production-questionnaire.md) | Architects | Production onboarding questionnaires (Phase 1 + Phase 2) |
+| [docs/production-questionnaire-phase1.md](docs/production-questionnaire-phase1.md) | Architects | Production onboarding questionnaire — Phase 1 |
+| [docs/production-questionnaire-phase2.md](docs/production-questionnaire-phase2.md) | Architects | Production onboarding questionnaire — Phase 2 |
 
 ### Deployment and Operations
 
@@ -325,20 +354,15 @@ See [docs/INDEX.md](docs/INDEX.md) for a full documentation map with learning pa
 |----------|----------|-------------|
 | [docs/continuous-profiling-runbook.md](docs/continuous-profiling-runbook.md) | SREs | Deploying Pyroscope, agent configuration, Grafana setup |
 | [docs/grafana-setup.md](docs/grafana-setup.md) | SREs | Connecting Grafana to Pyroscope via provisioning files |
-| [docs/monolithic-deployment-guide.md](docs/monolithic-deployment-guide.md) | SREs | Pyroscope monolithic deployment mind map and decision guide |
+| [docs/deployment-guide.md](docs/deployment-guide.md) | SREs | Deployment decision trees, step-by-step guides, firewall rules |
 | [docs/runbook.md](docs/runbook.md) | On-call | Incident response playbooks, operational procedures |
-| [docs/mttr-guide.md](docs/mttr-guide.md) | Managers/SREs | MTTR reduction workflow, bottleneck decision matrix |
 
 ### Reference and Strategy
 
 | Document | Audience | Description |
 |----------|----------|-------------|
-| [docs/architecture.md](docs/architecture.md) | Architects | Service topology, data flow, JVM agent configuration |
-| [docs/continuous-profiling-rfc.md](docs/continuous-profiling-rfc.md) | Leadership | RFC for adopting continuous profiling with Grafana Pyroscope |
 | [docs/faas-server.md](docs/faas-server.md) | Engineers | FaaS runtime with deploy/undeploy lifecycle profiling |
 | [docs/endpoint-reference.md](docs/endpoint-reference.md) | Engineers | Complete endpoint list with curl examples |
-| [docs/pipeline.md](docs/pipeline.md) | Engineers | Pipeline stages, data flow, and configuration |
-| [docs/ai-profiling-roadmap.md](docs/ai-profiling-roadmap.md) | Leadership | Roadmap for AI/ML integration with profiling data |
 
 ## Project Structure
 
@@ -389,17 +413,15 @@ pyroscope/
 │       └── pyroscope.yaml           # Pyroscope server config
 │
 ├── deploy/
-│   ├── monolithic/                  # Single-node Pyroscope server (VM/EC2)
-│   ├── grafana/                     # Standalone Grafana image build
-│   ├── observability/               # Unified Pyroscope + Grafana deployment
+│   ├── monolith/                    # Single-node Pyroscope server (VM/EC2)
 │   │   ├── deploy.sh               # Bash: VM, local, K8s, OpenShift
-│   │   ├── ansible/                # Ansible role + playbooks (same functionality)
-│   │   └── README.md               # Modes, targets, quick start
+│   │   └── ansible/                # Ansible role + playbooks
+│   ├── grafana/                     # Standalone Grafana image build
+│   ├── helm/pyroscope/              # Unified Helm chart (monolith + microservices, K8s + OCP)
 │   └── microservices/               # Distributed Pyroscope deployment
-│       ├── vm/                      # Docker Compose + NFS (for VMs/EC2)
-│       └── openshift/               # Helm chart (for OpenShift 4.x)
+│       └── vm/                      # Docker Compose + NFS (for VMs/EC2)
 │
-├── docs/                            # 25 guides — see docs/INDEX.md
+├── docs/                            # see docs/INDEX.md
 │
 ├── postman/                         # Postman collection + environment
 │

@@ -26,20 +26,20 @@ Step-by-step instructions for running the continuous profiling demo. ~20-25 minu
 
 ## Part 1 — The problem (3 min)
 
-Reference: [demo-guide.md](demo-guide.md), "The Problem" and "What existing tools miss."
+Reference: [continuous-profiling-runbook.md](continuous-profiling-runbook.md), "The Problem" and "What existing tools miss."
 
 Cover:
 - Production incidents follow a predictable cycle: alert → metrics → logs → traces → guess → redeploy → repeat. Takes 30-90 min.
 - Metrics show *what* is wrong (CPU at 85%). Logs show events. Traces show which service. None show *which function*.
 - That gap between symptom and root cause is where all the time goes.
 
-Use the comparison table from demo-guide.md to show what each tool misses.
+Use the comparison table from continuous-profiling-runbook.md to show what each tool misses.
 
 ---
 
 ## Part 2 — The solution (2 min)
 
-Reference: [demo-guide.md](demo-guide.md), "The Solution: Continuous Profiling."
+Reference: [continuous-profiling-runbook.md](continuous-profiling-runbook.md), "The Solution: Continuous Profiling."
 
 Cover:
 - Continuous profiling samples what every thread is doing and records it continuously.
@@ -173,7 +173,7 @@ bash scripts/run.sh teardown
 
 ## Part 4 — Cost and next steps (2 min)
 
-Reference: [demo-guide.md](demo-guide.md), "Cost of Implementation" and "Outcomes and Use Cases."
+Reference: [continuous-profiling-runbook.md](continuous-profiling-runbook.md), "Cost of Implementation" and "Outcomes and Use Cases."
 
 | Profile Type | CPU Overhead |
 |-------------|-------------|
@@ -258,11 +258,11 @@ bash scripts/run.sh health
 
 | Audience | Document |
 |----------|----------|
-| Everyone (start here) | [demo-guide.md](demo-guide.md) |
+| Everyone (start here) | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) |
 | Hands-on exercises | [profiling-scenarios.md](profiling-scenarios.md) |
 | Implementation guide | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) |
 | Copy-paste queries | [sample-queries.md](sample-queries.md) |
 | Dashboard reference | [dashboard-guide.md](dashboard-guide.md) |
 | Code ↔ flame graph mapping | [code-to-profiling-guide.md](code-to-profiling-guide.md) |
-| MTTR reduction | [mttr-guide.md](mttr-guide.md) |
-| Architecture | [architecture.md](architecture.md) |
+| MTTR reduction | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) |
+| Architecture | [README.md](../README.md) |
