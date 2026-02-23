@@ -297,7 +297,7 @@ gantt
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|------|:----------:|:------:|------------|
 | R1 | VM provisioning delayed beyond 2 weeks | Medium | High — blocks Epics 2-4 | Submit request on day 1, escalate after 1 week, have backup VM identified |
-| R2 | Firewall rule request delayed or denied | Medium | High — no profiles ingested | Include network diagram and port justification with request, reference [architecture-guide.md § Network boundaries](architecture-guide.md) |
+| R2 | Firewall rule request delayed or denied | Medium | High — no profiles ingested | Include network diagram and port justification with request, reference [architecture.md § Network boundaries](architecture.md) |
 | R3 | OCP namespace access restricted | Low | Medium — blocks agent + function deployment | Engage OCP team early, request matches existing FaaS server namespace |
 | R4 | Java agent causes performance regression | Low | High — rollback required | Agent overhead is 3-8% CPU, 20-40 MB memory (bounded). Deploy to non-prod first, monitor for 48h before production |
 | R5 | Pyroscope disk fills up | Low | Medium — ingestion stops | Default retention is 24h. 100 GB supports ~20 services. Monitor with Prometheus `pyroscope_storage_*` metrics |
@@ -360,7 +360,7 @@ gain new capabilities, and 4 new SOR endpoints are added.
 | Document | Use |
 |----------|-----|
 | [deployment-guide.md](deployment-guide.md) | Step-by-step server and agent deployment |
-| [architecture-guide.md](architecture-guide.md) | Topology diagrams and port matrix |
+| [architecture.md](architecture.md) | Topology diagrams and port matrix |
 | [function-reference.md](function-reference.md) | BOR/SOR API reference |
 | [function-architecture.md](function-architecture.md) | Project structure and build commands |
 | [production-questionnaire-phase1.md](production-questionnaire-phase1.md) | Volume estimates and deployment config |

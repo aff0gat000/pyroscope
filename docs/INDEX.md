@@ -71,7 +71,7 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 
 | Document | Description |
 |----------|-------------|
-| [architecture-guide.md](architecture-guide.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
+| [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
 | [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint |
 | [pyroscope-study-guide.md](pyroscope-study-guide.md) | Expert mastery — internals, operations, competitive analysis, talking points |
 
@@ -126,7 +126,7 @@ Infrastructure-level READMEs for operators.
 
 1. [project-plan-phase1.md](project-plan-phase1.md) — project plan with prerequisites and milestones
 2. [deployment-guide.md](deployment-guide.md) — choose deployment mode (decision trees 1-7)
-3. [architecture-guide.md](architecture-guide.md) — understand topology and port requirements
+3. [architecture.md](architecture.md) — understand topology and port requirements
 4. [troubleshooting.md](troubleshooting.md) — diagnose issues
 5. [runbook.md](runbook.md) — incident response procedures
 

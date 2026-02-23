@@ -4,7 +4,7 @@ Ansible role for deploying Pyroscope continuous profiling with Grafana on enterp
 
 Supports the same deployment stages as `deploy.sh`: Standalone HTTP, Standalone HTTPS (self-signed), and Enterprise-Integrated HTTPS (CA certs). Works for single-host and multi-host deployments — same playbook, just change the inventory.
 
-For detailed decision flowcharts, see the [Deployment Decision Guide](../../../docs/observability-deployment-guide.md).
+For detailed decision flowcharts, see the [Deployment Guide](../../../docs/deployment-guide.md).
 
 ## Prerequisites
 

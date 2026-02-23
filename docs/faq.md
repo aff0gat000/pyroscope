@@ -102,7 +102,7 @@ changes are needed — the agent attaches via `JAVA_TOOL_OPTIONS`.
 | **Monolith** | Single process | Up to ~100 services, simplest to operate |
 | **Microservices** | 7 components (distributor, ingester, querier, query-frontend, query-scheduler, compactor, store-gateway) | 100+ services, need HA, horizontal scaling |
 
-> **Architecture details:** [architecture-guide.md](architecture-guide.md)
+> **Architecture details:** [architecture.md](architecture.md)
 > **Decision trees:** [deployment-guide.md](deployment-guide.md)
 
 ### What are BOR and SOR functions?
@@ -154,7 +154,7 @@ or any application data. It records *which* function was executing, not *what* i
 | 9095 | gRPC | Inter-component communication | Microservices only |
 | 7946 | TCP+UDP | Memberlist gossip | Microservices only |
 
-> **Full port matrix:** [architecture-guide.md § 7](architecture-guide.md)
+> **Full port matrix:** [architecture.md § 7](architecture.md)
 > **Firewall rules:** [deployment-guide.md § 17](deployment-guide.md)
 
 ### Is Pyroscope FIPS 140-2 compliant?
@@ -331,7 +331,7 @@ Secondary returns include:
 |----------|-------------|
 | [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview and business case |
 | [reading-flame-graphs.md](reading-flame-graphs.md) | How to read flame graphs |
-| [architecture-guide.md](architecture-guide.md) | Component internals and topology diagrams |
+| [architecture.md](architecture.md) | Component internals and topology diagrams |
 | [deployment-guide.md](deployment-guide.md) | Step-by-step deployment with decision trees |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan and timeline |
 | [function-reference.md](function-reference.md) | BOR/SOR API reference |
