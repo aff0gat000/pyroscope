@@ -8,59 +8,97 @@ Proposed
 
 2026-02-23
 
-## Context
+---
 
-We need continuous profiling for Java services (Vert.x FaaS) running on OpenShift
-Container Platform (OCP) 4.12. The profiling platform must:
+## 1. Initiative Description
 
-- Collect CPU, allocation, lock, and wall-clock profiles from JVM applications on OCP
-- Use the Pyroscope Java agent (JFR-based) attached via `JAVA_TOOL_OPTIONS` — no code changes
-- Store profiling data on infrastructure we control (no SaaS, no data leaving the network)
-- Integrate with existing Grafana (separate VM) for visualization and flame graph rendering
-- Integrate with existing Prometheus (separate VM) for Pyroscope server health metrics
-- Operate within enterprise change management controls (approval cycles, firewall requests)
-- Start with minimal infrastructure and scale later if needed
-- Cost $0 in software licensing
+Deploy a continuous profiling platform for Java services (Vert.x FaaS) running on
+OpenShift Container Platform (OCP) 4.12. The platform will use Grafana Pyroscope
+(open source, AGPL-3.0) to collect function-level performance data from JVM applications
+in production, enabling engineers to identify CPU hotspots, memory allocation issues,
+and lock contention without code changes or ad-hoc debugging sessions.
 
-The Java agent is embedded in the OCP pod container images. It samples every 10ms using
-JFR, aggregates locally, and pushes compressed profiles to the Pyroscope server via HTTP
-POST every 10 seconds. Agent overhead is 3-8% CPU and 20-40 MB memory per pod.
+The initiative is phased:
 
-We evaluated three deployment options for the Pyroscope server:
+| Phase | Scope | Infrastructure |
+|-------|-------|---------------|
+| **Phase 1** | Pyroscope monolith on VM, Java agent on OCP pods, 3 BOR + 1 SOR analysis functions | 1 VM, existing OCP cluster |
+| **Phase 2** | PostgreSQL-backed SORs, v2 BOR functions, optional microservices mode | + PostgreSQL instance, optional OCP namespace |
 
-### Option A — Monolith on VM (Docker container)
+---
 
-Single Pyroscope process on a dedicated VM. All components (ingester, querier, compactor)
-run in one process. Data stored on local Docker volume.
+## 2. Business Case and Expected Outcomes
 
-- **Pros:** Simplest to deploy and operate. Single container, single config file. No shared
-  storage, no memberlist gossip, no inter-component networking. Fits within existing VM
-  provisioning process. Can be deployed in 1-2 hours once the VM is ready.
-- **Cons:** Vertical scaling only. Single point of failure. Capacity ceiling of ~100
-  profiled services before performance degrades.
+### Problem
 
-### Option B — Microservices on OCP
+When a performance incident occurs, engineers currently:
+1. Receive an alert from Prometheus (high CPU, high latency)
+2. SSH into the pod or connect a profiler manually
+3. Attempt to reproduce the issue under load
+4. Analyze a heap dump or thread dump after the fact
 
-7 Pyroscope components deployed as separate pods on the existing OCP cluster using the
-Helm chart.
+This process takes **30-90 minutes** per incident and often fails because the conditions
+that caused the issue are no longer present by the time the profiler is attached.
 
-- **Pros:** Horizontal scaling, HA (pod rescheduling), managed by OCP team. Supports
-  100+ services.
-- **Cons:** Requires RWX storage class (NFS provisioner). Needs OCP team to provision
-  namespace, storage, and network policies. More complex to configure and troubleshoot.
-  Adds 7+ pods to a shared cluster. Overkill for initial rollout with < 20 services.
+### Expected outcomes
 
-### Option C — Microservices on VM (Docker Compose)
+| Outcome | Metric | Target |
+|---------|--------|--------|
+| Reduce incident root-cause identification time | MTTR for performance incidents | 30-90 min → 5-15 min (70-85% reduction) |
+| Eliminate manual profiler attachment | % of incidents requiring ad-hoc profiling | 100% → 0% |
+| Catch regressions before production impact | Deployment comparison (diff report) | Available for every deploy |
+| Identify fleet-wide optimization targets | Fleet search across all services | On-demand, < 10 seconds |
+| Zero software licensing cost | Annual profiling tool spend | $0 (vs $9,000-21,000/year for commercial APM at 50 hosts) |
 
-7 Pyroscope containers on a VM using Docker Compose with NFS-mounted shared storage.
+### Return on investment
 
-- **Pros:** Horizontal scaling without OCP dependency.
-- **Cons:** No pod rescheduling (VM goes down = everything goes down). Requires NFS
-  setup on the VM. Docker Compose has no built-in health checks, rolling upgrades, or
-  resource limits equivalent to OCP. Worst of both worlds — complexity of microservices
-  without the benefits of orchestration.
+| Category | Cost |
+|----------|------|
+| Engineering effort (Phase 1) | 7-10 weeks FTE |
+| Infrastructure | 1 VM (2 CPU, 4 GB RAM, 100 GB disk) from existing fleet |
+| Software licensing | $0 |
+| Ongoing maintenance | < 2 hours/month (container updates, retention management) |
 
-## Network Topology (Phase 1)
+---
+
+## 3. Technical Specifications
+
+### Pyroscope server
+
+| Specification | Value |
+|--------------|-------|
+| Software | Grafana Pyroscope 1.18.0 |
+| License | AGPL-3.0 (free for internal deployment) |
+| Deployment mode | Monolith (single process) |
+| Host | Dedicated VM (RHEL 8/9, Docker) |
+| Resources | 2 CPU, 4 GB RAM, 100 GB disk |
+| Port | TCP 4040 (HTTP API, UI, agent ingestion) |
+| Storage | Docker named volume at `/data`, 24-hour default retention |
+| Capacity | Up to ~100 profiled services |
+
+### Java agent
+
+| Specification | Value |
+|--------------|-------|
+| Agent | Pyroscope Java agent v0.14.0 (`pyroscope.jar`) |
+| Profiling engine | JDK Flight Recorder (JFR), built into JDK 11+ |
+| Attachment method | `JAVA_TOOL_OPTIONS=-javaagent:/opt/pyroscope/pyroscope.jar` |
+| Code changes | None |
+| Sampling interval | 10ms |
+| Push interval | Every 10 seconds |
+| Profile types | CPU, allocation, lock (mutex), wall clock |
+| Overhead | 3-8% CPU, 20-40 MB memory per pod |
+| Network | Outbound HTTP POST to Pyroscope server only, no listening ports |
+
+### Integration
+
+| System | Integration | Purpose |
+|--------|------------|---------|
+| Grafana (existing, separate VM) | Pyroscope datasource | Flame graph visualization in existing dashboards |
+| Prometheus (existing, separate VM) | Scrape target | Pyroscope server health metrics |
+| OCP 4.12 (existing) | Java agent in pod images | Profile collection from Vert.x FaaS services |
+
+### Network topology
 
 ```mermaid
 graph TB
@@ -105,11 +143,137 @@ graph TB
 
 > Single port (TCP 4040) for all traffic. Pyroscope never initiates outbound connections.
 
-## Decision
+---
 
-Deploy Pyroscope in **monolith mode on a VM** (Option A) for Phase 1.
+## 4. Architecture Decision Record
 
-## Rationale
+### 4a. Context and problem statement
+
+**Problem:** We lack function-level performance visibility in production. Current
+observability (Prometheus metrics, application logs) tells us *that* something is slow
+but not *why* at the code level. When incidents occur, engineers cannot identify root
+causes without reproducing the issue and manually attaching a profiler — a process that
+is slow, disruptive, and often fails because conditions have changed.
+
+**Scope:** This decision covers the deployment architecture for a continuous profiling
+platform serving Java services on OCP 4.12 in an enterprise environment with change
+management controls, shared VM infrastructure, and existing Grafana/Prometheus instances.
+
+### 4b. Decision drivers
+
+| # | Driver | Weight | Measurement |
+|---|--------|:------:|-------------|
+| D1 | Time to production value | High | Calendar weeks from approval to first production flame graph |
+| D2 | Operational complexity | High | Number of components to deploy, configure, and monitor |
+| D3 | Infrastructure requirements | High | Number of approval requests (VMs, firewall rules, OCP namespaces, storage classes) |
+| D4 | Software licensing cost | High | Annual cost at current scale (< 20 services) and projected scale (50+ services) |
+| D5 | Data sovereignty | High | All profiling data must stay on-premise, no SaaS dependency |
+| D6 | Agent overhead on production pods | Medium | CPU and memory impact on existing OCP workloads |
+| D7 | Scalability ceiling | Medium | Maximum number of profiled services before architectural change required |
+| D8 | High availability | Low | Acceptable to have profiling gaps during maintenance (non-critical observability tool) |
+
+### 4c. Options considered
+
+#### Option 1 — Pyroscope monolith on VM (selected)
+
+Single Pyroscope process on a dedicated VM. Java agent on OCP pods pushes profiles
+over HTTP.
+
+| Driver | Assessment |
+|--------|-----------|
+| D1 Time to value | 1-2 hours deploy time once VM is provisioned |
+| D2 Complexity | Single container, single config file |
+| D3 Infrastructure | 1 VM request + 1 firewall rule |
+| D4 Cost | $0 licensing |
+| D5 Data sovereignty | All data on-premise in Docker volume |
+| D6 Agent overhead | 3-8% CPU, 20-40 MB memory (JFR-based, bounded) |
+| D7 Scalability | ~100 services before migration needed |
+| D8 HA | No — single point of failure (acceptable) |
+
+#### Option 2 — Pyroscope microservices on OCP
+
+7 Pyroscope components deployed as pods on the existing OCP cluster.
+
+| Driver | Assessment |
+|--------|-----------|
+| D1 Time to value | 2-4 weeks (OCP namespace, storage class, network policies) |
+| D2 Complexity | 7+ pods, memberlist gossip, shared storage |
+| D3 Infrastructure | OCP namespace + RWX storage class + NetworkPolicy |
+| D4 Cost | $0 licensing |
+| D5 Data sovereignty | All data on-premise in RWX PVC |
+| D6 Agent overhead | Same agent — 3-8% CPU, 20-40 MB memory |
+| D7 Scalability | 100+ services, horizontal scaling |
+| D8 HA | Yes — pod rescheduling, replication |
+
+#### Option 3 — Pyroscope microservices on VM (Docker Compose)
+
+7 Pyroscope containers on a VM using Docker Compose with NFS shared storage.
+
+| Driver | Assessment |
+|--------|-----------|
+| D1 Time to value | 1-2 weeks (VM + NFS setup) |
+| D2 Complexity | 7 containers, NFS mount, Docker Compose |
+| D3 Infrastructure | 1 VM request + NFS share + firewall rules |
+| D4 Cost | $0 licensing |
+| D5 Data sovereignty | All data on-premise in NFS |
+| D6 Agent overhead | Same agent — 3-8% CPU, 20-40 MB memory |
+| D7 Scalability | 100+ services |
+| D8 HA | No — VM failure takes everything down |
+
+#### Option 4 — Datadog Continuous Profiler
+
+Commercial SaaS profiling integrated into the Datadog APM platform.
+
+| Driver | Assessment |
+|--------|-----------|
+| D1 Time to value | 1-2 days (agent install, SaaS backend managed by vendor) |
+| D2 Complexity | Low — vendor manages the backend |
+| D3 Infrastructure | None — SaaS |
+| D4 Cost | $12-36/host/month. At 50 hosts: $7,200-21,600/year |
+| D5 Data sovereignty | **Fails** — profiling data sent to Datadog SaaS (US/EU data centers) |
+| D6 Agent overhead | 2-5% CPU (comparable to Pyroscope) |
+| D7 Scalability | Unlimited (vendor-managed) |
+| D8 HA | Yes — vendor-managed |
+
+#### Option 5 — Dynatrace OneAgent
+
+Commercial APM with profiling capabilities (code-level insights).
+
+| Driver | Assessment |
+|--------|-----------|
+| D1 Time to value | 1-2 days (OneAgent install) |
+| D2 Complexity | Low — vendor manages the backend |
+| D3 Infrastructure | Dynatrace ActiveGate on-premise (optional) |
+| D4 Cost | $15-40/host/month. At 50 hosts: $9,000-24,000/year |
+| D5 Data sovereignty | **Partial** — Managed deployment available, but most customers use SaaS |
+| D6 Agent overhead | 2-5% CPU |
+| D7 Scalability | Unlimited (vendor-managed) |
+| D8 HA | Yes — vendor-managed |
+
+#### Option 6 — OpenTelemetry Profiling (emerging)
+
+OTel profiling signal (currently in development/experimental status).
+
+| Driver | Assessment |
+|--------|-----------|
+| D1 Time to value | **Not production-ready** — profiling signal is experimental (2026) |
+| D2 Complexity | Collector + backend (Pyroscope or other) still needed |
+| D3 Infrastructure | Same as whichever backend is chosen |
+| D4 Cost | $0 (open source) |
+| D5 Data sovereignty | Depends on backend choice |
+| D6 Agent overhead | TBD — not yet benchmarked in production |
+| D7 Scalability | Depends on backend choice |
+| D8 HA | Depends on backend choice |
+
+> **Note on OpenTelemetry:** OTel is the standard for metrics, traces, and logs. The
+> profiling signal is being developed but is not GA as of 2026. When it matures, Pyroscope
+> supports OTel ingestion — migration path is to swap the agent, not the backend.
+
+### 4d. Decision outcome
+
+Deploy **Pyroscope in monolith mode on a VM** (Option 1) with the Java agent on OCP pods.
+
+**Reasoning:**
 
 1. **Simplest path to value.** A monolith can be deployed in hours, not weeks. We prove
    the concept with real production profiling data before investing in microservices
@@ -122,27 +286,59 @@ Deploy Pyroscope in **monolith mode on a VM** (Option A) for Phase 1.
    (OCP → VM port 4040) is all that's needed. No OCP namespace, no storage class
    provisioning, no NFS setup.
 
-4. **Reversible.** Migration from monolith to microservices is server-side only — the
+4. **Data sovereignty.** All profiling data stays on-premise. Options 4 and 5 (Datadog,
+   Dynatrace) fail the data sovereignty requirement or require expensive managed
+   deployment options.
+
+5. **Zero licensing cost.** Options 4 and 5 cost $7,200-24,000/year at current scale.
+   Pyroscope is free.
+
+6. **Reversible.** Migration from monolith to microservices is server-side only — the
    Java agents do not change. The agent pushes to a URL; we change what's behind that URL.
 
-5. **Risk reduction.** If the POC fails or is deprioritized, we decommission one VM.
-   No cluster resources to clean up, no shared storage to reclaim.
+7. **OTel future-proof.** When OpenTelemetry profiling matures, Pyroscope supports OTel
+   ingestion natively. We swap the agent, not the backend.
 
-## Consequences
+**Options rejected:**
+- **Option 2 (microservices on OCP):** Overkill for < 20 services. Reserved for Phase 2.
+- **Option 3 (microservices on VM):** Complexity of microservices without orchestration benefits.
+- **Option 4 (Datadog):** Fails data sovereignty. Annual cost unjustified for POC.
+- **Option 5 (Dynatrace):** Fails data sovereignty (SaaS default). Annual cost unjustified.
+- **Option 6 (OpenTelemetry):** Not production-ready. Pyroscope is the future backend for OTel profiling.
 
-- **Single point of failure.** If the VM or container goes down, profiling data is not
-  collected until it recovers. Applications are unaffected (agent silently drops data).
-- **Vertical scaling only.** If we exceed ~100 services, we must migrate to microservices
-  mode. This is documented in the Phase 2 plan.
-- **No HA.** Planned maintenance on the VM means a brief profiling gap. Acceptable for
-  a non-critical observability tool.
-- **Phase 2 migration path.** When capacity or HA requirements justify it, we will deploy
-  microservices mode on the existing OCP cluster (not VM Docker Compose). This is
-  documented in [ADR-002](ADR-002-microservices-on-ocp.md) (future).
+### 4e. Consequences
+
+**Positive:**
+- Production flame graphs available within days of deployment
+- Engineers can diagnose performance issues without reproducing them
+- Zero impact on application code — agent-only deployment
+- No recurring licensing cost
+- All data stays on-premise
+
+**Negative:**
+- Single point of failure — if the VM/container goes down, profiling data is not collected
+  (applications are unaffected; agent silently drops data)
+- Vertical scaling only — capacity ceiling of ~100 services before migration required
+- No HA — planned maintenance on the VM means a brief profiling gap
+- Team must build operational expertise for Pyroscope (no vendor support)
+
+### 4f. Technical debt
+
+| Debt item | Severity | Mitigation | When to address |
+|-----------|:--------:|------------|-----------------|
+| Monolith mode limits horizontal scaling | Low | Sufficient for < 100 services. Migration to microservices on OCP is server-side only (agents unchanged). | Phase 2, when ingestion exceeds single-node capacity |
+| No HA / disaster recovery | Low | Pyroscope is a non-critical observability tool. Profiling gaps during outages are acceptable. Persistent Docker volume survives container restarts. | Phase 2, if profiling becomes a critical-path dependency |
+| No FIPS-compliant build | Low | Pyroscope supports `GOEXPERIMENT=boringcrypto` and Red Hat Go Toolset builds. TLS termination at load balancer also satisfies FIPS. | When FIPS certification is required by compliance team |
+| Manual container management (no orchestrator) | Low | systemd unit or Docker restart policy handles auto-restart. Single container is simple to manage. | Phase 2, when moving to OCP microservices |
+| 24-hour default data retention | Low | Configurable. 100 GB disk supports ~20 services at 1-5 GB/service/month. | Increase disk or enable object storage when retention requirements grow |
+
+---
 
 ## References
 
 - [architecture.md](../architecture.md) — monolith vs microservices comparison, topology diagrams
-- [deployment-guide.md § Tree 7](../deployment-guide.md) — hybrid VM + OCP topology
+- [deployment-guide.md § Tree 7](../deployment-guide.md) — hybrid VM + OCP topology, step-by-step
 - [project-plan-phase1.md](../project-plan-phase1.md) — Phase 1 scope, timeline, effort estimates
-- [what-is-pyroscope.md § Deployment phases](../what-is-pyroscope.md) — Phase 1 → Phase 2 progression
+- [what-is-pyroscope.md](../what-is-pyroscope.md) — business case, cost analysis, deployment phases
+- [faq.md](../faq.md) — security, overhead, licensing, operations FAQ
+- [function-reference.md](../function-reference.md) — BOR/SOR analysis function API reference
