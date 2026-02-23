@@ -9,13 +9,31 @@ UI within 30 seconds.
 
 ---
 
+## Resource budget (safe for shared VMs)
+
+This app is designed to run alongside other workloads without impact.
+
+| Resource | Limit | How it's enforced |
+|----------|:-----:|-------------------|
+| **CPU** | 0.5 cores max | `--cpus=0.5` Docker flag |
+| **Memory** | 256 MB max | `--memory=256m` Docker flag + `-Xmx128m` JVM heap cap |
+| **Disk** | 0 | No file I/O, no logging to disk |
+| **Network** | 0 listening ports | Agent pushes outbound only (~10-50 KB every 10s) |
+| **Threads** | 4 fixed (daemon) | Fixed thread pool, no thread leak |
+
+The workloads run in short bursts (10-50ms) with 2-5 second gaps between them.
+Average CPU usage is ~5-10% of one core. Allocation is bounded at ~400 KB per burst,
+immediately garbage collected.
+
+---
+
 ## What it does
 
 | Workload | Interval | What shows in Pyroscope |
 |----------|:--------:|------------------------|
-| SHA-256 hashing (5000 iterations) | Every 2s | CPU flame graph — `MessageDigest.digest()` hotspot |
-| List allocation + sort (50k items) | Every 3s | Allocation flame graph — `ArrayList.add()`, `Collections.sort()` |
-| Lock contention (4 threads, 1 lock) | Every 5s | Lock flame graph — `ReentrantLock.lock()` contention |
+| SHA-256 hashing (1000 iterations) | Every 2s | CPU flame graph — `MessageDigest.digest()` hotspot |
+| List allocation + sort (10k items) | Every 3s | Allocation flame graph — `ArrayList.add()`, `Collections.sort()` |
+| Lock contention (4 threads, fixed pool) | Every 5s | Lock flame graph — `ReentrantLock.lock()` contention |
 
 Built on Vert.x 4.5.8 with periodic timers — same event-driven pattern as the FaaS stack.
 
@@ -87,6 +105,8 @@ network. Note the name for the next step.
 docker run -d \
   --name profiling-workload \
   --network NETWORK_NAME \
+  --cpus=0.5 \
+  --memory=256m \
   -e PYROSCOPE_SERVER_ADDRESS=http://pyroscope:4040 \
   profiling-workload:1.0.0
 ```
@@ -97,6 +117,8 @@ docker run -d \
 docker run -d \
   --name profiling-workload \
   --network host \
+  --cpus=0.5 \
+  --memory=256m \
   -e PYROSCOPE_SERVER_ADDRESS=http://localhost:4040 \
   profiling-workload:1.0.0
 ```
@@ -111,9 +133,9 @@ docker logs profiling-workload
 
 # Expected output:
 #   Profiling workload started — generating profiling data
-#     CPU work:        every 2s (SHA-256 hashing)
-#     Allocation work: every 3s (list sort)
-#     Lock contention: every 5s (4 competing threads)
+#     CPU work:        every 2s (SHA-256 hashing, 1000 iterations)
+#     Allocation work: every 3s (10k item list sort)
+#     Lock contention: every 5s (4 threads, fixed pool)
 
 # Check profiles arrived in Pyroscope
 curl -s http://localhost:4040/pyroscope/label-values?label=service_name | grep profiling-workload

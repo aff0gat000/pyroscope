@@ -53,6 +53,6 @@ ENV PYROSCOPE_PROFILER_EVENT=itimer
 ENV PYROSCOPE_PROFILER_ALLOC=512k
 ENV PYROSCOPE_PROFILER_LOCK=10ms
 ENV PYROSCOPE_LABELS="env=profiling-workload"
-ENV JAVA_TOOL_OPTIONS="-javaagent:/opt/pyroscope/pyroscope.jar"
+ENV JAVA_TOOL_OPTIONS="-javaagent:/opt/pyroscope/pyroscope.jar -Xmx128m -Xms64m"
 
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]
