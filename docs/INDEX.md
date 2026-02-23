@@ -158,6 +158,16 @@ Infrastructure-level READMEs for operators.
 
 ---
 
+## Architecture Decision Records (ADRs)
+
+Immutable records of key technical decisions and the reasoning behind them.
+
+| ADR | Decision |
+|-----|----------|
+| [ADR-001](adr/ADR-001-continuous-profiling.md) | Continuous profiling — Pyroscope monolith on VM with OCP agents |
+
+---
+
 ## Tools
 
 | Tool | Description |
