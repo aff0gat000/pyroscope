@@ -1,6 +1,6 @@
 # Documentation Index
 
-21 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
+24 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
 documentation standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
 ---
@@ -42,6 +42,7 @@ Start here if you are new to Pyroscope or continuous profiling.
 | Document | Description |
 |----------|-------------|
 | [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview — what it is, what problem it solves, cost, adoption phases |
+| [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
 | [reading-flame-graphs.md](reading-flame-graphs.md) | How to read flame graphs — axes, width, color, self vs total time |
 | [demo-runbook.md](demo-runbook.md) | Step-by-step demo agenda with commands and talking points (20-25 min) |
 | [profiling-scenarios.md](profiling-scenarios.md) | 6 hands-on scenarios with quick reference of all bottlenecks by service |
@@ -59,6 +60,8 @@ Follow these when you have a specific goal.
 | [grafana-setup.md](grafana-setup.md) | Connect Grafana to Pyroscope via provisioning files |
 | [troubleshooting.md](troubleshooting.md) | Diagnose common issues — no data, empty flame graphs, connectivity, overhead |
 | [runbook.md](runbook.md) | Incident response playbooks and operational procedures |
+| [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — epics, stories, timeline, effort estimates |
+| [workflow.md](workflow.md) | Development workflow — issues, PRs, async communication, incremental adoption |
 
 ---
 
@@ -101,6 +104,7 @@ Infrastructure-level READMEs for operators.
 | [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
 | [deploy/microservices/README.md](../deploy/microservices/README.md) | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
 | [deploy/helm/pyroscope/](../deploy/helm/pyroscope/) | Unified Helm chart — monolith and microservices, OCP and K8s |
+| [deploy/profiling-workload/README.md](../deploy/profiling-workload/README.md) | Profiling workload — validates Pyroscope on VM (no OCP needed) |
 | [deploy/grafana/README.md](../deploy/grafana/README.md) | Standalone Grafana image build |
 
 ---
@@ -112,17 +116,19 @@ Infrastructure-level READMEs for operators.
 > "Why should we fund this?"
 
 1. [what-is-pyroscope.md](what-is-pyroscope.md) — business case, cost, risk assessment
-2. [pyroscope-study-guide.md § Talking Points](pyroscope-study-guide.md) — funding justification and competitive analysis
-3. [continuous-profiling-runbook.md](continuous-profiling-runbook.md) — MTTR reduction data
+2. [project-plan-phase1.md](project-plan-phase1.md) — project plan, timeline, effort estimates
+3. [pyroscope-study-guide.md § Talking Points](pyroscope-study-guide.md) — funding justification and competitive analysis
+4. [continuous-profiling-runbook.md](continuous-profiling-runbook.md) — MTTR reduction data
 
 ### Operators / SREs
 
 > "How do I deploy and operate this?"
 
-1. [deployment-guide.md](deployment-guide.md) — choose deployment mode (decision trees 1-7)
-2. [architecture-guide.md](architecture-guide.md) — understand topology and port requirements
-3. [troubleshooting.md](troubleshooting.md) — diagnose issues
-4. [runbook.md](runbook.md) — incident response procedures
+1. [project-plan-phase1.md](project-plan-phase1.md) — project plan with prerequisites and milestones
+2. [deployment-guide.md](deployment-guide.md) — choose deployment mode (decision trees 1-7)
+3. [architecture-guide.md](architecture-guide.md) — understand topology and port requirements
+4. [troubleshooting.md](troubleshooting.md) — diagnose issues
+5. [runbook.md](runbook.md) — incident response procedures
 
 ### Developers
 
