@@ -1,6 +1,6 @@
 # Documentation Index
 
-24 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
+33 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
 documentation standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
 ---
@@ -41,6 +41,7 @@ Start here if you are new to Pyroscope or continuous profiling.
 
 | Document | Description |
 |----------|-------------|
+| [getting-started.md](getting-started.md) | Day-one orientation — glossary, environment setup, reading path by role, team contacts |
 | [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview — what it is, what problem it solves, cost, adoption phases |
 | [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
 | [reading-flame-graphs.md](reading-flame-graphs.md) | How to read flame graphs — axes, width, color, self vs total time |
@@ -58,6 +59,8 @@ Follow these when you have a specific goal.
 | [deployment-guide.md](deployment-guide.md) | Deploy Pyroscope — decision trees, quick reference, step-by-step, firewall rules |
 | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) | Agent configuration, Grafana integration, bottleneck analysis workflow |
 | [grafana-setup.md](grafana-setup.md) | Connect Grafana to Pyroscope via provisioning files |
+| [monitoring-guide.md](monitoring-guide.md) | Monitor Pyroscope server health — endpoints, metrics reference, alert rules |
+| [upgrade-guide.md](upgrade-guide.md) | Upgrade and rollback — pre-upgrade checklist, procedures for all deployment methods |
 | [troubleshooting.md](troubleshooting.md) | Diagnose common issues — no data, empty flame graphs, connectivity, overhead |
 | [runbook.md](runbook.md) | Incident response playbooks and operational procedures |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — epics, stories, timeline, effort estimates |
@@ -72,6 +75,7 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 | Document | Description |
 |----------|-------------|
 | [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
+| [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
 | [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint |
 | [pyroscope-study-guide.md](pyroscope-study-guide.md) | Expert mastery — internals, operations, competitive analysis, talking points |
 
@@ -83,6 +87,9 @@ Look up specific facts while working.
 
 | Document | Description |
 |----------|-------------|
+| [configuration-reference.md](configuration-reference.md) | All configuration keys — agent properties, pyroscope.yaml, deploy.sh flags, Ansible, Helm |
+| [capacity-planning.md](capacity-planning.md) | Sizing formulas — server resources, storage calculator, worked examples (10/50/100 services) |
+| [sla-slo.md](sla-slo.md) | SLO definitions — data availability, query latency, RPO/RTO, error budget, escalation matrix |
 | [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search, Phase 1/2 |
 | [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |
 | [endpoint-reference.md](endpoint-reference.md) | Complete endpoint list with curl examples for all 9 services |
@@ -101,15 +108,38 @@ Infrastructure-level READMEs for operators.
 | Document | Description |
 |----------|-------------|
 | [deploy/monolith/README.md](../deploy/monolith/README.md) | Monolith Pyroscope server — deploy.sh, build-and-push.sh, Ansible |
+| [deploy/monolith/DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) | Pyroscope image build and push to internal registry (air-gapped) |
 | [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
 | [deploy/microservices/README.md](../deploy/microservices/README.md) | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
+| [deploy/microservices/vm/README.md](../deploy/microservices/vm/README.md) | Microservices on VM — NFS-backed Docker Compose |
 | [deploy/helm/pyroscope/](../deploy/helm/pyroscope/) | Unified Helm chart — monolith and microservices, OCP and K8s |
 | [deploy/profiling-workload/README.md](../deploy/profiling-workload/README.md) | Profiling workload — validates Pyroscope on VM (no OCP needed) |
 | [deploy/grafana/README.md](../deploy/grafana/README.md) | Standalone Grafana image build |
+| [deploy/grafana/DOCKER-BUILD.md](../deploy/grafana/DOCKER-BUILD.md) | Grafana image build with Pyroscope datasource baked in (air-gapped) |
+
+---
+
+## Templates
+
+Fill-in templates for change management and governance.
+
+| Document | Description |
+|----------|-------------|
+| [templates/change-request.md](templates/change-request.md) | CAB change request template — risk assessment, test evidence, approval signatures |
+| [templates/rollback-plan.md](templates/rollback-plan.md) | Rollback plan template — trigger criteria, steps, verification, communication |
 
 ---
 
 ## By audience
+
+### New team members (any role)
+
+> "Where do I start?"
+
+1. [getting-started.md](getting-started.md) — orientation, glossary, environment setup
+2. [what-is-pyroscope.md](what-is-pyroscope.md) — understand the project
+3. [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) — understand why we made these choices
+4. (then follow the path for your specific role below)
 
 ### Leadership / project management
 
@@ -127,8 +157,11 @@ Infrastructure-level READMEs for operators.
 1. [project-plan-phase1.md](project-plan-phase1.md) — project plan with prerequisites and milestones
 2. [deployment-guide.md](deployment-guide.md) — choose deployment mode (decision trees 1-7)
 3. [architecture.md](architecture.md) — understand topology and port requirements
-4. [troubleshooting.md](troubleshooting.md) — diagnose issues
-5. [runbook.md](runbook.md) — incident response procedures
+4. [security-model.md](security-model.md) — authentication gaps and network isolation requirements
+5. [monitoring-guide.md](monitoring-guide.md) — configure Prometheus alerts for the server
+6. [upgrade-guide.md](upgrade-guide.md) — perform upgrades safely
+7. [troubleshooting.md](troubleshooting.md) — diagnose issues
+8. [runbook.md](runbook.md) — incident response procedures
 
 ### Developers
 
@@ -155,6 +188,16 @@ Infrastructure-level READMEs for operators.
 1. [function-reference.md](function-reference.md) — understand the 3 BOR functions and Phase 1/2
 2. [function-architecture.md](function-architecture.md) — learn the project structure
 3. [production-questionnaire-phase1.md](production-questionnaire-phase1.md) — production onboarding
+
+### Governance / change managers
+
+> "How do I get this approved and track ongoing changes?"
+
+1. [what-is-pyroscope.md](what-is-pyroscope.md) — business case and risk assessment
+2. [security-model.md](security-model.md) — security controls and compliance checklist
+3. [sla-slo.md](sla-slo.md) — SLO definitions and error budget
+4. [templates/change-request.md](templates/change-request.md) — CAB submission template
+5. [templates/rollback-plan.md](templates/rollback-plan.md) — rollback plan template
 
 ---
 
