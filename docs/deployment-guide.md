@@ -598,9 +598,10 @@ docker load -i /tmp/pyroscope-stack-images.tar
 docker inspect grafana/pyroscope:1.18.0 --format='Architecture: {{.Architecture}}'
 # Must match host: uname -m (x86_64 = amd64, aarch64 = arm64)
 
-# 4. Stage Pyroscope server config
+# 4. Stage Pyroscope server config (must be world-readable for container process)
 mkdir -p /opt/pyroscope
 cp /tmp/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
+chmod 644 /opt/pyroscope/pyroscope.yaml
 
 # 5. Create volumes
 docker volume create pyroscope-data
@@ -669,6 +670,7 @@ docker inspect grafana/pyroscope:1.18.0 --format='Architecture: {{.Architecture}
 # Must match host: uname -m (x86_64 = amd64, aarch64 = arm64)
 mkdir -p /opt/pyroscope
 cp /tmp/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
+chmod 644 /opt/pyroscope/pyroscope.yaml    # container runs as non-root; must be readable
 docker volume create pyroscope-data
 
 # 4. Start Pyroscope (with config mount and log rotation)
