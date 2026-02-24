@@ -576,9 +576,11 @@ or for environments where third-party scripts cannot be used.
 ```bash
 # ---- On your workstation (has internet) ----
 
-# 1. Pull and save images
-docker pull grafana/pyroscope:1.18.0
-docker pull grafana/grafana:11.5.2
+# 1. Pull and save images (specify platform to match target VM architecture)
+#    Check target VM architecture first: ssh operator@<hostname> "uname -m"
+#    x86_64 = linux/amd64, aarch64 = linux/arm64, ppc64le = linux/ppc64le, s390x = linux/s390x
+docker pull --platform linux/amd64 grafana/pyroscope:1.18.0
+docker pull --platform linux/amd64 grafana/grafana:11.5.2
 docker save -o pyroscope-stack-images.tar \
     grafana/pyroscope:1.18.0 \
     grafana/grafana:11.5.2
@@ -591,8 +593,10 @@ scp config/pyroscope/pyroscope.yaml operator@<hostname>:/tmp/
 ssh operator@<hostname>
 pbrun /bin/su -
 
-# 3. Load images
+# 3. Load images and verify architecture matches host
 docker load -i /tmp/pyroscope-stack-images.tar
+docker inspect grafana/pyroscope:1.18.0 --format='Architecture: {{.Architecture}}'
+# Must match host: uname -m (x86_64 = amd64, aarch64 = arm64)
 
 # 4. Stage Pyroscope server config
 mkdir -p /opt/pyroscope
@@ -645,8 +649,10 @@ Single VM, no Grafana.
 ```bash
 # ---- On your workstation (has internet) ----
 
-# 1. Pull and save image
-docker pull grafana/pyroscope:1.18.0
+# 1. Pull and save image (specify platform to match target VM architecture)
+#    Check target VM architecture first: ssh operator@<hostname> "uname -m"
+#    x86_64 = linux/amd64, aarch64 = linux/arm64, ppc64le = linux/ppc64le, s390x = linux/s390x
+docker pull --platform linux/amd64 grafana/pyroscope:1.18.0
 docker save -o pyroscope-images.tar grafana/pyroscope:1.18.0
 
 # 2. Transfer image and config to VM
@@ -657,8 +663,10 @@ scp config/pyroscope/pyroscope.yaml operator@<hostname>:/tmp/
 ssh operator@<hostname>
 pbrun /bin/su -
 
-# 3. Load image and stage config
+# 3. Load image, verify architecture, and stage config
 docker load -i /tmp/pyroscope-images.tar
+docker inspect grafana/pyroscope:1.18.0 --format='Architecture: {{.Architecture}}'
+# Must match host: uname -m (x86_64 = amd64, aarch64 = arm64)
 mkdir -p /opt/pyroscope
 cp /tmp/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
 docker volume create pyroscope-data
@@ -685,7 +693,9 @@ service name): `PYROSCOPE_SERVER_ADDRESS=http://<VM_IP_OR_FQDN>:4040`.
 ```bash
 # ---- On your workstation ----
 
-docker pull grafana/pyroscope:1.18.0
+# Pull with correct platform for target VMs (check with: ssh <vm> "uname -m")
+# x86_64 = linux/amd64, aarch64 = linux/arm64, ppc64le = linux/ppc64le, s390x = linux/s390x
+docker pull --platform linux/amd64 grafana/pyroscope:1.18.0
 docker save -o pyroscope-images.tar grafana/pyroscope:1.18.0
 
 TARGETS="vm01.example.com vm02.example.com vm03.example.com"  # replace with your hostnames
