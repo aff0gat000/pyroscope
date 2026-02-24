@@ -576,48 +576,54 @@ or for environments where third-party scripts cannot be used.
 ```bash
 # ---- On your workstation (has internet) ----
 
-# Pull and save images
+# 1. Pull and save images
 docker pull grafana/pyroscope:1.18.0
 docker pull grafana/grafana:11.5.2
 docker save -o pyroscope-stack-images.tar \
     grafana/pyroscope:1.18.0 \
     grafana/grafana:11.5.2
 
-# Transfer to VM
+# 2. Transfer images and config to VM
 scp pyroscope-stack-images.tar operator@<hostname>:/tmp/
+scp config/pyroscope/pyroscope.yaml operator@<hostname>:/tmp/
 
 # ---- On the target VM (as root) ----
 ssh operator@<hostname>
 pbrun /bin/su -
 
-# Load images
+# 3. Load images
 docker load -i /tmp/pyroscope-stack-images.tar
 
-# Create volumes
+# 4. Stage Pyroscope server config
+mkdir -p /opt/pyroscope
+cp /tmp/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
+
+# 5. Create volumes
 docker volume create pyroscope-data
 docker volume create grafana-data
 
-# Start Pyroscope
-docker run -d \
-    --name pyroscope \
-    --restart unless-stopped \
+# 6. Start Pyroscope (with config mount and log rotation)
+docker run -d --name pyroscope --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
     -p 4040:4040 \
     -v pyroscope-data:/data \
-    grafana/pyroscope:1.18.0
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    grafana/pyroscope:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
 
-# Verify Pyroscope
-curl -s http://localhost:4040/ready
+# 7. Verify Pyroscope (wait ~15-20s for ingester to become ready)
+sleep 20
+curl -sf http://localhost:4040/ready && echo "OK"
 
-# Stage Grafana config (copy from repo's config/grafana/ directory)
+# 8. Stage Grafana config (copy from repo's config/grafana/ directory)
 mkdir -p /opt/pyroscope/grafana/{provisioning/datasources,provisioning/dashboards,provisioning/plugins,dashboards}
 # Copy provisioning YAML files and dashboards from the repo.
 # Update datasource URL in provisioning/datasources/datasources.yaml
-# to point to this VM's IP address.
+# to point to this VM's IP or hostname.
 
-# Start Grafana (stock image with volume-mounted config)
-docker run -d \
-    --name grafana \
-    --restart unless-stopped \
+# 9. Start Grafana (stock image with volume-mounted config)
+docker run -d --name grafana --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
     -p 3000:3000 \
     -v grafana-data:/var/lib/grafana \
     -v /opt/pyroscope/grafana/grafana.ini:/etc/grafana/grafana.ini:ro \
@@ -627,9 +633,9 @@ docker run -d \
     -e GF_SECURITY_ADMIN_PASSWORD=admin \
     grafana/grafana:11.5.2
 
-# Verify
-curl -s http://localhost:4040/ready        # Pyroscope
-curl -s http://localhost:3000/api/health   # Grafana
+# 10. Verify both
+curl -sf http://localhost:4040/ready && echo "Pyroscope OK"
+curl -sf http://localhost:3000/api/health && echo "Grafana OK"
 ```
 
 ### 7b. HTTP Pyroscope only
@@ -639,30 +645,40 @@ Single VM, no Grafana.
 ```bash
 # ---- On your workstation (has internet) ----
 
+# 1. Pull and save image
 docker pull grafana/pyroscope:1.18.0
 docker save -o pyroscope-images.tar grafana/pyroscope:1.18.0
 
+# 2. Transfer image and config to VM
 scp pyroscope-images.tar operator@<hostname>:/tmp/
+scp config/pyroscope/pyroscope.yaml operator@<hostname>:/tmp/
 
 # ---- On the target VM (as root) ----
 ssh operator@<hostname>
 pbrun /bin/su -
 
+# 3. Load image and stage config
 docker load -i /tmp/pyroscope-images.tar
+mkdir -p /opt/pyroscope
+cp /tmp/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
 docker volume create pyroscope-data
 
-docker run -d \
-    --name pyroscope \
-    --restart unless-stopped \
+# 4. Start Pyroscope (with config mount and log rotation)
+docker run -d --name pyroscope --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
     -p 4040:4040 \
     -v pyroscope-data:/data \
-    grafana/pyroscope:1.18.0
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    grafana/pyroscope:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
 
-# Verify
-curl -s http://localhost:4040/ready && echo " OK"
+# 5. Verify (wait ~15-20s for ingester to become ready)
+sleep 20
+curl -sf http://localhost:4040/ready && echo "OK"
 ```
 
-Configure Java agents: `PYROSCOPE_SERVER_ADDRESS=http://<hostname>:4040`.
+Configure Java agents on OCP pods to point to the VM's IP or FQDN (not a Kubernetes
+service name): `PYROSCOPE_SERVER_ADDRESS=http://<VM_IP_OR_FQDN>:4040`.
 
 ### 7b-multi. HTTP Pyroscope only: multiple VMs
 
