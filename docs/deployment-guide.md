@@ -1749,11 +1749,9 @@ docker load -i /tmp/pyroscope-server-1.19.0.tar
 
 # 3. Replace container (volume preserved = data preserved)
 docker rm -f pyroscope
-docker run -d \
-    --name pyroscope \
-    --restart unless-stopped \
-    -p 4040:4040 \
-    -v pyroscope-data:/data \
+docker run -d --name pyroscope --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -p 4040:4040 -v pyroscope-data:/data \
     grafana/pyroscope:1.19.0
 
 # 4. Verify
@@ -1772,12 +1770,62 @@ bash deploy.sh full-stack --target vm \
 ```bash
 # Same as upgrade, use the old image tag
 docker rm -f pyroscope
-docker run -d \
-    --name pyroscope \
-    --restart unless-stopped \
-    -p 4040:4040 \
-    -v pyroscope-data:/data \
+docker run -d --name pyroscope --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -p 4040:4040 -v pyroscope-data:/data \
     grafana/pyroscope:1.18.0
+```
+
+### Log management
+
+Docker stores container logs at `/var/lib/docker/containers/<id>/<id>-json.log`.
+Without limits, these grow indefinitely and can fill the VM disk.
+
+**Add log rotation to all `docker run` commands:**
+
+```bash
+docker run -d --name pyroscope --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -p 4040:4040 -v pyroscope-data:/data \
+    grafana/pyroscope:1.18.0
+```
+
+This caps logs at 150 MB total (3 files x 50 MB). Applies to new containers only.
+
+**Clean up logs from an existing container:**
+
+```bash
+# Find and truncate the log file (container can stay running)
+truncate -s 0 $(docker inspect --format='{{.LogPath}}' pyroscope)
+```
+
+**Clean up logs after removing a container:**
+
+```bash
+# Remove stopped containers and their logs
+docker container prune -f
+
+# Remove unused images, build cache, and volumes (careful — removes ALL unused volumes)
+docker system prune -f
+
+# Check disk usage
+docker system df
+```
+
+**Set a default log limit for all containers** (prevents the problem globally):
+
+```bash
+# /etc/docker/daemon.json
+cat > /etc/docker/daemon.json <<'EOF'
+{
+  "log-driver": "json-file",
+  "log-opts": {
+    "max-size": "50m",
+    "max-file": "3"
+  }
+}
+EOF
+systemctl restart docker
 ```
 
 ### Config changes
