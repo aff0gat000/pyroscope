@@ -1,6 +1,6 @@
 # Documentation Index
 
-33 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
+35 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
 documentation standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
 ---
@@ -62,6 +62,7 @@ Follow these when you have a specific goal.
 | [monitoring-guide.md](monitoring-guide.md) | Monitor Pyroscope server health — endpoints, metrics reference, alert rules |
 | [upgrade-guide.md](upgrade-guide.md) | Upgrade and rollback — pre-upgrade checklist, procedures for all deployment methods |
 | [troubleshooting.md](troubleshooting.md) | Diagnose common issues — no data, empty flame graphs, connectivity, overhead |
+| [tls-setup.md](tls-setup.md) | TLS setup — F5 VIP, native TLS, Nginx/Envoy proxy, certificate strategies, agent trust |
 | [runbook.md](runbook.md) | Incident response playbooks and operational procedures |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — epics, stories, timeline, effort estimates |
 | [workflow.md](workflow.md) | Development workflow — issues, PRs, async communication, incremental adoption |
@@ -76,6 +77,7 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 |----------|-------------|
 | [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
 | [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
+| [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — why it is hard, how labels solve it, labeling strategy |
 | [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint |
 | [pyroscope-study-guide.md](pyroscope-study-guide.md) | Expert mastery — internals, operations, competitive analysis, talking points |
 
@@ -158,19 +160,21 @@ Fill-in templates for change management and governance.
 2. [deployment-guide.md](deployment-guide.md) — choose deployment mode (decision trees 1-7)
 3. [architecture.md](architecture.md) — understand topology and port requirements
 4. [security-model.md](security-model.md) — authentication gaps and network isolation requirements
-5. [monitoring-guide.md](monitoring-guide.md) — configure Prometheus alerts for the server
-6. [upgrade-guide.md](upgrade-guide.md) — perform upgrades safely
-7. [troubleshooting.md](troubleshooting.md) — diagnose issues
-8. [runbook.md](runbook.md) — incident response procedures
+5. [tls-setup.md](tls-setup.md) — TLS strategy and certificate setup
+6. [monitoring-guide.md](monitoring-guide.md) — configure Prometheus alerts for the server
+7. [upgrade-guide.md](upgrade-guide.md) — perform upgrades safely
+8. [troubleshooting.md](troubleshooting.md) — diagnose issues
+9. [runbook.md](runbook.md) — incident response procedures
 
 ### Developers
 
 > "How do I use profiling data to fix performance issues?"
 
 1. [reading-flame-graphs.md](reading-flame-graphs.md) — learn to read flame graphs
-2. [profiling-scenarios.md](profiling-scenarios.md) — hands-on exercises
-3. [code-to-profiling-guide.md](code-to-profiling-guide.md) — source code to flame graph mapping
-4. [sample-queries.md](sample-queries.md) — copy-paste queries
+2. [async-profiling-guide.md](async-profiling-guide.md) — why profiling Vert.x/async is hard, labeling strategy
+3. [profiling-scenarios.md](profiling-scenarios.md) — hands-on exercises
+4. [code-to-profiling-guide.md](code-to-profiling-guide.md) — source code to flame graph mapping
+5. [sample-queries.md](sample-queries.md) — copy-paste queries
 
 ### Demo presenters
 

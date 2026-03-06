@@ -224,6 +224,52 @@ Set the time picker to "Last 15 minutes" and verify load is running.
 
 ---
 
+## Memberlist interface detection error
+
+**Error:** `no useable addresses found for interfaces eth0 en0`
+
+This happens on RHEL/enterprise VMs where network interfaces are named `ens192`, `ens160`,
+etc. instead of `eth0`. The Pyroscope query-scheduler uses memberlist internally (even in
+monolith mode) and fails to auto-detect the interface.
+
+**Fix — use host networking** (recommended for monolith on a dedicated VM):
+
+```bash
+docker rm -f pyroscope
+docker run -d --name pyroscope --restart unless-stopped \
+    --network host \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    grafana/pyroscope:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
+```
+
+With `--network host` the container shares the host's network interfaces directly,
+so memberlist finds them. No `-p 4040:4040` needed — the container binds to the host's
+port 4040 directly.
+
+**Check your VM's interface names:** `ip link show` or `ls /sys/class/net/`
+
+---
+
+## TLS / certificate errors
+
+For full TLS setup details see [tls-setup.md](tls-setup.md).
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `PKIX path building failed` / `unable to find valid certification path` | Java agent doesn't trust the Pyroscope TLS cert | Import cert into JVM truststore: `keytool -importcert -noprompt -alias pyroscope -file cert.pem -keystore $JAVA_HOME/lib/security/cacerts -storepass changeit` |
+| `curl: (60) SSL certificate problem: self-signed certificate` | Self-signed cert not trusted by system | Use `curl -k` for testing, or add to RHEL system trust: `cp cert.pem /etc/pki/ca-trust/source/anchors/ && update-ca-trust` |
+| `connection refused` on port 4443 | TLS proxy (Envoy/Nginx) not running or firewall blocking | Check `docker ps \| grep envoy` or `nginx-tls`, check `firewall-cmd --list-ports` |
+| `upstream connect error or disconnect/reset before headers` | Proxy can't reach Pyroscope on 127.0.0.1:4040 | Verify Pyroscope is running: `curl http://localhost:4040/ready` |
+| Certificate expired | Self-signed cert past 365-day validity | Replace cert/key files in `/opt/pyroscope/tls/`, restart proxy: `docker restart envoy-proxy` |
+| `SSL_ERROR_RX_RECORD_TOO_LONG` | Client using HTTPS against plain HTTP port | Use port 4443 (proxy) for HTTPS, or verify native TLS is configured if using port 4040 |
+| `No subject alternative names matching` / hostname mismatch | Cert CN/SAN doesn't include the hostname or IP agents use | Regenerate cert with correct SAN entries covering both DNS and IP |
+| `SELinux: permission denied` on cert files | SELinux blocking container volume mounts | Run `restorecon -Rv /opt/pyroscope/tls` or add `:z` suffix to volume mounts |
+
+---
+
 ## Server not running
 
 ### Docker container

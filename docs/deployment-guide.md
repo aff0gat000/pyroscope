@@ -99,7 +99,7 @@ graph TD
 
 | Mode | Environment | Method | Command | Guide |
 |------|-------------|--------|---------|-------|
-| Monolith | VM | Manual | `docker run -d --name pyroscope -p 4040:4040 -v pyroscope-data:/data grafana/pyroscope:1.18.0` | [Section 7](#7-monolith-manual-vm-deployment) |
+| Monolith | VM | Manual | `docker run -d --name pyroscope --network host -v pyroscope-data:/data grafana/pyroscope:1.18.0` | [Section 7](#7-monolith-manual-vm-deployment) |
 | Monolith | VM | Bash script | `bash deploy.sh full-stack --target vm` | [Section 8](#8-monolith-bash-script-on-vm) |
 | Monolith | VM | Ansible | `ansible-playbook -i inventory playbooks/deploy.yml` | [Section 9](#9-monolith-ansible-on-vm) |
 | Monolith | Kubernetes | Bash script | `bash deploy.sh full-stack --target k8s --namespace monitoring` | [Section 10a](#10a-kubernetes-with-kubectl) |
@@ -607,14 +607,17 @@ chmod 644 /opt/pyroscope/pyroscope.yaml
 docker volume create pyroscope-data
 docker volume create grafana-data
 
-# 6. Start Pyroscope (with config mount and log rotation)
+# 6. Start Pyroscope (host networking avoids memberlist interface detection
+#    errors on RHEL/enterprise VMs where interfaces are named ens192, etc.)
 docker run -d --name pyroscope --restart unless-stopped \
+    --network host \
     --log-opt max-size=50m --log-opt max-file=3 \
-    -p 4040:4040 \
     -v pyroscope-data:/data \
     -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
     grafana/pyroscope:1.18.0 \
     -config.file=/etc/pyroscope/config.yaml
+# Note: --network host binds directly to host port 4040 (no -p flag needed).
+# Safe for monolith on a dedicated VM. Port 4040 must not be in use.
 
 # 7. Verify Pyroscope (wait ~15-20s for ingester to become ready)
 sleep 20
@@ -673,14 +676,17 @@ cp /tmp/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
 chmod 644 /opt/pyroscope/pyroscope.yaml    # container runs as non-root; must be readable
 docker volume create pyroscope-data
 
-# 4. Start Pyroscope (with config mount and log rotation)
+# 4. Start Pyroscope (host networking avoids memberlist interface detection
+#    errors on RHEL/enterprise VMs where interfaces are named ens192, etc.)
 docker run -d --name pyroscope --restart unless-stopped \
+    --network host \
     --log-opt max-size=50m --log-opt max-file=3 \
-    -p 4040:4040 \
     -v pyroscope-data:/data \
     -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
     grafana/pyroscope:1.18.0 \
     -config.file=/etc/pyroscope/config.yaml
+# Note: --network host binds directly to host port 4040 (no -p flag needed).
+# Safe for monolith on a dedicated VM. Port 4040 must not be in use.
 
 # 5. Verify (wait ~15-20s for ingester to become ready)
 sleep 20
@@ -714,7 +720,7 @@ for vm in ${TARGETS}; do
         docker run -d \
             --name pyroscope \
             --restart unless-stopped \
-            -p 4040:4040 \
+            --network host \
             -v pyroscope-data:/data \
             grafana/pyroscope:1.18.0
     '"
@@ -729,13 +735,16 @@ done
 
 ### 7c. HTTPS with self-signed cert
 
+> **Alternative TLS approaches:** This section uses Envoy. For other options
+> (F5 VIP, Pyroscope native TLS, Nginx) see [tls-setup.md](tls-setup.md).
+
 ```bash
 # ---- On the target VM (as root) ----
 
-# Load images (including Envoy for TLS termination)
+# 1. Load images (including Envoy for TLS termination)
 docker load -i /tmp/pyroscope-stack-images.tar
 
-# Generate self-signed certificate
+# 2. Generate self-signed certificate
 mkdir -p /opt/pyroscope/tls
 HOST_IP=$(hostname -I | awk '{print $1}')
 HOST_FQDN=$(hostname -f)
@@ -750,21 +759,28 @@ openssl req -x509 \
 chmod 600 /opt/pyroscope/tls/key.pem
 chmod 644 /opt/pyroscope/tls/cert.pem
 
-# Start Pyroscope (bound to localhost -- Envoy handles external traffic)
-docker volume create pyroscope-data
-docker run -d \
-    --name pyroscope \
-    --restart unless-stopped \
-    -p 127.0.0.1:4040:4040 \
-    -v pyroscope-data:/data \
-    grafana/pyroscope:1.18.0
+# 3. Stage Pyroscope server config
+mkdir -p /opt/pyroscope
+cp /tmp/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
+chmod 644 /opt/pyroscope/pyroscope.yaml
 
-# Start Grafana (bound to localhost)
+# 4. Start Pyroscope (host networking — Envoy handles external TLS traffic)
+docker volume create pyroscope-data
+docker run -d --name pyroscope --restart unless-stopped \
+    --network host \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    grafana/pyroscope:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
+# Note: --network host binds to host port 4040. Firewall rules allow only
+# :4443 (Envoy TLS) externally; :4040 stays internal on the VM.
+
+# 5. Start Grafana
 docker volume create grafana-data
-docker run -d \
-    --name grafana \
-    --restart unless-stopped \
-    -p 127.0.0.1:3000:3000 \
+docker run -d --name grafana --restart unless-stopped \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -p 3000:3000 \
     -v grafana-data:/var/lib/grafana \
     -v /opt/pyroscope/grafana/grafana.ini:/etc/grafana/grafana.ini:ro \
     -v /opt/pyroscope/grafana/provisioning:/etc/grafana/provisioning:ro \
@@ -773,20 +789,20 @@ docker run -d \
     -e GF_SECURITY_ADMIN_PASSWORD=admin \
     grafana/grafana:11.5.2
 
-# Write Envoy config (TLS termination proxy)
-# See deploy.sh generate_envoy_config for the full template.
+# 6. Write Envoy config (TLS termination proxy)
+# See deploy.sh generate_envoy_config for the full template,
+# or tls-setup.md for the complete copy-paste envoy.yaml.
 # Listeners: :4443 -> 127.0.0.1:4040, :443 -> 127.0.0.1:3000
 
-# Start Envoy TLS proxy
-docker run -d \
-    --name envoy-proxy \
-    --restart unless-stopped \
+# 7. Start Envoy TLS proxy
+docker run -d --name envoy-proxy --restart unless-stopped \
     --network host \
     -v /opt/pyroscope/tls/envoy.yaml:/etc/envoy/envoy.yaml:ro \
     -v /opt/pyroscope/tls:/etc/envoy/tls:ro \
     envoyproxy/envoy:v1.31-latest
 
-# Verify
+# 8. Verify (wait ~15-20s for ingester to become ready)
+sleep 20
 curl -k https://localhost:4443/ready       # Pyroscope via Envoy
 curl -k https://localhost:443/api/health   # Grafana via Envoy
 ```
@@ -798,16 +814,18 @@ Place your enterprise-provided `cert.pem` and `key.pem` into `/opt/pyroscope/tls
 
 ```bash
 # Copy enterprise certs to the VM
+mkdir -p /opt/pyroscope/tls
 cp /path/to/enterprise-cert.pem /opt/pyroscope/tls/cert.pem
 cp /path/to/enterprise-key.pem /opt/pyroscope/tls/key.pem
 chmod 600 /opt/pyroscope/tls/key.pem
 chmod 644 /opt/pyroscope/tls/cert.pem
 
-# Then follow the same Pyroscope + Grafana + Envoy steps from Section 7c.
+# Then follow steps 3-8 from Section 7c.
 ```
 
 Java agents do not need special trust configuration when the CA is already
-in the JVM default truststore.
+in the JVM default truststore. For self-signed cert trust setup, see
+[tls-setup.md](tls-setup.md#java-agent-trust-configuration).
 
 ---
 
