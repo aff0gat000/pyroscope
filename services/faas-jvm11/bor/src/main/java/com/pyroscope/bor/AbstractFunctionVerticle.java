@@ -10,6 +10,7 @@ public abstract class AbstractFunctionVerticle extends AbstractVerticle {
 
     protected final int port;
     protected Router router;
+    private static final String FUNCTION = System.getenv().getOrDefault("FUNCTION", "unknown");
 
     protected AbstractFunctionVerticle(int port) {
         this.port = port;
@@ -18,6 +19,7 @@ public abstract class AbstractFunctionVerticle extends AbstractVerticle {
     @Override
     public void start(Promise<Void> startPromise) {
         router = Router.router(vertx);
+        router.route().handler(this::applyPyroscopeLabels);
         router.get("/health").handler(ctx -> ctx.response().end("OK"));
         initFunction();
         vertx.createHttpServer()
@@ -53,5 +55,25 @@ public abstract class AbstractFunctionVerticle extends AbstractVerticle {
         ctx.response().setStatusCode(status)
                 .putHeader("content-type", "application/json")
                 .end(new JsonObject().put("error", message).encode());
+    }
+
+    private void applyPyroscopeLabels(RoutingContext ctx) {
+        try {
+            String endpoint = ctx.currentRoute() != null && ctx.currentRoute().getPath() != null
+                    ? ctx.currentRoute().getPath()
+                    : ctx.request().path();
+            io.pyroscope.labels.Pyroscope.LabelsWrapper.run(
+                    new io.pyroscope.labels.LabelsSet(
+                            "endpoint", endpoint,
+                            "http.method", ctx.request().method().name(),
+                            "function", FUNCTION,
+                            "layer", "bor"
+                    ),
+                    () -> ctx.next()
+            );
+        } catch (NoClassDefFoundError e) {
+            // Pyroscope agent not attached — continue without labels
+            ctx.next();
+        }
     }
 }

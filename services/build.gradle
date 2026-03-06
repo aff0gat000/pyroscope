@@ -21,6 +21,7 @@ subprojects {
         implementation "io.vertx:vertx-core:${vertxVersion}"
         implementation "io.vertx:vertx-web:${vertxVersion}"
         implementation "io.vertx:vertx-web-client:${vertxVersion}"
+        compileOnly 'io.pyroscope:agent:0.13.1'   // labels API; agent loaded at runtime via -javaagent
 
         testImplementation "io.vertx:vertx-junit5:${vertxVersion}"
         testImplementation 'org.junit.jupiter:junit-jupiter:5.10.3'
