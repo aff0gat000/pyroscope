@@ -1,7 +1,7 @@
 # Profiling Asynchronous Frameworks
 
-Why continuous profiling is harder with reactive/async frameworks like Vert.x, and
-how Pyroscope labels solve it.
+Why continuous profiling is harder with reactive/async frameworks like Vert.x, what
+Pyroscope labels can and cannot solve, and what the community recommends.
 
 ---
 
@@ -48,11 +48,31 @@ Without request-level attribution, you cannot answer:
 | Did my code change improve performance? | Compare before/after by endpoint | Noise from unrelated endpoints |
 
 This is not a Pyroscope limitation — it affects **all** profilers (async-profiler, JFR,
-YourKit, VisualVM) when used with async frameworks.
+YourKit, VisualVM) when used with async frameworks. The Quarkus team built a dedicated
+[Reactive Code Profiler](https://github.com/quarkusio/quarkus/issues/25712) specifically
+because standard profiling tools are insufficient for reactive code.
 
 ---
 
-## The solution: Pyroscope labels
+## What profiling can and cannot tell you
+
+| Capability | Vert.x / reactive | Status |
+|------------|-------------------|--------|
+| Global CPU flame graph (all requests merged) | Works well | Tells you "40% of CPU is in JSON serialization" globally |
+| Memory allocation profiling | Works well | Find allocation hotspots and leak sources |
+| Detect blocking calls on event loop | Works (wall-clock mode) | Critical for Vert.x — find accidental blocking |
+| Per-endpoint CPU attribution via labels | Partial — synchronous handler path only | Labels cover route matching, computation, request construction |
+| Per-request attribution in async callbacks | Does not work automatically | Labels are `ThreadLocal`-based; lost at async boundaries |
+| Span-correlated profiling via OpenTelemetry | Partial (CPU only) | Requires OTel tracing setup; misses spans < 10ms |
+
+**Bottom line:** Pyroscope gives you useful **aggregate** function-level profiling. It tells
+you which functions consume the most CPU across all requests. It does **not** automatically
+attribute CPU to individual requests or endpoints in async callbacks — this is an
+industry-wide unsolved problem for reactive frameworks.
+
+---
+
+## The solution: Pyroscope labels (with known limitations)
 
 Pyroscope's Java agent supports **dynamic labels** — key-value pairs that tag profiling
 samples at runtime. Labels replace thread identity as the grouping mechanism:
@@ -143,25 +163,42 @@ synchronous handler execution**. For Vert.x, this covers:
 - Business logic computation (triage rules, diff calculation, scoring)
 - WebClient request construction (building the HTTP call to SOR or Pyroscope API)
 
-### What does NOT get labeled (and why that is OK)
+### What does NOT get labeled (known limitation)
 
 Async callbacks (`.onSuccess()`, `.onComplete()`) execute **after** the label scope ends.
-These callbacks are typically:
+Pyroscope labels use `ThreadLocal` storage, which does not propagate across async
+boundaries. This is confirmed by the pyroscope-java maintainer in
+[grafana/pyroscope-java#237](https://github.com/grafana/pyroscope-java/issues/237):
+*"No, there is no good way to handle this at the moment."*
 
-- I/O completion handlers (response arrived from network)
+The async-profiler project proposed a context ID feature specifically for reactive
+frameworks ([async-profiler PR #576](https://github.com/async-profiler/async-profiler/pull/576)),
+but it was **closed without merging** due to JNI overhead concerns. No replacement has
+been shipped as of March 2026.
+
+**Unlabeled async callbacks include:**
+
+- I/O completion handlers (`.onSuccess()`, `.onComplete()`)
 - Future composition (`.map()`, `.compose()`)
 - Response writing (`ctx.response().end()`)
 
-This is acceptable because:
+**Why this is still useful for most cases:**
 
-1. **CPU time is in the synchronous path.** JSON parsing, computation, and request
-   construction dominate CPU. Async callbacks are cheap (they just move data).
-2. **I/O waiting is non-blocking.** The event loop thread is not consuming CPU while
+1. **CPU time is concentrated in the synchronous path.** For this project's FaaS verticles,
+   JSON parsing, triage rule computation, diff calculation, and HTTP request construction
+   all happen synchronously — this is where labels are active.
+2. **Async callbacks are typically cheap.** They move data from network buffers to response
+   objects. Very little CPU work.
+3. **I/O waiting is non-blocking.** The event loop thread is not consuming CPU while
    waiting for a network response — there is nothing to profile.
-3. **The Pyroscope UI shows cumulative CPU time.** Even without async callback labeling,
-   you see which endpoint is spending the most CPU in its synchronous handler.
 
-If you need async-boundary labeling (rare), see
+**When this limitation hurts:**
+
+- Heavy JSON processing inside `.onSuccess()` handlers
+- Significant computation in `.compose()` chains
+- Worker verticle callbacks with business logic
+
+If you need async-boundary labeling, see
 [Advanced: async label propagation](#advanced-async-label-propagation) below.
 
 ### Dependency setup
@@ -272,7 +309,7 @@ language/framework is involved.
 
 ## Advanced: async label propagation
 
-For cases where you need labels on async callbacks (rare), use Vert.x's `Context`
+For cases where you need labels on async callbacks, use Vert.x's `Context`
 to carry labels through the event loop:
 
 ```java
@@ -295,20 +332,90 @@ webClient.get("/api").send().onSuccess(response -> {
 });
 ```
 
-This approach requires wrapping each async callback, so it is more invasive. Only
+This approach requires wrapping each async callback, so it is invasive. Only
 use it if you have significant CPU work happening inside async callbacks (e.g.,
 heavy JSON processing in `.onSuccess()` handlers).
 
 ---
 
+## Alternative approaches
+
+### OpenTelemetry span profiling
+
+The `otel-profiling-java` package can annotate CPU samples with OTel span IDs,
+allowing you to filter profiles for a specific trace span in Grafana.
+
+**Limitations:**
+- CPU profiling only (not memory or lock contention)
+- Spans shorter than 10ms (default 100Hz sampling) may be missed entirely
+- Requires OTel tracing infrastructure with correct Vert.x context propagation
+- OTel context is also `ThreadLocal`-based — same propagation issue in reactive code
+
+See [otel-profiling-java](https://github.com/grafana/otel-profiling-java) for setup.
+
+### Virtual threads (Project Loom)
+
+Vert.x 4.5+ supports virtual threads via `@RunOnVirtualThread`. Virtual threads
+restore thread-per-request semantics, making labels and profiling work naturally.
+
+**Caveats:**
+- Requires JDK 21+ (this project deploys on temurin:21)
+- async-profiler has known bugs with virtual threads on JDK 21; fixed in JDK 23.
+  Workaround: `-XX:-DoJVMTIVirtualThreadTransitions`
+  ([async-profiler#1096](https://github.com/async-profiler/async-profiler/issues/1096))
+- Requires rewriting handlers from reactive to blocking style
+- Best long-term solution but biggest migration effort
+
+### Custom reactive code profiler
+
+The Quarkus team built a dedicated
+[Reactive Code Profiler](https://github.com/quarkusio/quarkus/issues/25712) that
+intercepts Vert.x requests and Mutiny functional interfaces, transforms lambda names
+to human-readable form, and maps async events to business operations. This bypasses
+the sampling profiler entirely with custom instrumentation. This confirms the community
+recognizes standard profiling tools are insufficient for reactive code.
+
+---
+
+## Recommended path forward
+
+| Phase | Action | Effort | Value |
+|-------|--------|--------|-------|
+| **Now** | Use the label handler in `AbstractFunctionVerticle` | Done | Per-endpoint aggregate CPU, covers ~80% of CPU work |
+| **Next** | Review flame graphs, identify if async callbacks are a bottleneck | Low | Determines if you need more |
+| **If needed** | Add manual label propagation to heavy async callbacks | Medium | Per-request attribution for specific hot paths |
+| **Long-term** | Evaluate virtual threads (JDK 23+) or OTel span profiling | High | Full per-request attribution |
+
+---
+
 ## Resources and support
+
+### Pyroscope and profiling
 
 | Resource | URL |
 |----------|-----|
 | Pyroscope Java agent docs | https://grafana.com/docs/pyroscope/latest/configure-client/language-sdks/java/ |
 | Pyroscope Labels API | https://grafana.com/docs/pyroscope/latest/configure-client/language-sdks/java/#add-profiling-labels-to-tracing-spans |
-| Vert.x Context documentation | https://vertx.io/docs/vertx-core/java/#_the_context_object |
 | async-profiler (underlying engine) | https://github.com/async-profiler/async-profiler |
+| async-profiler manual (by use case) | https://krzysztofslusarski.github.io/2022/12/12/async-manual.html |
+| otel-profiling-java (span profiles) | https://github.com/grafana/otel-profiling-java |
+
+### Known issues and community discussions
+
+| Issue | Summary |
+|-------|---------|
+| [pyroscope-java#237](https://github.com/grafana/pyroscope-java/issues/237) | Label propagation to async worker threads — maintainer confirms no solution |
+| [async-profiler PR#576](https://github.com/async-profiler/async-profiler/pull/576) | Context ID for reactive code — closed, JNI overhead too high |
+| [async-profiler#1096](https://github.com/async-profiler/async-profiler/issues/1096) | Virtual thread profiling bugs on JDK 21 |
+| [async-profiler#758](https://github.com/async-profiler/async-profiler/issues/758) | Method mis-attribution on certain JDK versions |
+| [quarkus#25712](https://github.com/quarkusio/quarkus/issues/25712) | Quarkus Reactive Code Profiler — custom instrumentation for reactive |
+| [pyroscope-java#103](https://github.com/grafana/pyroscope-java/issues/103) | Thread-level profiling support request |
+
+### Framework-specific
+
+| Resource | URL |
+|----------|-----|
+| Vert.x Context documentation | https://vertx.io/docs/vertx-core/java/#_the_context_object |
 | Go pprof labels | https://pkg.go.dev/runtime/pprof#Do |
 | Python Pyroscope SDK | https://grafana.com/docs/pyroscope/latest/configure-client/language-sdks/python/ |
 
