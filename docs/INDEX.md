@@ -77,7 +77,7 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 |----------|-------------|
 | [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
 | [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
-| [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — why it is hard, how labels solve it, labeling strategy |
+| [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — two-tier labeling (automatic + LabeledFuture), async limitations |
 | [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint |
 | [pyroscope-study-guide.md](pyroscope-study-guide.md) | Expert mastery — internals, operations, competitive analysis, talking points |
 

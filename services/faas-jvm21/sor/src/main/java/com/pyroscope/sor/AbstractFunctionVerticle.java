@@ -7,6 +7,8 @@ import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
 import io.vertx.ext.web.handler.BodyHandler;
 
+import java.util.Map;
+
 public abstract class AbstractFunctionVerticle extends AbstractVerticle {
 
     protected final int port;
@@ -60,14 +62,25 @@ public abstract class AbstractFunctionVerticle extends AbstractVerticle {
     }
 
     private void applyPyroscopeLabels(RoutingContext ctx) {
+        String endpoint = ctx.currentRoute() != null && ctx.currentRoute().getPath() != null
+                ? ctx.currentRoute().getPath()
+                : ctx.request().path();
+        if (endpoint == null) endpoint = "unknown";
+        String method = ctx.request().method().name();
+
+        // Store labels on context for async propagation (LabeledFuture)
+        ctx.put("pyroscope.labels", Map.of(
+                "endpoint", endpoint,
+                "http.method", method,
+                "function", FUNCTION,
+                "layer", "sor"
+        ));
+
         try {
-            String endpoint = ctx.currentRoute() != null && ctx.currentRoute().getPath() != null
-                    ? ctx.currentRoute().getPath()
-                    : ctx.request().path();
             io.pyroscope.labels.Pyroscope.LabelsWrapper.run(
                     new io.pyroscope.labels.LabelsSet(
                             "endpoint", endpoint,
-                            "http.method", ctx.request().method().name(),
+                            "http.method", method,
                             "function", FUNCTION,
                             "layer", "sor"
                     ),

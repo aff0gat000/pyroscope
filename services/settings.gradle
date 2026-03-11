@@ -1,5 +1,6 @@
 rootProject.name = 'pyroscope-services'
 
+include 'pyroscope-vertx'
 include 'faas-jvm11:bor'
 include 'faas-jvm11:sor'
 include 'faas-jvm21:bor'
