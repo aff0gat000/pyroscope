@@ -1,0 +1,130 @@
+---
+# TLS deployment with Nginx reverse proxy.
+# Nginx terminates TLS on :4040, proxies to Pyroscope on :4041.
+# Included by main.yml when tls_enabled and tls_proxy == 'nginx'.
+
+# ---- Firewall (TLS port) ----
+
+- name: Open Pyroscope TLS port in firewalld
+  ansible.posix.firewalld:
+    port: "4040/tcp"
+    permanent: true
+    immediate: true
+    state: enabled
+  when: firewalld_active | default(false)
+
+# ---- TLS certificate directory ----
+
+- name: Create TLS certificate directory
+  ansible.builtin.file:
+    path: "{{ tls_cert_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- Self-signed certificate ----
+
+- name: Generate self-signed certificate
+  when: tls_self_signed | bool
+  block:
+    - name: Check if existing cert is still valid
+      ansible.builtin.command:
+        cmd: openssl x509 -in {{ tls_cert_dir }}/cert.pem -checkend 604800
+      register: cert_check
+      failed_when: false
+      changed_when: false
+
+    - name: Generate self-signed cert + key
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509
+          -newkey rsa:2048
+          -nodes
+          -days 365
+          -subj "/CN={{ ansible_hostname }}"
+          -addext "subjectAltName=DNS:{{ ansible_hostname }},DNS:localhost,IP:{{ ansible_default_ipv4.address | default('127.0.0.1') }},IP:127.0.0.1"
+          -keyout {{ tls_cert_dir }}/key.pem
+          -out {{ tls_cert_dir }}/cert.pem
+      when: cert_check.rc != 0
+      changed_when: true
+
+    - name: Set certificate file permissions
+      ansible.builtin.file:
+        path: "{{ tls_cert_dir }}/{{ item.name }}"
+        mode: "{{ item.mode }}"
+      loop:
+        - {name: cert.pem, mode: "0644"}
+        - {name: key.pem, mode: "0600"}
+      when: cert_check.rc != 0
+
+    - name: Warn about self-signed certificate
+      ansible.builtin.debug:
+        msg:
+          - "==========================================================="
+          - " SELF-SIGNED CERTIFICATE — NOT FOR PRODUCTION"
+          - " Java agents will need TLS trust configured."
+          - " For production, use tls_cert_src/tls_key_src with"
+          - " enterprise CA certificates."
+          - "==========================================================="
+
+# ---- Provided certificates (enterprise CA) ----
+
+- name: Copy provided TLS certificates
+  when: not tls_self_signed | bool and tls_cert_src is defined
+  block:
+    - name: Copy TLS certificate
+      ansible.builtin.copy:
+        src: "{{ tls_cert_src }}"
+        dest: "{{ tls_cert_dir }}/cert.pem"
+        mode: "0644"
+
+    - name: Copy TLS private key
+      ansible.builtin.copy:
+        src: "{{ tls_key_src }}"
+        dest: "{{ tls_cert_dir }}/key.pem"
+        mode: "0600"
+
+# ---- Nginx configuration ----
+
+- name: Generate Nginx TLS proxy configuration
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: "{{ install_dir }}/nginx.conf"
+    mode: "0644"
+
+# ---- Nginx container ----
+
+- name: Pull Nginx image
+  community.docker.docker_image:
+    name: "{{ nginx_image }}"
+    source: pull
+    force_source: true
+  retries: "{{ docker_pull_retries }}"
+  delay: "{{ docker_pull_delay }}"
+  register: nginx_pull
+  until: nginx_pull is not failed
+  when: docker_load_path is not defined
+
+- name: Run Nginx TLS proxy container
+  community.docker.docker_container:
+    name: "{{ nginx_container_name }}"
+    image: "{{ nginx_image }}"
+    state: started
+    restart_policy: unless-stopped
+    network_mode: host
+    log_options:
+      max-size: "50m"
+      max-file: "3"
+    volumes:
+      - "{{ install_dir }}/nginx.conf:/etc/nginx/nginx.conf:ro{{ docker_volume_suffix }}"
+      - "{{ tls_cert_dir }}:/etc/nginx/tls:ro{{ docker_volume_suffix }}"
+
+- name: Wait for Nginx TLS proxy to become ready
+  ansible.builtin.uri:
+    url: "https://127.0.0.1:4040/ready"
+    method: GET
+    status_code: 200
+    validate_certs: false
+  register: nginx_health
+  until: nginx_health.status == 200
+  retries: 12
+  delay: 5

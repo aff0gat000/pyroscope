@@ -30,9 +30,14 @@
   when: pyroscope_mode == 'full-stack'
   tags: [deploy]
 
-- name: Deploy TLS proxy (Envoy)
+- name: Deploy TLS proxy (Nginx)
+  ansible.builtin.include_tasks: tls-nginx.yml
+  when: pyroscope_mode == 'full-stack' and tls_enabled | bool and (tls_proxy | default('nginx')) == 'nginx'
+  tags: [deploy]
+
+- name: Deploy TLS proxy (Envoy — legacy)
   ansible.builtin.include_tasks: tls.yml
-  when: pyroscope_mode == 'full-stack' and tls_enabled | bool
+  when: pyroscope_mode == 'full-stack' and tls_enabled | bool and (tls_proxy | default('nginx')) == 'envoy'
   tags: [deploy]
 
 - name: Add Pyroscope to existing Grafana

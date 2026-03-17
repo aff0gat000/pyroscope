@@ -48,18 +48,44 @@
   register: pyroscope_pull
   until: pyroscope_pull is not failed
 
+- name: Set Pyroscope listen port
+  ansible.builtin.set_fact:
+    _pyroscope_listen_port: >-
+      {{ pyroscope_internal_port if (tls_enabled | bool and (tls_proxy | default('nginx')) == 'nginx') else pyroscope_port }}
+
+- name: Stage Pyroscope config (Nginx TLS mode — port {{ pyroscope_internal_port }})
+  ansible.builtin.copy:
+    dest: "{{ install_dir | default('/opt/pyroscope') }}/pyroscope.yaml"
+    mode: "0644"
+    content: |
+      server:
+        http_listen_port: {{ _pyroscope_listen_port | int }}
+
+      storage:
+        backend: filesystem
+        filesystem:
+          dir: /data
+
+      self_profiling:
+        disable_push: true
+  when: tls_enabled | bool and (tls_proxy | default('nginx')) == 'nginx'
+
 - name: Run Pyroscope container
   community.docker.docker_container:
     name: "{{ pyroscope_container_name }}"
     image: "{{ pyroscope_image }}"
     state: started
     restart_policy: unless-stopped
-    ports:
-      - "{{ '127.0.0.1:' if tls_enabled | bool else '' }}{{ pyroscope_port }}:4040"
+    network_mode: host
+    log_options:
+      max-size: "50m"
+      max-file: "3"
     volumes:
       - "{{ pyroscope_volume }}:/data{{ docker_volume_suffix }}"
+      - "{{ install_dir | default('/opt/pyroscope') }}/pyroscope.yaml:/etc/pyroscope/config.yaml:ro{{ docker_volume_suffix }}"
+    command: "-config.file=/etc/pyroscope/config.yaml"
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4040/ready"]
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:{{ _pyroscope_listen_port | int }}/ready"]
       interval: 15s
       timeout: 5s
       start_period: 10s
@@ -67,7 +93,7 @@
 
 - name: Wait for Pyroscope to become healthy
   ansible.builtin.uri:
-    url: "http://localhost:{{ pyroscope_port }}/ready"
+    url: "http://localhost:{{ _pyroscope_listen_port | int }}/ready"
     method: GET
     status_code: 200
   register: pyroscope_health
@@ -79,7 +105,7 @@
 
 - name: Auto-detect Pyroscope URL
   ansible.builtin.set_fact:
-    pyroscope_url: "http://{{ ansible_default_ipv4.address | default('localhost') }}:{{ pyroscope_port }}"
+    pyroscope_url: "http://{{ ansible_default_ipv4.address | default('localhost') }}:{{ _pyroscope_listen_port | int }}"
   when: pyroscope_url is not defined
 
 # ===========================================================================
@@ -260,7 +286,7 @@
   ansible.builtin.set_fact:
     _proto: "{{ 'https' if tls_enabled | bool else 'http' }}"
     _host: "{{ ansible_default_ipv4.address | default('localhost') }}"
-    _pyro_port: "{{ tls_port_pyroscope if tls_enabled | bool else pyroscope_port }}"
+    _pyro_port: "{{ tls_listen_port if (tls_enabled | bool and (tls_proxy | default('nginx')) == 'nginx') else (tls_port_pyroscope if tls_enabled | bool else pyroscope_port) }}"
     _graf_port: "{{ tls_port_grafana if tls_enabled | bool else grafana_port }}"
 
 - name: Set Grafana summary line

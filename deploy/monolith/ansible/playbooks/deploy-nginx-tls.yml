@@ -1,0 +1,50 @@
+---
+# =============================================================================
+# Deploy Pyroscope monolith with Nginx TLS proxy (F5 VIP compatible)
+# =============================================================================
+#
+# Architecture:
+#   F5 VIP (:443) → VM Nginx (TLS :4040) → Pyroscope (HTTP :4041)
+#
+# Two-stage deployment:
+#   Stage 1 (local Mac):  Pull images, save tarball, SCP to VM
+#   Stage 2 (this playbook): Load images, configure, start containers
+#
+# Usage:
+#   # Air-gapped (images pre-loaded via stage1-build.sh)
+#   ansible-playbook playbooks/deploy-nginx-tls.yml \
+#       -e docker_load_path=/tmp/pyroscope-images.tar \
+#       -e tls_cert_src=/path/to/cert.pem \
+#       -e tls_key_src=/path/to/key.pem
+#
+#   # With enterprise CA certs already on VM
+#   ansible-playbook playbooks/deploy-nginx-tls.yml \
+#       -e tls_cert_src=/path/to/cert.pem \
+#       -e tls_key_src=/path/to/key.pem
+#
+#   # With self-signed cert (dev/staging)
+#   ansible-playbook playbooks/deploy-nginx-tls.yml \
+#       -e tls_self_signed=true
+#
+# Variables (override in inventory or -e):
+#   docker_load_path:    Path to images tarball on VM (air-gapped)
+#   tls_cert_src:        Path to cert.pem on Ansible control node
+#   tls_key_src:         Path to key.pem on Ansible control node
+#   tls_self_signed:     Generate self-signed cert on VM (default: false)
+#   skip_grafana:        Skip Grafana deployment (default: true)
+#   pyroscope_image:     Pyroscope image tag (default: grafana/pyroscope:1.18.0)
+# =============================================================================
+
+- name: Deploy Pyroscope with Nginx TLS proxy
+  hosts: pyroscope
+  become: true
+
+  vars:
+    tls_enabled: true
+    tls_proxy: nginx
+    skip_grafana: true
+    pyroscope_image: "grafana/pyroscope:1.18.0"
+    nginx_image: "nginx:1.27-alpine"
+
+  roles:
+    - pyroscope-stack

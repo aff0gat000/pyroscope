@@ -45,14 +45,28 @@ skip_grafana: false
 # --- Image transfer (air-gapped / no registry) ---
 # docker_load_path: /tmp/pyroscope-stack-images.tar
 
-# --- TLS / HTTPS (Envoy reverse proxy) ---
+# --- TLS / HTTPS ---
 tls_enabled: false
 # tls_cert_src: /path/to/cert.pem      # Cert on Ansible control node
 # tls_key_src: /path/to/key.pem        # Key on Ansible control node
 tls_self_signed: false                   # Generate self-signed cert on target
 tls_cert_dir: /opt/pyroscope/tls
-tls_port_pyroscope: 4443
+tls_listen_port: 4040                    # External TLS port (Nginx listens here)
+tls_port_pyroscope: 4040                 # Kept for backwards compat with Envoy mode
 tls_port_grafana: 443
+
+# --- TLS proxy ---
+# "nginx"  = Nginx on :4040 (TLS) → Pyroscope on :4041 (HTTP) — recommended
+# "envoy"  = Envoy on :4443 (TLS) → Pyroscope on :4040 (HTTP) — legacy
+tls_proxy: nginx
+
+# Nginx (tls_proxy: nginx)
+nginx_image: "nginx:1.27-alpine"
+nginx_container_name: nginx-tls
+pyroscope_internal_port: 4041            # Pyroscope HTTP port when behind Nginx
+install_dir: /opt/pyroscope
+
+# Envoy (tls_proxy: envoy) — legacy, kept for backwards compatibility
 envoy_image: "envoyproxy/envoy:v1.31-latest"
 envoy_container_name: envoy-proxy
 

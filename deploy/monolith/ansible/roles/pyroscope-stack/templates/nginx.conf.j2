@@ -1,0 +1,19 @@
+events { worker_connections 1024; }
+
+http {
+    server {
+        listen {{ tls_listen_port | default(4040) }} ssl;
+        ssl_certificate     /etc/nginx/tls/cert.pem;
+        ssl_certificate_key /etc/nginx/tls/key.pem;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+
+        location / {
+            proxy_pass http://127.0.0.1:{{ pyroscope_internal_port | default(4041) }};
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 60s;
+        }
+    }
+}
