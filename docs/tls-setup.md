@@ -13,9 +13,10 @@ For TLS architecture diagrams see [deployment-guide.md Section 16](deployment-gu
 | Mode | TLS terminated at | Extra infra on VM | Pyroscope config changes | Agent URL example |
 |------|-------------------|-------------------|--------------------------|-------------------|
 | **HTTP (default)** | N/A | None | None | `http://10.1.2.3:4040` |
-| **F5 VIP** | F5 load balancer | None | None | `https://pyroscope-dev.company.com` |
+| **F5 VIP (HTTP backend)** | F5 load balancer | None | None | `https://pyroscope-dev.company.com` |
+| **F5 VIP + Nginx (recommended)** | Nginx on VM | +1 container | Port change to 4041 | `https://pyroscope-dev.company.com` |
 | **Pyroscope native TLS** | Pyroscope process | None | `pyroscope.yaml` update | `https://10.1.2.3:4040` |
-| **Nginx proxy** | Nginx container | +1 container | None | `https://10.1.2.3:4443` |
+| **Nginx proxy (standalone)** | Nginx container | +1 container | Port change to 4041 | `https://10.1.2.3:4040` |
 | **Envoy proxy** | Envoy container | +1 container | None | `https://10.1.2.3:4443` |
 
 ---
@@ -26,7 +27,7 @@ For TLS architecture diagrams see [deployment-guide.md Section 16](deployment-gu
 |-------------|-----------------|-------------------|-------|
 | Local / dev | HTTP or self-signed | N/A or `openssl req` | No TLS needed for local testing |
 | Staging | Self-signed or internal CA | `openssl req` or PKI team | Mirror production topology for validation |
-| Production | F5 VIP (recommended) or native TLS | Enterprise CA via PKI team | Auto-trusted by JVMs, centralized lifecycle |
+| Production | F5 VIP + Nginx (recommended) | Enterprise CA via PKI team | Auto-trusted by JVMs, centralized lifecycle |
 | Regulated enterprise | F5 VIP + cert manager | PKI team / HashiCorp Vault | Auto-renewal, audit trail, compliance |
 
 ---
@@ -130,6 +131,165 @@ The agent URL must include the port since 4040 is non-standard for HTTPS.
 
 ---
 
+## Option 1b: F5 VIP + Nginx on VM (recommended for HTTPS backends)
+
+Many enterprise F5 configurations send **HTTPS** (not HTTP) to the backend pool.
+In this case, the F5 re-encrypts traffic to the VM, and the VM must serve TLS on
+the expected port. Since Pyroscope's native TLS (`http_tls_config`) can be unreliable,
+use Nginx on the VM to terminate TLS and proxy to Pyroscope over plain HTTP.
+
+```
+Agents (HTTPS) → F5 VIP (:443) → VM Nginx (TLS :4040) → Pyroscope (HTTP :4041)
+                                   ▲                       ▲
+                              cert.pem / key.pem      plain HTTP, localhost only
+```
+
+### Why Nginx instead of Pyroscope native TLS?
+
+Pyroscope's `http_tls_config` is inherited from Grafana Mimir's dskit library. It works
+but is not battle-tested for enterprise TLS requirements (client cert validation,
+cipher suite control, OCSP stapling). Nginx is purpose-built for TLS termination and is
+the industry standard for this pattern.
+
+### Step 1: Stage certificate files
+
+```bash
+mkdir -p /opt/pyroscope/tls
+cp /path/to/cert.pem /opt/pyroscope/tls/cert.pem
+cp /path/to/key.pem  /opt/pyroscope/tls/key.pem
+chmod 644 /opt/pyroscope/tls/cert.pem
+chmod 600 /opt/pyroscope/tls/key.pem
+```
+
+### Step 2: Update pyroscope.yaml — change port to 4041
+
+Pyroscope moves to port `4041` (internal only). Nginx takes over port `4040`.
+
+```yaml
+# /opt/pyroscope/pyroscope.yaml
+server:
+  http_listen_port: 4041
+
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data
+
+self_profiling:
+  disable_push: true
+```
+
+```bash
+cp /tmp/pyroscope.yaml /opt/pyroscope/pyroscope.yaml
+chmod 644 /opt/pyroscope/pyroscope.yaml
+```
+
+> **Important:** Do NOT include `http_tls_config` in pyroscope.yaml. Nginx handles TLS.
+> Pyroscope serves plain HTTP on `localhost:4041`.
+
+### Step 3: Write Nginx configuration
+
+```bash
+cat > /opt/pyroscope/nginx.conf <<'EOF'
+events { worker_connections 1024; }
+
+http {
+    server {
+        listen 4040 ssl;
+        ssl_certificate     /etc/nginx/tls/cert.pem;
+        ssl_certificate_key /etc/nginx/tls/key.pem;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+
+        location / {
+            proxy_pass http://127.0.0.1:4041;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 60s;
+        }
+    }
+}
+EOF
+```
+
+### Step 4: Start Pyroscope (HTTP on port 4041)
+
+```bash
+docker volume create pyroscope-data
+docker run -d --name pyroscope --restart unless-stopped \
+    --network host \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    grafana/pyroscope:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
+```
+
+### Step 5: Start Nginx (TLS on port 4040)
+
+```bash
+docker run -d --name nginx-tls --restart unless-stopped \
+    --network host \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -v /opt/pyroscope/nginx.conf:/etc/nginx/nginx.conf:ro \
+    -v /opt/pyroscope/tls:/etc/nginx/tls:ro \
+    nginx:1.27-alpine
+```
+
+### Step 6: Verify
+
+```bash
+# Wait for Pyroscope to initialize
+sleep 20
+
+# Verify Pyroscope is running on 4041 (internal)
+curl http://localhost:4041/ready && echo "OK"
+
+# Verify Nginx TLS proxy on 4040
+curl -k https://localhost:4040/ready && echo "OK"
+
+# Verify from F5 VIP (if VIP is configured)
+curl https://domain-pyroscope.company.com/ready && echo "OK"
+```
+
+### Agent configuration
+
+```properties
+# Via F5 VIP (recommended)
+pyroscope.server.address=https://domain-pyroscope.company.com
+
+# Or direct to VM (bypassing F5)
+pyroscope.server.address=https://<VM_IP>:4040
+```
+
+With enterprise CA certs, Java agents trust the certificate automatically — no
+`keytool` import needed.
+
+### Certificate renewal
+
+```bash
+# Replace cert files
+cp /path/to/new-cert.pem /opt/pyroscope/tls/cert.pem
+cp /path/to/new-key.pem  /opt/pyroscope/tls/key.pem
+chmod 644 /opt/pyroscope/tls/cert.pem
+chmod 600 /opt/pyroscope/tls/key.pem
+
+# Restart Nginx only — Pyroscope does not need a restart
+docker restart nginx-tls
+```
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `unexpected EOF` from F5 VIP | F5 sends HTTP to backend but Nginx expects TLS, or vice versa | Confirm F5 backend pool protocol matches what Nginx listens on (TLS on :4040) |
+| `502 Bad Gateway` from Nginx | Pyroscope not running or wrong port | Verify `curl http://localhost:4041/ready` works |
+| `connection refused` on :4040 | Nginx container not running | Check `docker ps \| grep nginx-tls` |
+| Cert not trusted by F5 | F5 server SSL profile doesn't trust your CA | Ask network team to add CA to F5 server SSL profile trust chain |
+
+---
+
 ## Option 2: Pyroscope Native TLS (simplest self-managed)
 
 ```
@@ -217,11 +377,14 @@ docker restart pyroscope
 
 ---
 
-## Option 3: Nginx Reverse Proxy (lightweight)
+## Option 3: Nginx Reverse Proxy (standalone, no F5)
 
 ```
-OCP Agents (HTTPS :4443) ──→ Nginx (TLS termination) ──→ Pyroscope (HTTP :4040)
+OCP Agents (HTTPS :4040) ──→ Nginx (TLS termination :4040) ──→ Pyroscope (HTTP :4041)
 ```
+
+Use this when agents connect directly to the VM without an F5 VIP.
+Same architecture as Option 1b but without the F5 in front.
 
 ### 1. Stage certificate files
 
@@ -233,23 +396,41 @@ chmod 644 /opt/pyroscope/tls/cert.pem
 chmod 600 /opt/pyroscope/tls/key.pem
 ```
 
-### 2. Write Nginx configuration
+### 2. Update pyroscope.yaml — change port to 4041
+
+```yaml
+# /opt/pyroscope/pyroscope.yaml
+server:
+  http_listen_port: 4041
+
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data
+
+self_profiling:
+  disable_push: true
+```
+
+### 3. Write Nginx configuration
 
 ```bash
-cat > /opt/pyroscope/tls/nginx.conf <<'EOF'
+cat > /opt/pyroscope/nginx.conf <<'EOF'
 events { worker_connections 1024; }
 
 http {
     server {
-        listen 4443 ssl;
+        listen 4040 ssl;
         ssl_certificate     /etc/nginx/tls/cert.pem;
         ssl_certificate_key /etc/nginx/tls/key.pem;
         ssl_protocols       TLSv1.2 TLSv1.3;
 
         location / {
-            proxy_pass http://127.0.0.1:4040;
+            proxy_pass http://127.0.0.1:4041;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
             proxy_read_timeout 60s;
         }
     }
@@ -257,27 +438,34 @@ http {
 EOF
 ```
 
-### 3. Deploy Nginx
+### 4. Start Pyroscope (HTTP on 4041) and Nginx (TLS on 4040)
 
 ```bash
+# Pyroscope
+docker volume create pyroscope-data
+docker run -d --name pyroscope --restart unless-stopped \
+    --network host \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    grafana/pyroscope:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
+
+# Nginx
 docker run -d --name nginx-tls --restart unless-stopped \
     --network host \
-    -v /opt/pyroscope/tls/nginx.conf:/etc/nginx/nginx.conf:ro \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -v /opt/pyroscope/nginx.conf:/etc/nginx/nginx.conf:ro \
     -v /opt/pyroscope/tls:/etc/nginx/tls:ro \
     nginx:1.27-alpine
-```
-
-### 4. Open firewall port
-
-```bash
-firewall-cmd --permanent --add-port=4443/tcp
-firewall-cmd --reload
 ```
 
 ### 5. Verify
 
 ```bash
-curl -k https://localhost:4443/ready && echo "OK"
+sleep 20
+curl http://localhost:4041/ready && echo "Pyroscope OK"
+curl -k https://localhost:4040/ready && echo "Nginx TLS OK"
 ```
 
 ### Certificate renewal
@@ -286,6 +474,12 @@ curl -k https://localhost:4443/ready && echo "OK"
 cp /path/to/new-cert.pem /opt/pyroscope/tls/cert.pem
 cp /path/to/new-key.pem  /opt/pyroscope/tls/key.pem
 docker restart nginx-tls
+```
+
+### Agent configuration
+
+```properties
+pyroscope.server.address=https://<VM_IP>:4040
 ```
 
 ---
@@ -463,10 +657,11 @@ for the full init container pattern.
 |---------|-------|-----|
 | `PKIX path building failed` | Java agent doesn't trust the TLS cert | Import cert into JVM truststore (see above) |
 | `curl: (60) SSL certificate problem: self-signed certificate` | Self-signed cert not trusted by curl | Use `curl -k` for testing, or add to system trust: `cp cert.pem /etc/pki/ca-trust/source/anchors/ && update-ca-trust` (RHEL) |
-| `connection refused` on port 4443 | Proxy not running or firewall blocking | Check `docker ps \| grep envoy` or `nginx`, check `firewall-cmd --list-ports` |
-| `upstream connect error or disconnect/reset before headers` | Proxy can't reach Pyroscope on 127.0.0.1:4040 | Verify Pyroscope is running: `curl http://localhost:4040/ready` |
-| Certificate expired | Self-signed cert past 365-day validity | Replace cert/key files, restart proxy or Pyroscope |
-| `SSL_ERROR_RX_RECORD_TOO_LONG` | Client using HTTPS against plain HTTP port | Use port 4443 (proxy) or verify native TLS is configured on 4040 |
+| `unexpected EOF` or `500 internal` from F5 VIP | Protocol mismatch — F5 sends HTTP but backend expects TLS, or F5 sends HTTPS but backend serves HTTP | Ensure F5 backend pool protocol matches what the VM serves. With Nginx: F5 sends HTTPS to `:4040`, Nginx terminates TLS. Without Nginx: F5 must send HTTP to `:4040` |
+| `502 Bad Gateway` from Nginx | Pyroscope not running or listening on wrong port | Verify `curl http://localhost:4041/ready` returns `ready` |
+| `connection refused` on port 4040 | Nginx container not running or firewall blocking | Check `docker ps \| grep nginx-tls`, check `firewall-cmd --list-ports` |
+| Certificate expired | Cert past validity | Replace cert/key files, `docker restart nginx-tls` |
+| `SSL_ERROR_RX_RECORD_TOO_LONG` | Client using HTTPS against plain HTTP port | Verify Nginx is running on `:4040` with TLS, not Pyroscope directly |
 | `No subject alternative names matching` / hostname mismatch | Cert CN/SAN doesn't match the hostname agents use | Regenerate cert with correct SAN entries (DNS + IP) |
 | `SELinux: permission denied` on cert files | SELinux blocking container volume mounts | Run `restorecon -Rv /opt/pyroscope/tls` or add `:z` suffix to volume mounts |
 
@@ -474,7 +669,7 @@ for the full init container pattern.
 
 ## Cross-references
 
-- [deployment-guide.md Section 7c-7d](deployment-guide.md#7c-https-with-self-signed-cert) — Manual TLS setup with Envoy
+- [deployment-guide.md Section 7c-7d](deployment-guide.md#7c-https-with-self-signed-cert) — Manual TLS setup
 - [deployment-guide.md Section 15c-15d](deployment-guide.md#15c-https-with-ca-cert) — Agent HTTPS configuration
 - [deployment-guide.md Section 16](deployment-guide.md#16-tls-architecture) — TLS architecture diagrams
 - [deployment-guide.md Section 17b](deployment-guide.md#17b-monolith-https) — Firewall rules for HTTPS

@@ -535,31 +535,51 @@ Replace the `Host` pattern with your actual hostname pattern (e.g., `*.corp.myco
 
 ## Pyroscope server configuration (HTTP vs HTTPS)
 
-The Pyroscope server always listens on HTTP internally (port 4040). The `pyroscope.yaml`
-config file is **identical** for HTTP and HTTPS deployments:
+Pyroscope serves plain HTTP. TLS is terminated by an **Nginx reverse proxy** on the
+same VM. Two configurations are supported:
+
+**HTTP mode** (no TLS):
 
 ```yaml
-# deploy/monolith/pyroscope.yaml — same for HTTP and HTTPS
+# /opt/pyroscope/pyroscope.yaml
+server:
+  http_listen_port: 4040
+
 storage:
   backend: filesystem
   filesystem:
     dir: /data
 
+self_profiling:
+  disable_push: true
+```
+
+**HTTPS mode** (Nginx handles TLS on :4040, Pyroscope moves to :4041):
+
+```yaml
+# /opt/pyroscope/pyroscope.yaml — note port change to 4041
 server:
-  http_listen_port: 4040
+  http_listen_port: 4041
+
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data
 
 self_profiling:
   disable_push: true
 ```
 
-For HTTPS deployments, TLS is terminated by an **Envoy reverse proxy** in front of
-Pyroscope. Pyroscope itself never handles TLS. This means:
+In HTTPS mode, Nginx listens on `:4040` with TLS and proxies to `localhost:4041`.
+This keeps the external port unchanged (F5 VIP still points to `:4040`). Pyroscope
+itself never handles TLS. This means:
 
-- No config changes needed for Pyroscope when switching between HTTP and HTTPS
-- Grafana on the same host still connects to Pyroscope via `http://localhost:4040`
-- Only external clients (Java agents, browsers) use the HTTPS endpoint (`:4443`)
+- Grafana on the same host connects to Pyroscope via `http://localhost:4041`
+- External clients (Java agents, browsers) use HTTPS on `:4040` (through Nginx)
+- Certificate management is handled by Nginx, not Pyroscope
 
-See [Section 16: TLS architecture](#16-tls-architecture) for diagrams.
+See [tls-setup.md](tls-setup.md) for all TLS options and
+[Section 16: TLS architecture](#16-tls-architecture) for diagrams.
 
 ---
 
@@ -807,24 +827,101 @@ curl -k https://localhost:4443/ready       # Pyroscope via Envoy
 curl -k https://localhost:443/api/health   # Grafana via Envoy
 ```
 
-### 7d. HTTPS with CA certs
+### 7d. HTTPS with enterprise CA certs (F5 VIP + Nginx)
 
-Same pattern as [7c](#7c-https-with-self-signed-cert) but skip the `openssl req` step.
-Place your enterprise-provided `cert.pem` and `key.pem` into `/opt/pyroscope/tls/` instead.
+This is the **recommended production deployment**. F5 VIP forwards HTTPS to the VM.
+Nginx on the VM terminates TLS on `:4040` and proxies to Pyroscope on `:4041`.
 
 ```bash
-# Copy enterprise certs to the VM
+# ---- On the target VM (as root) ----
+
+# 1. Load Pyroscope and Nginx images
+docker load -i /tmp/pyroscope-images.tar
+docker load -i /tmp/nginx-images.tar
+# If online: docker pull --platform linux/amd64 grafana/pyroscope:1.18.0
+# If online: docker pull --platform linux/amd64 nginx:1.27-alpine
+
+# 2. Stage enterprise certificate files
 mkdir -p /opt/pyroscope/tls
 cp /path/to/enterprise-cert.pem /opt/pyroscope/tls/cert.pem
-cp /path/to/enterprise-key.pem /opt/pyroscope/tls/key.pem
-chmod 600 /opt/pyroscope/tls/key.pem
+cp /path/to/enterprise-key.pem  /opt/pyroscope/tls/key.pem
 chmod 644 /opt/pyroscope/tls/cert.pem
+chmod 600 /opt/pyroscope/tls/key.pem
 
-# Then follow steps 3-8 from Section 7c.
+# 3. Stage Pyroscope config (port 4041 — Nginx takes 4040)
+cat > /opt/pyroscope/pyroscope.yaml <<'PYRO_EOF'
+server:
+  http_listen_port: 4041
+
+storage:
+  backend: filesystem
+  filesystem:
+    dir: /data
+
+self_profiling:
+  disable_push: true
+PYRO_EOF
+chmod 644 /opt/pyroscope/pyroscope.yaml
+
+# 4. Write Nginx config (TLS termination on :4040, proxy to :4041)
+cat > /opt/pyroscope/nginx.conf <<'NGINX_EOF'
+events { worker_connections 1024; }
+
+http {
+    server {
+        listen 4040 ssl;
+        ssl_certificate     /etc/nginx/tls/cert.pem;
+        ssl_certificate_key /etc/nginx/tls/key.pem;
+        ssl_protocols       TLSv1.2 TLSv1.3;
+
+        location / {
+            proxy_pass http://127.0.0.1:4041;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+            proxy_read_timeout 60s;
+        }
+    }
+}
+NGINX_EOF
+
+# 5. Start Pyroscope (HTTP on port 4041, internal only)
+docker volume create pyroscope-data
+docker run -d --name pyroscope --restart unless-stopped \
+    --network host \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -v pyroscope-data:/data \
+    -v /opt/pyroscope/pyroscope.yaml:/etc/pyroscope/config.yaml:ro \
+    grafana/pyroscope:1.18.0 \
+    -config.file=/etc/pyroscope/config.yaml
+
+# 6. Start Nginx TLS proxy (HTTPS on port 4040)
+docker run -d --name nginx-tls --restart unless-stopped \
+    --network host \
+    --log-opt max-size=50m --log-opt max-file=3 \
+    -v /opt/pyroscope/nginx.conf:/etc/nginx/nginx.conf:ro \
+    -v /opt/pyroscope/tls:/etc/nginx/tls:ro \
+    nginx:1.27-alpine
+
+# 7. Verify (wait ~15-20s for ingester to become ready)
+sleep 20
+curl http://localhost:4041/ready && echo "Pyroscope OK"
+curl -k https://localhost:4040/ready && echo "Nginx TLS OK"
 ```
 
 Java agents do not need special trust configuration when the CA is already
-in the JVM default truststore. For self-signed cert trust setup, see
+in the JVM default truststore. Agent config:
+
+```properties
+# Via F5 VIP (recommended)
+pyroscope.server.address=https://domain-pyroscope.company.com
+
+# Or direct to VM
+pyroscope.server.address=https://<VM_IP>:4040
+```
+
+For self-signed cert trust setup, see
 [tls-setup.md](tls-setup.md#java-agent-trust-configuration).
 
 ---
@@ -1451,7 +1548,8 @@ java -javaagent:/path/to/pyroscope.jar \
 If the CA is already in the JVM default truststore, just change the URL scheme:
 
 ```bash
-PYROSCOPE_SERVER_ADDRESS=https://pyroscope-vm:4443
+PYROSCOPE_SERVER_ADDRESS=https://domain-pyroscope.company.com
+# Or direct to VM: https://<VM_IP>:4040
 ```
 
 ### 15d. HTTPS with self-signed cert
@@ -1535,45 +1633,46 @@ volumes:
 
 ## 16. TLS architecture
 
-When `--tls` is enabled, an Envoy reverse proxy terminates TLS. Backend containers
-bind to `127.0.0.1` only. Only Envoy listens on external network interfaces.
+For HTTPS deployments, an **Nginx reverse proxy** on the VM terminates TLS on `:4040`
+and forwards plain HTTP to Pyroscope on `localhost:4041`. This keeps the external port
+unchanged so F5 VIP configuration does not need to change.
 
-### Single VM: full stack
+### F5 VIP + Nginx (recommended production)
+
+```mermaid
+graph LR
+    subgraph F5["F5 VIP"]
+        VIP["domain-pyroscope.company.com :443"]
+    end
+    subgraph VM["Pyroscope VM"]
+        N[":4040 Nginx (TLS)"] --> P["Pyroscope<br/>127.0.0.1:4041 (HTTP)"]
+    end
+    Agent -->|HTTPS :443| VIP
+    VIP -->|HTTPS :4040| N
+```
+
+### Standalone Nginx (no F5)
 
 ```mermaid
 graph LR
     subgraph VM
-        E4443[":4443 Envoy"] --> P["Pyroscope<br/>127.0.0.1:4040"]
-        E443[":443 Envoy"] --> G["Grafana<br/>127.0.0.1:3000"]
+        N[":4040 Nginx (TLS)"] --> P["Pyroscope<br/>127.0.0.1:4041 (HTTP)"]
     end
-    Agent -->|HTTPS :4443| E4443
-    Browser -->|HTTPS :443| E443
+    Agent -->|HTTPS :4040| N
+    Grafana["Grafana (elsewhere)"] -->|HTTPS :4040| N
 ```
 
-### Single VM: Pyroscope only
+### Full stack with Grafana
 
 ```mermaid
 graph LR
     subgraph VM
-        E[":4443 Envoy"] --> P["Pyroscope<br/>127.0.0.1:4040"]
+        N[":4040 Nginx (TLS)"] --> P["Pyroscope<br/>127.0.0.1:4041 (HTTP)"]
+        G["Grafana<br/>:3000"]
     end
-    Agent -->|HTTPS :4443| E
-    Grafana["Grafana (elsewhere)"] -->|HTTPS :4443| E
-```
-
-### Split VMs
-
-```mermaid
-graph LR
-    subgraph PyroVM["Pyroscope VM"]
-        EP[":4443 Envoy"] --> PP["Pyroscope<br/>127.0.0.1:4040"]
-    end
-    subgraph GrafVM["Grafana VM"]
-        EG[":443 Envoy"] --> GG["Grafana<br/>127.0.0.1:3000"]
-    end
-    GG -->|"datasource: https://pyro-vm:4443"| EP
-    Agent -->|HTTPS :4443| EP
-    Browser -->|HTTPS :443| EG
+    Agent -->|HTTPS :4040| N
+    G -->|"datasource: http://localhost:4041"| P
+    Browser -->|HTTP :3000| G
 ```
 
 ---
@@ -1584,10 +1683,10 @@ graph LR
 
 | Service | Monolith HTTP | Monolith HTTPS | Microservices |
 |---------|:---:|:---:|:---:|
-| Pyroscope | :4040 | :4443 (Envoy) | :4040 (distributor push) |
-| Grafana | :3000 | :443 (Envoy) | N/A (external) |
+| Pyroscope | :4040 | :4041 (internal HTTP) | :4040 (distributor push) |
+| Nginx TLS proxy | N/A | :4040 (TLS termination) | N/A |
+| Grafana | :3000 | :3000 | N/A (external) |
 | Query Frontend | N/A | N/A | :4041 (VM) / :4040 (K8s svc) |
-| Envoy admin | N/A | 127.0.0.1:9901 | N/A |
 | Memberlist | N/A | N/A | :7946 (inter-component) |
 
 ### Bank app ports
@@ -1649,17 +1748,18 @@ Minimum rules for Pyroscope monolith on a VM receiving data from external agents
 |-------------|------|----------|---------|
 | Pyroscope VM | TCP 4040 | HTTP | Metrics scrape (every 15-30s, configurable) |
 
-### 17b. Firewall rules: Monolith on VM (HTTPS with Envoy)
+### 17b. Firewall rules: Monolith on VM (HTTPS with Nginx)
 
-Same as 17a but replace port 4040 with port 4443 for all external traffic.
-Envoy terminates TLS and forwards to Pyroscope on `127.0.0.1:4040` internally.
+Same as 17a but all external traffic uses HTTPS on port 4040.
+Nginx terminates TLS on `:4040` and forwards to Pyroscope on `127.0.0.1:4041`.
+Port 4041 is internal only and should **not** be exposed externally.
 
 | Source | Port | Protocol | Purpose |
 |--------|------|----------|---------|
-| OCP worker nodes | TCP 4443 | HTTPS | Agent push |
-| Grafana VM | TCP 4443 | HTTPS | Datasource queries |
-| Prometheus VM | TCP 4443 | HTTPS | Metrics scrape |
-| Admin workstation | TCP 4443 | HTTPS | Pyroscope UI |
+| F5 VIP / OCP worker nodes | TCP 4040 | HTTPS | Agent push (via Nginx TLS) |
+| Grafana VM | TCP 4040 | HTTPS | Datasource queries |
+| Prometheus VM | TCP 4040 | HTTPS | Metrics scrape |
+| Admin workstation | TCP 4040 | HTTPS | Pyroscope UI |
 
 ### 17c. Firewall rules: Monolith on OCP (Helm chart)
 
