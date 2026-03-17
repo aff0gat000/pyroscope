@@ -829,24 +829,102 @@ curl -k https://localhost:443/api/health   # Grafana via Envoy
 
 ### 7d. HTTPS with enterprise CA certs (F5 VIP + Nginx)
 
-This is the **recommended production deployment**. F5 VIP forwards HTTPS to the VM.
-Nginx on the VM terminates TLS on `:4040` and proxies to Pyroscope on `:4041`.
+This is the **recommended production deployment**. Two-stage process:
+images are pulled on a Mac workstation and transferred to an air-gapped RHEL VM.
+Nginx terminates TLS on `:4040`, proxies to Pyroscope on `:4041`.
+
+```
+Mac workstation                        RHEL VM
+──────────────                         ────────
+docker pull (amd64)                    docker load
+docker save → .tar ──── scp ────→     stage config + certs
+                                       start Pyroscope (:4041 HTTP)
+                                       start Nginx     (:4040 TLS)
+```
+
+> **Scripted alternative:** `deploy/monolith/stage1-build.sh` (Mac) and
+> `deploy/monolith/stage2-deploy.sh` (VM) automate all steps below.
+> See also `deploy/monolith/ansible/playbooks/deploy-nginx-tls.yml` for Ansible.
+
+#### Stage 1: Build and transfer (on Mac workstation)
 
 ```bash
-# ---- On the target VM (as root) ----
+# ---- On your Mac (has internet access) ----
 
-# 1. Load Pyroscope and Nginx images
-docker load -i /tmp/pyroscope-images.tar
-docker load -i /tmp/nginx-images.tar
-# If online: docker pull --platform linux/amd64 grafana/pyroscope:1.18.0
-# If online: docker pull --platform linux/amd64 nginx:1.27-alpine
+# 1. Pull images for linux/amd64 (RHEL target)
+docker pull --platform linux/amd64 grafana/pyroscope:1.18.0
+docker pull --platform linux/amd64 nginx:1.27-alpine
 
-# 2. Stage enterprise certificate files
+# 2. Verify architecture
+docker inspect grafana/pyroscope:1.18.0 --format='Architecture: {{.Architecture}}'
+# Must show: amd64
+docker inspect nginx:1.27-alpine --format='Architecture: {{.Architecture}}'
+# Must show: amd64
+
+# 3. Save both images into one tarball
+docker save -o /tmp/pyroscope-images.tar \
+    grafana/pyroscope:1.18.0 \
+    nginx:1.27-alpine
+
+# 4. Transfer images to VM
+scp /tmp/pyroscope-images.tar operator@<VM_HOST>:/tmp/
+```
+
+#### Stage 2a: Generate CSR (on VM)
+
+Skip this if you already have cert.pem and key.pem.
+
+```bash
+# ---- On the VM (as root) ----
+ssh operator@<VM_HOST>
+sudo -i   # or: pbrun /bin/su -
+
+# 1. Create TLS directory
 mkdir -p /opt/pyroscope/tls
-cp /path/to/enterprise-cert.pem /opt/pyroscope/tls/cert.pem
-cp /path/to/enterprise-key.pem  /opt/pyroscope/tls/key.pem
-chmod 644 /opt/pyroscope/tls/cert.pem
+
+# 2. Generate private key and CSR
+#    Replace the CN and SAN with your VIP FQDN and VM IP
+VM_IP=$(hostname -I | awk '{print $1}')
+
+openssl req -new -newkey rsa:2048 -nodes \
+    -keyout /opt/pyroscope/tls/key.pem \
+    -out /opt/pyroscope/tls/pyroscope.csr \
+    -subj "/CN=domain-pyroscope.company.com" \
+    -addext "subjectAltName=DNS:domain-pyroscope.company.com,IP:${VM_IP}"
+
 chmod 600 /opt/pyroscope/tls/key.pem
+
+# 3. View the CSR (copy this to submit to your internal cert platform)
+cat /opt/pyroscope/tls/pyroscope.csr
+```
+
+Upload the CSR through your internal certificate platform (browser-based).
+After the cert is signed, download `cert.pem` and copy it to the VM:
+
+```bash
+# ---- On your Mac ----
+scp /path/to/signed-cert.pem operator@<VM_HOST>:/tmp/cert.pem
+
+# ---- On the VM ----
+cp /tmp/cert.pem /opt/pyroscope/tls/cert.pem
+chmod 644 /opt/pyroscope/tls/cert.pem
+```
+
+#### Stage 2b: Deploy (on VM)
+
+```bash
+# ---- On the VM (as root) ----
+
+# 1. Load Docker images
+docker load -i /tmp/pyroscope-images.tar
+
+# Verify architecture
+docker inspect grafana/pyroscope:1.18.0 --format='Architecture: {{.Architecture}}'
+# Must show: amd64
+
+# 2. Verify cert and key are in place
+ls -la /opt/pyroscope/tls/
+# Should show: cert.pem (644), key.pem (600)
 
 # 3. Stage Pyroscope config (port 4041 — Nginx takes 4040)
 cat > /opt/pyroscope/pyroscope.yaml <<'PYRO_EOF'
@@ -886,7 +964,10 @@ http {
 }
 NGINX_EOF
 
-# 5. Start Pyroscope (HTTP on port 4041, internal only)
+# 5. Open firewall port (if firewalld is active)
+firewall-cmd --permanent --add-port=4040/tcp 2>/dev/null && firewall-cmd --reload || true
+
+# 6. Start Pyroscope (HTTP on port 4041, internal only)
 docker volume create pyroscope-data
 docker run -d --name pyroscope --restart unless-stopped \
     --network host \
@@ -896,7 +977,7 @@ docker run -d --name pyroscope --restart unless-stopped \
     grafana/pyroscope:1.18.0 \
     -config.file=/etc/pyroscope/config.yaml
 
-# 6. Start Nginx TLS proxy (HTTPS on port 4040)
+# 7. Start Nginx TLS proxy (HTTPS on port 4040)
 docker run -d --name nginx-tls --restart unless-stopped \
     --network host \
     --log-opt max-size=50m --log-opt max-file=3 \
@@ -904,22 +985,64 @@ docker run -d --name nginx-tls --restart unless-stopped \
     -v /opt/pyroscope/tls:/etc/nginx/tls:ro \
     nginx:1.27-alpine
 
-# 7. Verify (wait ~15-20s for ingester to become ready)
+# 8. Verify (wait ~15-20s for ingester to become ready)
 sleep 20
 curl http://localhost:4041/ready && echo "Pyroscope OK"
 curl -k https://localhost:4040/ready && echo "Nginx TLS OK"
+
+# 9. Verify through F5 VIP (once VIP is configured)
+curl https://domain-pyroscope.company.com/ready && echo "F5 VIP OK"
 ```
 
-Java agents do not need special trust configuration when the CA is already
-in the JVM default truststore. Agent config:
+#### Agent configuration
+
+Java agents with enterprise CA certs need no trust configuration — the CA
+is already in the JVM default truststore.
 
 ```properties
 # Via F5 VIP (recommended)
 pyroscope.server.address=https://domain-pyroscope.company.com
 
-# Or direct to VM
+# Or direct to VM (bypassing F5)
 pyroscope.server.address=https://<VM_IP>:4040
 ```
+
+#### Day-2 operations
+
+```bash
+# Check status
+docker ps --filter name=pyroscope --filter name=nginx-tls
+curl http://localhost:4041/ready       # Pyroscope direct
+curl -k https://localhost:4040/ready   # Nginx TLS proxy
+
+# View logs
+docker logs -f pyroscope               # Pyroscope logs
+docker logs -f nginx-tls               # Nginx access/error logs
+
+# Restart (after config change)
+docker restart pyroscope               # Config change to pyroscope.yaml
+docker restart nginx-tls               # Config change to nginx.conf or cert renewal
+
+# Certificate renewal
+cp /path/to/new-cert.pem /opt/pyroscope/tls/cert.pem
+chmod 644 /opt/pyroscope/tls/cert.pem
+docker restart nginx-tls               # Nginx only — Pyroscope does not need restart
+
+# Full redeploy (stop, remove, re-run)
+docker rm -f nginx-tls pyroscope
+# Then repeat steps 6-8 above
+```
+
+#### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---------|-------|-----|
+| `unexpected EOF` from F5 VIP | F5 sends HTTP but Nginx expects TLS (or vice versa) | Confirm F5 backend pool protocol is HTTPS to `:4040` |
+| `502 Bad Gateway` from Nginx | Pyroscope not running on `:4041` | Check `docker ps`, verify `curl http://localhost:4041/ready` |
+| `connection refused` on `:4040` | Nginx container not running | Check `docker ps \| grep nginx-tls`, check `docker logs nginx-tls` |
+| Nginx starts but cert error | Cert/key mismatch or wrong permissions | Verify `openssl x509 -in cert.pem -noout -text` matches key, check `chmod 644 cert.pem` and `chmod 600 key.pem` |
+| `PKIX path building failed` from Java agent | Agent doesn't trust the cert CA | Enterprise CA should be in JVM truststore already. If self-signed, see [tls-setup.md](tls-setup.md#java-agent-trust-configuration) |
+| `address already in use` on `:4040` | Another process on port 4040 | Check `ss -tlnp \| grep 4040`, stop conflicting process |
 
 For self-signed cert trust setup, see
 [tls-setup.md](tls-setup.md#java-agent-trust-configuration).
