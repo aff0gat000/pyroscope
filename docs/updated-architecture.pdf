@@ -1,0 +1,981 @@
+Pyroscope: Monolith → Microservices Mode on OpenShift
+Platform Engineering Guide · Diataxis Format · Vert.x Java Agent Edition
+Audience: Platform Engineers owning the observability stack on OpenShift
+Scope: Pyroscope monolith (single-binary) → full microservices decomposition, capacity
+planning, and team communication artifacts
+Stack: OpenShift 4.x, Pyroscope 1.x, Vert.x reactive Java agent (async-profiler), S3-compatible
+object store
+Table of Contents
+1. Explanation — Understanding Pyroscope Architecture
+2. How-To — Migration Runbook
+3. Reference — Ports, Hardware, Policies, Config
+4. Tutorial — End-to-End Lab Walk-Through
+5. Capacity Planning — Sizing Tables & Models
+6. Diagrams — Mermaid Architecture & Flow
+1. Explanation
+Mode Description When to Use
+Monolith All components in one process, local disk storage Dev, PoC, single-node
+VM
+Microservices Each component is an independent, horizontally-
+scalable Deployment
+Production, HA, multi-
+tenant
+1.1 Why Two Deployment Modes Exist
+Pyroscope (Grafana-maintained continuous profiling backend) ships as a single binary that can be
+run in two modes:
+In your current state you are running monolith mode on a VM with Vert.x apps pushing profiles via
+the Java agent. This works fine until you need: HA, horizontal scale, tenant isolation, or GitOps-
+managed OpenShift deployments.
+1.2 The Pyroscope Read / Write Path
+Understanding the path is critical for capacity planning and network policy design.
+Write Path (Ingestion):
+Java Agent (async-profiler)
+└─ HTTP POST /ingest (push) or Pyroscope pull scrape
+└─ Distributor ← stateless, receives profiles
+└─ Ingester ← in-memory ring buffer (WAL)
+└─ Object Store (S3/MinIO/GCS) ← parquet + index blocks
+Read Path (Query):
+Grafana / Pyroscope UI
+└─ Query Frontend ← request fan-out, caching
+└─ Querier ← fetches from store-gateway + ingesters
+├─ Store Gateway ← index + block reads from object store
+└─ Ingester ← in-flight data not yet flushed
+1.3 Why Vert.x Reactive Architecture Needs Special Attention
+Vert.x uses a non-blocking event-loop model (Netty under the hood). This creates two profiling
+challenges:
+1. CPU profiling: Async-profiler’s ITIMER signal works correctly on event-loop threads. However,
+wall-clock profiling ( event=wall ) is preferred for reactive workloads because ITIMER misses
+blocked-but-waiting coroutines.
+2. Thread naming: Vert.x creates threads named vert.x-eventloop-thread-N . The Java agent
+must be configured to capture these by pattern, not just by default thread groups.
+Agent config recommendation for Vert.x (push mode):
+-javaagent:/opt/pyroscope/pyroscope.jar
+-Dpyroscope.application.name=my-vertx-service
+-Dpyroscope.server.address=http://pyroscope-distributor:4040
+-Dpyroscope.profiler.event=wall
+-Dpyroscope.profiler.alloc=512k
+-Dpyroscope.profiler.lock=10ms
+-Dpyroscope.upload.interval=15s
+-Dpyroscope.labels=env=prod,region=us-east,vertx=true
+Key: profiler.event=wall captures event-loop idle/waiting time, which is the dominant latency
+source in reactive systems. profiler.event=cpu would miss it.
+1.4 Component Roles (Microservices Mode)
+Component Role Stateful? Scales On
+Distributor Receives ingested profiles, routes to ingesters
+via consistent hash ring
+No Ingest throughput
+(profiles/sec)
+Ingester Buffers in memory + WAL, flushes blocks to
+object store
+Yes
+(WAL)
+Active series count,
+flush throughput
+Query
+Frontend Splits + parallelises queries, caches results No Query concurrency
+Querier Executes query sub-requests against store-
+gateway and ingesters
+No Query parallelism
+Store
+Gateway
+Serves historical data blocks from object store
+(index cache in mem)
+Soft
+(cache)
+Historical data
+volume, query load
+Compactor Merges and downsamples blocks in object
+store
+No Block count,
+retention period
+Memberlist Gossip ring (embedded in each component) — N/A
+1.5 Monolith vs Microservices: Architecture Delta
+In monolith mode all of the above run in one binary. The only things that change in microservices
+mode are:
+Each component runs as a separate Deployment (or StatefulSet for ingesters)
+A memberlist service enables ring gossip between pods
+Object store becomes mandatory (no local disk)
+Each component’s target flag changes ( -target=distributor , etc.)
+NetworkPolicy must open inter-component gRPC traffic
+2. How-To
+2.1 Pre-Migration Checklist
+[ ] Object store provisioned (MinIO on-cluster, or AWS S3 / Ceph RGW)
+[ ] StorageClass available for Ingester PVCs (ReadWriteOnce, fast SSD-backed)
+[ ] OpenShift project/namespace created with resource quotas defined
+[ ] SCC (SecurityContextConstraints) reviewed — Pyroscope needs UID flexibility
+[ ] ServiceAccount created with object store IAM role or Secret
+[ ] Existing monolith data migrated or retention window accepted as loss
+[ ] Grafana datasource URL to be updated post-cutover
+[ ] Java agent ENV vars updated in all app Deployments (server address)
+[ ] DNS/service naming conventions agreed (internal vs external routes)
+2.2 Namespace and RBAC Setup
+# namespace
+apiVersion: v1
+kind: Namespace
+metadata:
+name: observability-pyroscope
+labels:
+openshift.io/cluster-monitoring: "false"
+---
+# ServiceAccount
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+name: pyroscope
+namespace: observability-pyroscope
+---
+# ClusterRole for self-discovery (memberlist requires pod listing)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+name: pyroscope-memberlist
+namespace: observability-pyroscope
+rules:
+- apiGroups: [""]
+resources: ["pods"]
+verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+name: pyroscope-memberlist
+namespace: observability-pyroscope
+subjects:
+- kind: ServiceAccount
+name: pyroscope
+roleRef:
+kind: Role
+name: pyroscope-memberlist
+apiGroup: rbac.authorization.k8s.io
+2.3 SecurityContextConstraints (OpenShift SCC)
+Pyroscope containers run as non-root but need a consistent UID for WAL file ownership. Use a
+custom SCC or the built-in restricted-v2 if UID ranges allow.
+apiVersion: security.openshift.io/v1
+kind: SecurityContextConstraints
+metadata:
+name: pyroscope-scc
+allowPrivilegedContainer: false
+allowPrivilegeEscalation: false
+runAsUser:
+type: MustRunAsRange
+uidRangeMin: 10001
+uidRangeMax: 10001
+seLinuxContext:
+type: MustRunAs
+fsGroup:
+type: MustRunAs
+ranges:
+- min: 10001
+max: 10001
+volumes:
+- configMap
+- secret
+- persistentVolumeClaim
+- emptyDir
+users:
+- system:serviceaccount:observability-pyroscope:pyroscope
+2.4 Object Store Secret
+apiVersion: v1
+kind: Secret
+metadata:
+name: pyroscope-objstore
+namespace: observability-pyroscope
+type: Opaque
+stringData:
+objstore.yaml: |
+type: S3
+config:
+bucket: pyroscope-blocks
+endpoint: minio.minio.svc.cluster.local:9000
+access_key: <ACCESS_KEY>
+secret_key: <SECRET_KEY>
+insecure: true # set false for TLS
+signature_version2: false
+2.5 Memberlist Service (Gossip Ring)
+apiVersion: v1
+kind: Service
+metadata:
+name: pyroscope-memberlist
+namespace: observability-pyroscope
+spec:
+type: ClusterIP
+clusterIP: None publishNotReadyAddresses: true
+selector:
+app.kubernetes.io/name: pyroscope
+ports:
+- name: memberlist
+port: 7946
+protocol: TCP
+- name: memberlist-udp
+port: 7946
+protocol: UDP
+# headless — required for memberlist DNS
+2.6 Core ConfigMap (Shared Across All Components)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+name: pyroscope-config
+namespace: observability-pyroscope
+data:
+config.yaml: |
+memberlist:
+join_members:
+- pyroscope-memberlist.observability-pyroscope.svc.cluster.local:7946
+pyroscopedb:
+data_path: /data/pyroscope
+min_block_duration: 2h
+max_block_duration: 24h
+storage:
+backend: s3
+s3:
+bucket_name: pyroscope-blocks
+endpoint: minio.minio.svc.cluster.local:9000
+access_key_id: ${AWS_ACCESS_KEY_ID}
+secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+insecure: true
+limits:
+max_query_lookback: 30d
+max_query_parallelism: 16
+ingestion_rate_mb: 4
+ingestion_burst_size_mb: 8
+compactor:
+sharding_enabled: true
+store_gateway:
+sharding_enabled: true
+2.7 Deploying Each Component
+Distributor (Deployment — stateless):
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+name: pyroscope-distributor
+namespace: observability-pyroscope
+spec:
+replicas: 2
+selector:
+matchLabels:
+app.kubernetes.io/component: distributor
+template:
+metadata:
+labels:
+app.kubernetes.io/name: pyroscope
+app.kubernetes.io/component: distributor
+spec:
+serviceAccountName: pyroscope
+securityContext:
+runAsUser: 10001
+fsGroup: 10001
+containers:
+- name: pyroscope
+image: grafana/pyroscope:1.7.0
+args:
+- -target=distributor
+- -config.file=/etc/pyroscope/config.yaml
+ports:
+- name: http
+containerPort: 4040
+- name: grpc
+containerPort: 9095
+- name: memberlist
+containerPort: 7946
+resources:
+requests:
+cpu: 500m
+memory: 512Mi
+limits:
+cpu: 2
+memory: 1Gi
+volumeMounts:
+- name: config
+mountPath: /etc/pyroscope
+volumes:
+- name: config
+configMap:
+name: pyroscope-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+name: pyroscope-distributor
+namespace: observability-pyroscope
+spec:
+selector:
+app.kubernetes.io/component: distributor
+ports:
+- name: http
+port: 4040
+targetPort: 4040
+- name: grpc
+port: 9095
+targetPort: 9095
+Ingester (StatefulSet — stateful WAL):
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+name: pyroscope-ingester
+namespace: observability-pyroscope
+spec:
+replicas: 3
+serviceName: pyroscope-ingester-headless
+selector:
+matchLabels:
+app.kubernetes.io/component: ingester
+template:
+metadata:
+labels:
+app.kubernetes.io/name: pyroscope
+app.kubernetes.io/component: ingester
+spec:
+serviceAccountName: pyroscope
+securityContext:
+runAsUser: 10001
+fsGroup: 10001
+containers:
+- name: pyroscope
+image: grafana/pyroscope:1.7.0
+args:
+- -target=ingester
+- -config.file=/etc/pyroscope/config.yaml
+ports:
+- name: http
+containerPort: 4040
+- name: grpc
+containerPort: 9095
+- name: memberlist
+containerPort: 7946
+resources:
+requests:
+cpu: 1
+memory: 2Gi
+limits:
+cpu: 4
+memory: 8Gi
+volumeMounts:
+- name: config
+mountPath: /etc/pyroscope
+- name: data
+mountPath: /data/pyroscope
+volumes:
+- name: config
+configMap:
+name: pyroscope-config
+volumeClaimTemplates:
+- metadata:
+name: data
+spec:
+accessModes: [ReadWriteOnce]
+storageClassName: fast-ssd
+resources:
+requests:
+storage: 50Gi
+2.8 NetworkPolicy
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+name: pyroscope-internal
+namespace: observability-pyroscope
+spec:
+podSelector:
+matchLabels:
+app.kubernetes.io/name: pyroscope
+policyTypes:
+- Ingress
+- Egress
+ingress:
+# Allow all Pyroscope pods to talk to each other (gRPC + memberlist)
+- from:
+- podSelector:
+matchLabels:
+app.kubernetes.io/name: pyroscope
+ports:
+- port: 9095 # gRPC
+- port: 7946 # memberlist TCP
+- port: 4040 # HTTP
+# Allow app pods (Java agent) to push to distributor
+- from:
+- namespaceSelector:
+matchLabels:
+app-tier: backend
+ports:
+- port: 4040
+# Allow Grafana to query frontend
+- from:
+- namespaceSelector:
+matchLabels:
+app.kubernetes.io/name: grafana
+ports:
+- port: 4040
+egress:
+# Object store (MinIO / S3)
+- to:
+- namespaceSelector:
+matchLabels:
+app.kubernetes.io/name: minio
+ports:
+- port: 9000
+# DNS
+- ports:
+- port: 53
+protocol: UDP
+- port: 53
+protocol: TCP
+# Memberlist UDP
+- to:
+- podSelector:
+matchLabels:
+app.kubernetes.io/name: pyroscope
+ports:
+- port: 7946
+protocol: UDP
+2.9 Updating Java Agents in App Deployments
+Change only the PYROSCOPE_SERVER_ADDRESS — everything else stays the same:
+# Before (monolith VM)
+env:
+- name: PYROSCOPE_SERVER_ADDRESS
+value: "http://pyroscope-vm.internal:4040"
+# After (microservices on OpenShift)
+env:
+- name: PYROSCOPE_SERVER_ADDRESS
+value: "http://pyroscope-distributor.observability-pyroscope.svc.cluster.local:4040"
+- name: PYROSCOPE_APPLICATION_NAME
+value: "my-vertx-service.$(MY_POD_NAMESPACE)" # namespace-scoped naming
+- name: PYROSCOPE_PROFILER_EVENT
+value: "wall"
+- name: PYROSCOPE_UPLOAD_INTERVAL
+value: "15s"
+2.10 Cutover Sequence
+Day 0: Deploy all Pyroscope components (canary namespace, no agent traffic)
+Day 1: Point 10% of app pods at new distributor (feature flag / env var)
+Day 2: Validate profiles appear in Grafana; check ingester WAL health
+Day 3: Point 50% of pods at new distributor
+Day 4: Full cutover — update all Deployments/DeploymentConfigs
+Day 5: Decommission VM monolith (keep 1 week for rollback window)
+3. Reference
+3.1 Port Reference
+Component Port Protocol Purpose Exposed?
+Distributor 4040 HTTP Profile ingest ( /ingest ), UI, /ready ,
+/metrics
+Yes — apps +
+Grafana
+Distributor 9095 gRPC Ring RPC from other distributors Internal only
+Distributor 7946 TCP/UDP Memberlist gossip Internal only
+Ingester 4040 HTTP Health + metrics Internal only
+Ingester 9095 gRPC Receives profiles from distributor Internal only
+Ingester 7946 TCP/UDP Memberlist gossip Internal only
+Query Frontend 4040 HTTP Query API ( /pyroscope/render ) —
+Grafana hits this
+Yes — Grafana
+Query Frontend 9095 gRPC Delegates to queriers Internal only
+Querier 4040 HTTP Health + metrics Internal only
+Querier 9095 gRPC Query execution Internal only
+Store Gateway 4040 HTTP Health + metrics Internal only
+Store Gateway 9095 gRPC Block data serving Internal only
+Compactor 4040 HTTP Health + metrics Internal only
+Object Store
+(MinIO)
+9000 HTTP/S3 Block storage Internal only
+Object Store
+(MinIO)
+9001 HTTP MinIO Console UI Admin only
+OpenShift Routes (external):
+Route Backend Service Port Auth
+pyroscope-ingest.apps.<cluster> pyroscope-distributor 4040 mTLS or token
+pyroscope-query.apps.<cluster> pyroscope-query-frontend 4040 Grafana SA token
+pyroscope-ui.apps.<cluster> pyroscope-query-frontend 4040 SSO
+3.2 Hardware / Node Reference
+Recommended Node Labels:
+node-role.kubernetes.io/observability=true
+Component Replicas CPU
+Request
+CPU
+Limit
+Mem
+Request
+Mem
+Limit Storage
+Distributor 2–3 500m 2 512Mi 1Gi —
+Ingester 3 1 4 2Gi 8Gi
+50Gi SSD PVC
+each
+Query
+Frontend
+2 250m 1 256Mi 512Mi —
+Querier 2–4 500m 2 1Gi 4Gi —
+Store
+Gateway
+2 500m 2 1Gi 4Gi —
+Compactor 1 500m 2 512Mi 2Gi —
+Apply nodeSelector or nodeAffinity to Pyroscope Deployments to isolate from application
+workloads.
+Per-Component Resource Sizing (Production Baseline):
+Dedicated Node Pool Sizing (for the Pyroscope namespace):
+Profile Volume Recommended Worker Nodes Node Size
+< 500 series, low churn 2 nodes 8 vCPU / 32 GB RAM / 200 GB SSD
+500–2000 series 3 nodes 16 vCPU / 64 GB RAM / 500 GB SSD
+2000–10000 series 4–6 nodes 32 vCPU / 128 GB RAM / 1 TB SSD
+3.3 StorageClass Requirements
+Requirement Ingester PVC Object Store
+Access
+Mode
+ReadWriteOnce N/A (S3 API)
+Performance NVMe/SSD preferred — WAL write latency directly impacts
+ingest
+Standard
+Reclaim
+Policy Retain (manual cleanup on decommission) —
+Provisioner ODF, vSphere, AWS EBS gp3, Azure Premium MinIO, Ceph RGW,
+S3
+3.4 OpenShift Policy Reference
+Policy Type Setting Value Reason
+SCC runAsUser
+MustRunAsRange
+10001–10001
+Non-root, WAL
+ownership
+SCC allowPrivilegeEscalation false Security
+hardening
+SCC volumes PVC, configMap,
+secret, emptyDir
+Minimal surface
+ResourceQuota CPU limit (namespace) 20 cores Prevent noisy-
+neighbor
+ResourceQuota Memory limit (namespace) 80Gi See capacity
+model
+LimitRange Default container CPU 500m request / 2
+limit
+Guard
+ungoverned
+containers
+PodDisruptionBudget Ingester minAvailable: 2 Maintain ring
+quorum
+PodDisruptionBudget Distributor minAvailable: 1 Ingest continuity
+3.5 Ingester Ring Quorum
+Ingesters use a consistent hash ring with replication factor (default RF=3). You need:
+minReplicas >= RF + 1
+So with RF=3, minimum 4 ingester pods to survive a node failure while maintaining quorum. For
+RF=1 (acceptable in dev only), 2 replicas suffice.
+3.6 Java Agent Version Compatibility
+Pyroscope Server 1.7.x 1.6.x Java Agent 0.14.x 0.13.x async-profiler 3.0 2.9 JDK Support
+JDK 11, 17, 21
+JDK 11, 17
+Vert.x 4.x requires JDK 11+. Vert.x 5.x (virtual thread preview) requires JDK 21. Ensure agent
+matches.
+3.7 Environment Variable Reference (Java Agent)
+Variable Default Description
+PYROSCOPE_APPLICATION_NAME— Required. Service name in UI
+PYROSCOPE_SERVER_ADDRESS http://localhost:4040 Distributor HTTP endpoint
+PYROSCOPE_AUTH_TOKEN— Bearer token if auth enabled
+PYROSCOPE_PROFILER_EVENT cpu Use wall for Vert.x reactive
+PYROSCOPE_PROFILER_ALLOC 512k Allocation profiling interval
+PYROSCOPE_PROFILER_LOCK 10ms Lock contention threshold
+PYROSCOPE_UPLOAD_INTERVAL 15s Push frequency
+PYROSCOPE_LABELS— Key=value tags (env, region, pod)
+PYROSCOPE_LOG_LEVEL info debug for troubleshooting
+PYROSCOPE_TENANT_ID— Multi-tenant header ( X-Scope-
+OrgID )
+4. Tutorial
+4.1 Deploying to a Dev Namespace (End-to-End Lab)
+Goal: Get one ingested profile visible in Grafana Explore in under 30 minutes.
+Step 1 — Create namespace and apply configs:
+oc new-project observability-pyroscope
+oc apply -f pyroscope-scc.yaml
+oc apply -f pyroscope-serviceaccount.yaml
+oc apply -f pyroscope-objstore-secret.yaml
+oc apply -f pyroscope-config.yaml
+Step 2 — Deploy components (in order):
+# Memberlist service first
+oc apply -f pyroscope-memberlist-svc.yaml
+# Then components (order matters for ring bootstrap)
+oc apply -f pyroscope-ingester-statefulset.yaml
+oc wait --for=condition=Ready pod -l app.kubernetes.io/component=ingester --timeout=120s
+oc apply -f pyroscope-distributor-deployment.yaml
+oc apply -f pyroscope-query-frontend-deployment.yaml
+oc apply -f pyroscope-querier-deployment.yaml
+oc apply -f pyroscope-store-gateway-deployment.yaml
+oc apply -f pyroscope-compactor-deployment.yaml
+Step 3 — Verify ring health:
+# Port-forward the distributor
+oc port-forward svc/pyroscope-distributor 4040:4040
+# Check ring status
+curl http://localhost:4040/ring
+# Expect: all ingesters ACTIVE, healthy: true
+Step 4 — Send a test profile:
+# Generate a fake pprof payload and push
+curl -X POST http://localhost:4040/ingest \
+-F "name=test-app.cpu{}" \
+-F "format=pprof" \
+-F "sampleRate=100" \
+--data-binary @/tmp/test.pprof
+Step 5 — Add Grafana datasource:
+URL: http://pyroscope-query-frontend.observability-pyroscope.svc.cluster.local:4040
+Type: Grafana Pyroscope
+Step 6 — Validate in Explore:
+Open Grafana → Explore → Pyroscope datasource → select see a flame graph.
+test-app.cpu → Run query. You should
+5. Capacity Planning
+5.1 Capacity Model Inputs
+Gather these from your current monolith VM before sizing:
+Input How to Measure Example
+Active series Unique {app, labels} combos 200
+Profiles/sec (ingest
+rate)
+pyroscope_distributor_received_profiles_total
+rate 400/s
+Avg profile size pyroscope_distributor_received_bytes_total / count 8 KB
+Upload interval (agent) PYROSCOPE_UPLOAD_INTERVAL 15s
+Retention Business requirement 30 days
+Query concurrency Peak concurrent Grafana users 10
+App instances Pods running the Java agent 50
+5.2 Ingestion Bandwidth Formula
+Ingest bandwidth (MB/s) = (App instances × avg_profile_size_KB) / upload_interval_seconds / 1024
+Example:
+= (50 pods × 8 KB) / 15s / 1024
+= 400 KB/s
+= 0.39 MB/s
+Per distributor pod limit: 4 MB/s (default `ingestion_rate_mb`)
+→ 1 distributor pod covers this load with headroom
+→ Run 2 for HA
+5.3 Object Store Sizing Formula
+Daily storage = ingest_bandwidth_MB/s × 86400s × compression_ratio
+Pyroscope compression ratio ≈ 0.15 (parquet + zstd is very efficient)
+Example:
+= 0.39 MB/s × 86400 × 0.15
+= ~5 GB/day
+30-day retention:
+= 5 GB × 30 = 150 GB object store
+Add 20% headroom for compactor temp space:
+= 180 GB total object store
+5.4 Ingester Memory Formula
+Ingester memory = (active_series × avg_series_size_bytes × replication_factor)
++ WAL overhead (typically 2× active data)
+Avg series size in Pyroscope ≈ 100 KB (profile samples + index)
+Example (200 series, RF=3, 3 ingesters):
+Active data per ingester = (200 × 100 KB × 3) / 3 ingesters = 20 MB
+WAL overhead = 2× = 40 MB
+→ Very low for 200 series; minimum 2 Gi request is safe
+For 5,000 series:
+= (5000 × 100 KB × 3) / 3 = 500 MB active
+WAL = 1 GB
+→ Request 2 Gi, limit 8 Gi
+5.5 Capacity Planning Communication Table (for Teams)
+Present this table to app teams and infra teams:
+Tier
+App
+Pods
+(Vert.x)
+Active
+Series
+Ingest
+Rate
+Distributor Ingesters Object
+Store/mo
+Node
+Pool
+2 × 3 × 2 ×
+Small 1–20 < 200 < 100/s (0.5c/512Mi) (1c/2Gi/20Gi) ~50 GB 8c/32Gi
+Medium 20–100
+200–
+2000
+100–
+1000/s
+2 × (1c/1Gi)
+3 ×
+(2c/8Gi/50Gi)
+~200 GB
+3 ×
+16c/64Gi
+Large
+100–
+500
+2000–
+10000
+1000–
+5000/s
+3 × (2c/2Gi)
+6 ×
+(4c/16Gi/100Gi)
+~1 TB
+5 ×
+32c/128Gi
+XL 500+ 10000+ 5000+/s
+4+
+horizontal
+9+ 1 TB+
+Dedicated
+pool +
+autoscale
+5.6 HPA Configuration
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+name: pyroscope-distributor-hpa
+namespace: observability-pyroscope
+spec:
+scaleTargetRef:
+apiVersion: apps/v1
+kind: Deployment
+name: pyroscope-distributor
+minReplicas: 2
+maxReplicas: 6
+metrics:
+- type: Resource
+resource:
+name: cpu
+target:
+type: Utilization
+averageUtilization: 70
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+name: pyroscope-querier-hpa
+namespace: observability-pyroscope
+spec:
+scaleTargetRef:
+apiVersion: apps/v1
+kind: Deployment
+name: pyroscope-querier
+minReplicas: 2
+maxReplicas: 8
+metrics:
+- type: Resource
+resource:
+name: cpu
+target:
+type: Utilization
+averageUtilization: 60
+Note: Do NOT HPA ingesters — they are StatefulSets with ring membership. Scale them manually
+and wait for ring rebalance.
+6. Diagrams
+6.1 Current State (Monolith on VM)
+graph TB
+subgraph AppNamespace["App Namespace (OpenShift)"]
+VA1["Vert.x Pod 1\n(Java Agent)"]
+VA2["Vert.x Pod 2\n(Java Agent)"]
+VA3["Vert.x Pod N\n(Java Agent)"]
+end
+subgraph VM["Legacy VM (Monolith)"]
+PYRO["Pyroscope\nAll-in-One\n:4040"]
+DISK[("Local Disk\n/var/pyroscope")]
+PYRO --> DISK
+end
+GF["Grafana"]
+VA1 -- "HTTP POST /ingest\n:4040" --> PYRO
+VA2 -- "HTTP POST /ingest\n:4040" --> PYRO
+VA3 -- "HTTP POST /ingest\n:4040" --> PYRO
+GF -- "Query :4040" --> PYRO
+style VM fill:#ffcccc,stroke:#cc0000
+style DISK fill:#ffeeee
+6.2 Target State (Microservices on OpenShift)
+graph TB
+subgraph AppNS["App Namespaces (Vert.x Services)"]
+VA1["Pod: vertx-svc-1\nJava Agent wall-clock"]
+VA2["Pod: vertx-svc-2\nJava Agent wall-clock"]
+VAN["Pod: vertx-svc-N\nJava Agent wall-clock"]
+end
+subgraph ObsNS["observability-pyroscope Namespace"]
+subgraph WriteIngest["── Write Path ──"]
+DIST["Distributor\n×2–3\n:4040 HTTP\n:9095 gRPC"]
+ING["Ingester\n×3 StatefulSet\n:9095 gRPC\n50Gi WAL PVC"]
+end
+subgraph ReadQuery["── Read Path ──"]
+QF["Query Frontend\n×2\n:4040 HTTP"]
+QR["Querier\n×2–4\n:9095 gRPC"]
+SG["Store Gateway\n×2\n:9095 gRPC"]
+end
+COMP["Compactor\n×1"]
+ML["Memberlist Headless Svc\n:7946 gossip ring"]
+end
+subgraph Storage["Object Store"]
+S3[("S3 / MinIO\n:9000\nParquet Blocks")]
+end
+GF["Grafana"]
+ROUTE_INGEST["OCP Route\npyroscope-ingest\n:443→4040"]
+ROUTE_QUERY["OCP Route\npyroscope-query\n:443→4040"]
+VA1 -- "wall+alloc+lock\nHTTP :4040" --> ROUTE_INGEST
+VA2 -- "wall+alloc+lock\nHTTP :4040" --> ROUTE_INGEST
+VAN -- "wall+alloc+lock\nHTTP :4040" --> ROUTE_INGEST
+ROUTE_INGEST --> DIST
+DIST -- "gRPC :9095\nconsistent hash" --> ING
+ING -- "flush blocks" --> S3
+COMP -- "compact" --> S3
+GF --> ROUTE_QUERY
+ROUTE_QUERY --> QF
+QF -- "fan-out gRPC" --> QR
+QR -- "in-flight" --> ING
+QR -- "historical" --> SG
+SG -- "index+blocks" --> S3
+DIST -. "gossip :7946" .-> ML
+ING -. "gossip :7946" .-> ML
+QR -. "gossip :7946" .-> ML
+SG -. "gossip :7946" .-> ML
+style ObsNS fill:#e8f4fd,stroke:#2196F3
+style Storage fill:#e8f5e9,stroke:#4CAF50
+style AppNS fill:#fff8e1,stroke:#FF9800
+6.3 Write Path Detail (Vert.x → Object Store)
+sequenceDiagram
+participant JA as Java Agent<br/>(Vert.x Pod)
+participant DIST as Distributor
+participant ING1 as Ingester-0
+participant ING2 as Ingester-1
+participant ING3 as Ingester-2
+participant S3 as Object Store
+JA->>DIST: POST /ingest (pprof, wall-clock)<br/>every 15s, ~8KB payload
+DIST->>DIST: Compute consistent hash ring<br/>select RF=3 ingesters
+DIST->>ING1: gRPC Push(profile)
+DIST->>ING2: gRPC Push(profile)
+DIST->>ING3: gRPC Push(profile)
+ING1-->>DIST: ACK
+ING2-->>DIST: ACK
+ING3-->>DIST: ACK
+DIST-->>JA: 204 No Content
+Note over ING1,ING3: Buffering in-memory WAL<br/>Flush every 2h (min_block_duration)
+ING1->>S3: Upload Parquet block<br/>+ index (TSDB)
+ING2->>S3: Upload Parquet block
+ING3->>S3: Upload Parquet block
+S3-->>ING1: 200 OK
+6.4 Read Path Detail (Grafana Query)
+sequenceDiagram
+participant GF as Grafana
+participant QF as Query Frontend
+participant QR1 as Querier-1
+participant QR2 as Querier-2
+participant ING as Ingester
+participant SG as Store Gateway
+participant S3 as Object Store
+GF->>QF: HTTP GET /pyroscope/render<br/>?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds<br/>&f
+QF->>QF: Split query into sub-ranges<br/>Fan out to queriers
+par Recent data (in-flight)
+QF->>QR1: gRPC QueryRange(last 2h)
+QR1->>ING: gRPC Query(WAL)
+ING-->>QR1: Profile samples
+QR1-->>QF: Partial result
+and Historical data
+QF->>QR2: gRPC QueryRange(older)
+QR2->>SG: gRPC Query(blocks)
+SG->>S3: Fetch block index + postings
+S3-->>SG: Block data
+SG-->>QR2: Profile samples
+QR2-->>QF: Partial result
+end
+QF->>QF: Merge + deduplicate results
+QF-->>GF: Flame graph JSON
+6.5 OpenShift Network Policy Flow
+graph LR
+subgraph appns["App Namespace(s)"]
+VERTX["Vert.x Pods\nJava Agent"]
+end
+subgraph grafns["Grafana Namespace"]
+GRAFANA["Grafana"]
+end
+subgraph obsns["observability-pyroscope"]
+DIST["Distributor\n:4040"]
+ING["Ingester\n:9095"]
+QF["Query Frontend\n:4040"]
+QR["Querier\n:9095"]
+SG["Store Gateway\n:9095"]
+COMP["Compactor"]
+end
+subgraph minio["MinIO Namespace"]
+MINIO["MinIO\n:9000"]
+end
+VERTX -- "ALLOW :4040\nNetPol: ingress from appns" --> DIST
+GRAFANA -- "ALLOW :4040\nNetPol: ingress from grafns" --> QF
+DIST -- "ALLOW :9095\nNetPol: internal" --> ING
+QF -- "ALLOW :9095\nNetPol: internal" --> QR
+QR -- "ALLOW :9095\nNetPol: internal" --> ING
+QR -- "ALLOW :9095\nNetPol: internal" --> SG
+ING -- "ALLOW :9000\nNetPol: egress to minio" --> MINIO
+SG -- "ALLOW :9000\nNetPol: egress to minio" --> MINIO
+COMP -- "ALLOW :9000\nNetPol: egress to minio" --> MINIO
+style appns fill:#fff8e1
+style grafns fill:#f3e5f5
+style obsns fill:#e8f4fd
+style minio fill:#e8f5e9
+6.6 Migration Timeline (Gantt)
+gantt
+title Pyroscope: VM Monolith → OpenShift Microservices
+dateFormat YYYY-MM-DD
+section Infrastructure
+Provision object store (MinIO/S3) Create OpenShift namespace + quotas SCC + RBAC + NetworkPolicy Node pool labeling + taints :i1, 2025-01-06, 3d
+:i2, after i1, 1d
+:i3, after i2, 1d
+:i4, after i2, 1d
+section Deployment
+Deploy ingesters (StatefulSet) Deploy distributors Deploy query path (QF, Querier, SG) Deploy compactor Smoke test + ring validation :d1, after i3, 2d
+:d2, after d1, 1d
+:d3, after d2, 1d
+:d4, after d3, 1d
+:d5, after d4, 1d
+section Agent Migration
+Update 10% app pods (canary) Validate profiles in Grafana Roll to 50% app pods Full rollout (100%) :a1, after d5, 2d
+:a2, after a1, 1d
+:a3, after a2, 2d
+:a4, after a3, 2d
+section Cutover
+Update Grafana datasource URL VM monolith freeze (no new traffic) 7-day rollback window Decommission VM :c1, after a4, 1d
+:c2, after c1, 1d
+:c3, after c2, 7d
+:c4, after c3, 1d
+6.7 Capacity Decision Tree
+flowchart TD
+A([Start: How many\nVert.x pods?]) --> B{≤ 20 pods?}
+B -- Yes --> C[Small Tier\n2 dist, 3 ing, 2 QF\n2 nodes 8c/32Gi]
+B -- No --> D{≤ 100 pods?}
+D -- Yes --> E[Medium Tier\n2 dist, 3 ing, 2 QF\n3 nodes 16c/64Gi]
+D -- No --> F{≤ 500 pods?}
+F -- Yes --> G[Large Tier\n3 dist, 6 ing, 2 QF/QR\n5 nodes 32c/128Gi]
+F -- No --> H[XL Tier\nHPA + dedicated node pool\nEngage Grafana for Mimir migration]
+C --> I{Multi-tenant?}
+E --> I
+G --> I
+I -- Yes --> J[Add X-Scope-OrgID\nEnable tenant isolation\nPer-tenant limits config]
+I -- No --> K[Single-tenant\nNo token header needed]
+J --> L([Deploy + Monitor\npyroscope_ingester_active_series\npyroscope_distributor_received_bytes
+K --> L
+Appendix A — Team Communication One-Pager
+Copy this block for Slack/Confluence/Jira to brief app teams.
+Subject: Pyroscope Profiling Endpoint Migration — Action Required
+We are migrating the continuous profiling backend (Pyroscope) from a VM to OpenShift
+microservices. Your Vert.x service needs one configuration change.
+What changes:
+Before After
+http://pyroscope-
+http://pyroscope-distributor.observability-
+vm.internal:4040
+pyroscope.svc.cluster.local:4040
+What does NOT change: your JVM flags, profiler settings, or application code.
+When: Cutover week of [DATE]. You will receive a Helm values update or env patch to your
+Deployment.
+Impact if not updated: Profiles will continue to flow to the old VM for up to 7 days after cutover,
+then stop. No application behavior is affected — profiling is out-of-band.
+Who to contact: #platform-observability Slack channel.
+Appendix B — Monitoring Pyroscope Itself
+Key Prometheus metrics to alert on:
+Metric Alert Threshold Meaning
+> 80% of planned
+Series
+cardinality
+pyroscope_ingester_active_series capacity approaching
+limit
+pyroscope_distributor_received_bytes_total rate
+> 80% of
+ingestion_rate_mb
+Ingest
+bandwidth
+saturation
+pyroscope_ingester_wal_disk_usage_bytes > 80% of PVC
+WAL disk
+pressure —
+risk of data
+loss
+pyroscope_ring_members{state="UNHEALTHY"} > 0 Ingester ring
+degraded
+pyroscope_compactor_blocks_cleaned_total rate 0 for > 6h
+Compactor
+stalled —
+blocks
+accumulating
+pyroscope_query_frontend_queries_total{status="error"}
+rate
+> 1% Query error
+rate elevated
