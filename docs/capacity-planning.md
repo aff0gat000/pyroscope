@@ -192,6 +192,11 @@ Each component runs as a separate pod/container and can be scaled independently.
 
 ## Networking Requirements
 
+> **See also:** [architecture.md § 5 Network Boundaries](architecture.md#5-network-boundaries) for
+> component-level data flow and [architecture.md § 7 Port Matrix](architecture.md#7-port-matrix-summary)
+> for the full port reference. [deployment-guide.md §§ 17a-17d](deployment-guide.md#17a-firewall-rules-monolith-on-vm-http)
+> has per-mode firewall rule tables.
+
 ### VM Monolith (HTTP) — OCP agents push to VM
 
 ```mermaid
