@@ -90,7 +90,7 @@ Look up specific facts while working.
 | Document | Description |
 |----------|-------------|
 | [configuration-reference.md](configuration-reference.md) | All configuration keys — agent properties, pyroscope.yaml, deploy.sh flags, Ansible, Helm |
-| [capacity-planning.md](capacity-planning.md) | Sizing formulas — server resources, storage calculator, worked examples (10/50/100 services) |
+| [capacity-planning.md](capacity-planning.md) | Sizing (monolith + microservices), networking requirements, firewall rules, enterprise scoping, team coordination |
 | [sla-slo.md](sla-slo.md) | SLO definitions — data availability, query latency, RPO/RTO, error budget, escalation matrix |
 | [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search, Phase 1/2 |
 | [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |

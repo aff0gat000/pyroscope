@@ -601,7 +601,8 @@ Quick reference for firewall rules and network policy configuration.
 |------|----------|-----------|-----------|------|---------|
 | **4040** | TCP / HTTP | All (monolith) or Distributor (microservices) | Inbound | All | Agent push (`POST /ingest`), Grafana queries, Prometheus scrape, UI |
 | **4041** | TCP / HTTP | Query Frontend (VM microservices) | Inbound | Microservices (VM) | Grafana query endpoint (mapped port in Docker Compose) |
-| **4443** | TCP / HTTPS | Envoy TLS proxy | Inbound | Monolith (HTTPS) | TLS-terminated agent push and queries |
+| **4040** | TCP / HTTPS | Nginx TLS proxy | Inbound | Monolith (HTTPS) | TLS-terminated agent push and queries (Pyroscope moves to :4041) |
+| **4443** | TCP / HTTPS | Envoy TLS proxy (legacy) | Inbound | Monolith (HTTPS, legacy) | TLS-terminated agent push and queries |
 | **9095** | TCP / gRPC | Internal inter-component | Internal | Microservices | gRPC communication between components |
 | **7946** | TCP + UDP | Ingester memberlist | Internal | Microservices | Hash ring gossip, peer discovery, ring state propagation |
 | **3000** | TCP / HTTP | Grafana | Inbound | All (if deployed) | Grafana web UI and API |
@@ -612,7 +613,7 @@ Quick reference for firewall rules and network policy configuration.
 | Deployment Mode | Required Ports | Notes |
 |-----------------|---------------|-------|
 | VM Monolith (HTTP) | 4040 | Single port for everything |
-| VM Monolith (HTTPS) | 4443 | Envoy terminates TLS, proxies to 4040 internally |
+| VM Monolith (HTTPS) | 4040 (Nginx TLS) | Nginx terminates TLS on :4040, proxies to Pyroscope on :4041 internally |
 | OCP Monolith | 4040 (cluster-internal), 443 (Route) | Cluster SDN handles internal routing |
 | VM Microservices | 4040 (push), 4041 (query), 7946 (memberlist) | Memberlist is container-network only |
 | OCP Microservices | 4040 (per-component), 7946 (memberlist) | All internal to cluster SDN |
