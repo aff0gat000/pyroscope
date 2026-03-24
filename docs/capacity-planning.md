@@ -123,7 +123,7 @@ total_bandwidth_KB_s = services × avg_push_size_KB / push_interval_s
 | Ingestion drops            | Agents timing out on push     | Add CPU and memory, check network bandwidth                     |
 | > 100 profiled services    | Approaching monolith ceiling  | Plan migration to microservices mode                            |
 
-See [pyroscope-study-guide.md](pyroscope-study-guide.md) for detailed scaling guidance.
+See [pyroscope-reference-guide.md](pyroscope-reference-guide.md) for detailed scaling guidance.
 
 ---
 

@@ -79,7 +79,7 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 | [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
 | [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — two-tier labeling (automatic + LabeledFuture), async limitations |
 | [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint |
-| [pyroscope-study-guide.md](pyroscope-study-guide.md) | Expert mastery — internals, operations, competitive analysis, talking points |
+| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Reference guide — internals, operations, competitive analysis, talking points |
 
 ---
 
@@ -149,7 +149,7 @@ Fill-in templates for change management and governance.
 
 1. [what-is-pyroscope.md](what-is-pyroscope.md) — business case, cost, risk assessment
 2. [project-plan-phase1.md](project-plan-phase1.md) — project plan, timeline, effort estimates
-3. [pyroscope-study-guide.md § Talking Points](pyroscope-study-guide.md) — funding justification and competitive analysis
+3. [pyroscope-reference-guide.md § Talking Points](pyroscope-reference-guide.md) — funding justification and competitive analysis
 4. [continuous-profiling-runbook.md](continuous-profiling-runbook.md) — MTTR reduction data
 
 ### Operators / SREs

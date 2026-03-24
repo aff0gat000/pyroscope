@@ -221,7 +221,7 @@ Yes. For monolith mode, back up the `/data` directory. For microservices mode wi
 object storage, use your object store's backup mechanism. PVC snapshots work for
 Kubernetes deployments.
 
-> **Backup procedures:** [pyroscope-study-guide.md § Backup and restore](pyroscope-study-guide.md)
+> **Backup procedures:** [pyroscope-reference-guide.md § Backup and restore](pyroscope-reference-guide.md)
 
 ---
 
@@ -307,7 +307,7 @@ If your organization already has a commercial APM with profiling features includ
 your contract, it may be simpler to use that. Pyroscope is the clear choice when
 profiling is not already bundled or when air-gapped / data-sovereignty requirements exist.
 
-> **Competitive analysis:** [pyroscope-study-guide.md § Competitive analysis](pyroscope-study-guide.md)
+> **Competitive analysis:** [pyroscope-reference-guide.md § Competitive analysis](pyroscope-reference-guide.md)
 
 ### What is the ROI?
 
@@ -335,5 +335,5 @@ Secondary returns include:
 | [deployment-guide.md](deployment-guide.md) | Step-by-step deployment with decision trees |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan and timeline |
 | [function-reference.md](function-reference.md) | BOR/SOR API reference |
-| [pyroscope-study-guide.md](pyroscope-study-guide.md) | Expert mastery and competitive analysis |
+| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Reference guide and competitive analysis |
 | [troubleshooting.md](troubleshooting.md) | Diagnostic procedures |

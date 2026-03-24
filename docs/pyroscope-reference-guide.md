@@ -1,4 +1,4 @@
-# Pyroscope Study Guide
+# Pyroscope Reference Guide
 
 Expert mastery reference for becoming the organization's Pyroscope subject matter expert.
 Target audience: the engineer who needs to sell this to leadership, support it in production,
