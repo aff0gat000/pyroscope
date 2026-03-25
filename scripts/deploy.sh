@@ -157,7 +157,8 @@ if [ -n "${COMPOSE_EXTRA_FILES:-}" ]; then
   done
 fi
 
-docker compose "${COMPOSE_FILES[@]}" build --parallel
+# Build the shared app image once (all 9 services reuse it)
+docker compose "${COMPOSE_FILES[@]}" build api-gateway
 docker compose "${COMPOSE_FILES[@]}" up -d
 
 echo ""

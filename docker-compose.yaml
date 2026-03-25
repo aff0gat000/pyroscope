@@ -68,10 +68,12 @@ services:
   # ---------------------------------------------------------------------------
 
   # API Gateway / general workloads (MainVerticle)
+  # This service builds the shared image; all others reuse it via image: tag.
   api-gateway:
     build:
       context: ./app
       dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: api-gateway
     ports:
       - "${API_GATEWAY_PORT:-8080}:8080"
@@ -91,9 +93,7 @@ services:
 
   # Order / Trade Service (OrderVerticle)
   order-service:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: order-service
     ports:
       - "${ORDER_SERVICE_PORT:-8081}:8080"
@@ -114,9 +114,7 @@ services:
 
   # Payment Processing Service (PaymentVerticle)
   payment-service:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: payment-service
     ports:
       - "${PAYMENT_SERVICE_PORT:-8082}:8080"
@@ -137,9 +135,7 @@ services:
 
   # Fraud Detection Service (FraudDetectionVerticle)
   fraud-service:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: fraud-service
     ports:
       - "${FRAUD_SERVICE_PORT:-8083}:8080"
@@ -160,9 +156,7 @@ services:
 
   # Core Accounts Service (AccountVerticle)
   account-service:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: account-service
     ports:
       - "${ACCOUNT_SERVICE_PORT:-8084}:8080"
@@ -183,9 +177,7 @@ services:
 
   # Loan Origination Service (LoanVerticle)
   loan-service:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: loan-service
     ports:
       - "${LOAN_SERVICE_PORT:-8085}:8080"
@@ -206,9 +198,7 @@ services:
 
   # Notification Service (NotificationVerticle)
   notification-service:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: notification-service
     ports:
       - "${NOTIFICATION_SERVICE_PORT:-8086}:8080"
@@ -229,9 +219,7 @@ services:
 
   # Stream Processing Service (StreamVerticle)
   stream-service:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: stream-service
     ports:
       - "${STREAM_SERVICE_PORT:-8087}:8080"
@@ -252,9 +240,7 @@ services:
 
   # FaaS Server (FaasVerticle)
   faas-server:
-    build:
-      context: ./app
-      dockerfile: Dockerfile
+    image: bank-app:latest
     container_name: faas-server
     ports:
       - "${FAAS_SERVICE_PORT:-8088}:8080"

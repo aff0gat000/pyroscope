@@ -2,23 +2,19 @@ FROM eclipse-temurin:11-jdk AS builder
 
 WORKDIR /app
 
-# Copy Gradle wrapper config and download wrapper jar
-COPY build.gradle settings.gradle gradlew ./
+# Copy Gradle wrapper and build config first for dependency caching
+COPY gradlew ./
 COPY gradle/ gradle/
-RUN apt-get update && apt-get install -y --no-install-recommends unzip && rm -rf /var/lib/apt/lists/* && \
-    chmod +x gradlew && \
-    mkdir -p gradle/wrapper && \
-    curl -fSL "https://services.gradle.org/distributions/gradle-7.6.4-bin.zip" -o /tmp/gradle.zip && \
-    unzip -q /tmp/gradle.zip -d /opt && \
-    rm /tmp/gradle.zip
+RUN chmod +x gradlew
 
-ENV PATH="/opt/gradle-7.6.4/bin:${PATH}"
+COPY build.gradle settings.gradle ./
 
-# Download dependencies
-RUN gradle --no-daemon dependencies || true
+# Download dependencies in a separate layer (cached unless build.gradle changes)
+RUN ./gradlew --no-daemon dependencies
 
+# Copy source and build
 COPY src/ src/
-RUN gradle --no-daemon shadowJar
+RUN ./gradlew --no-daemon shadowJar
 
 # ---------------------------------------------------------------------------
 FROM eclipse-temurin:11-jre
