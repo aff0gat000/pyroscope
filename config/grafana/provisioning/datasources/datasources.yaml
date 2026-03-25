@@ -1,17 +1,9 @@
 apiVersion: 1
 
 datasources:
-  - name: Prometheus
-    type: prometheus
-    uid: prometheus-ds
-    access: proxy
-    url: http://prometheus:9090
-    isDefault: true
-    editable: true
-
   - name: Pyroscope
     type: grafana-pyroscope-datasource
     uid: pyroscope-ds
     access: proxy
-    url: http://pyroscope:4040
+    url: http://pyroscope:4040    # Replaced at deploy time with actual Pyroscope URL
     editable: true
