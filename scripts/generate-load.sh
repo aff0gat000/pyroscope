@@ -30,7 +30,7 @@ echo ""
 END_TIME=$(($(date +%s) + DURATION_SECONDS))
 
 hit() {
-  curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  $1\n" "$1" --max-time 15 || true
+  curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  $1\n" "$1" --max-time 5 || true
 }
 
 while [ "$(date +%s)" -lt "$END_TIME" ]; do
@@ -80,32 +80,37 @@ while [ "$(date +%s)" -lt "$END_TIME" ]; do
     # Single invoke — pick any function
     FN="${EFNS[$((RANDOM % ${#EFNS[@]}))]}"
     curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  POST ${FAAS}/fn/invoke/${FN}\n" \
-      -X POST "${FAAS}/fn/invoke/${FN}" -H "Content-Type: application/json" -d '{}' --max-time 15 || true
+      -X POST "${FAAS}/fn/invoke/${FN}" -H "Content-Type: application/json" -d '{}' --max-time 5 || true
   elif [ "$EROLL" -lt 75 ]; then
     # Burst — concurrent deploys of same function
     BURST_FNS=("hash" "sort" "regex" "compress" "primes" "matrix" "contention")
     FN="${BURST_FNS[$((RANDOM % ${#BURST_FNS[@]}))]}"
     curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  POST ${FAAS}/fn/burst/${FN}\n" \
-      -X POST "${FAAS}/fn/burst/${FN}?count=$((2 + RANDOM % 5))" -H "Content-Type: application/json" -d '{}' --max-time 30 || true
+      -X POST "${FAAS}/fn/burst/${FN}?count=$((2 + RANDOM % 5))" -H "Content-Type: application/json" -d '{}' --max-time 10 || true
   elif [ "$EROLL" -lt 90 ]; then
     # Chain — sequential deploy/run/undeploy across different functions
     CHAINS=('["hash","sort","fibonacci"]' '["regex","compress","primes"]' '["transform","matrix","hash"]' '["sleep","sort","compress"]')
     CHAIN="${CHAINS[$((RANDOM % ${#CHAINS[@]}))]}"
     curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  POST ${FAAS}/fn/chain\n" \
       -X POST "${FAAS}/fn/chain" -H "Content-Type: application/json" \
-      -d "{\"chain\":${CHAIN},\"params\":{}}" --max-time 30 || true
+      -d "{\"chain\":${CHAIN},\"params\":{}}" --max-time 10 || true
   else
     # Fanout — deploy N child verticles in parallel
     FANOUT_FNS=("hash" "primes" "regex")
     FN="${FANOUT_FNS[$((RANDOM % ${#FANOUT_FNS[@]}))]}"
     curl -sf -o /dev/null -w "  %{http_code}  %{time_total}s  POST ${FAAS}/fn/invoke/fanout\n" \
       -X POST "${FAAS}/fn/invoke/fanout" -H "Content-Type: application/json" \
-      -d "{\"count\":$((2 + RANDOM % 4)),\"function\":\"${FN}\"}" --max-time 30 || true
+      -d "{\"count\":$((2 + RANDOM % 4)),\"function\":\"${FN}\"}" --max-time 10 || true
   fi &
 
-  wait
-  sleep "0.$((RANDOM % 3))"
+  # Limit concurrent background jobs to avoid overwhelming the system
+  while [ "$(jobs -rp | wc -l)" -ge 20 ]; do
+    sleep 0.1
+  done
+  sleep "0.$((RANDOM % 2))"
 done
+
+wait
 
 echo ""
 echo "==> Load generation complete. Check Pyroscope/Grafana for profiles."
