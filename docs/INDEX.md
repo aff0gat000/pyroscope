@@ -90,7 +90,8 @@ Look up specific facts while working.
 | Document | Description |
 |----------|-------------|
 | [configuration-reference.md](configuration-reference.md) | All configuration keys — agent properties, pyroscope.yaml, deploy.sh flags, Ansible, Helm |
-| [capacity-planning.md](capacity-planning.md) | Sizing (monolith + microservices), networking requirements, firewall rules, enterprise scoping, team coordination |
+| [agent-configuration-reference.md](agent-configuration-reference.md) | Java agent deep dive — profile types, thread context, Vert.x edge cases, OpenTelemetry integration |
+| [capacity-planning.md](capacity-planning.md) | Sizing (Phase 1a single monolith, Phase 1b multi-instance monolith, Phase 2 OCP microservices), networking, firewall rules, enterprise scoping |
 | [sla-slo.md](sla-slo.md) | SLO definitions — data availability, query latency, RPO/RTO, error budget, escalation matrix |
 | [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search, Phase 1/2 |
 | [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |
