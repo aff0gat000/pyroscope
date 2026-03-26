@@ -1,6 +1,41 @@
 # Operations Runbook
 
-Deployment, operations, incident response, and troubleshooting for the Pyroscope continuous profiling stack.
+Deployment, operations, incident response, and troubleshooting for the Pyroscope
+continuous profiling stack. Covers both the **local demo** (docker-compose) and
+**production VM deployments** (deploy/monolith/).
+
+> **Demo vs Production:** This runbook covers both modes. Sections marked **(DEMO)**
+> use `scripts/run.sh` and `docker-compose.yaml` for local testing. Sections marked
+> **(PRODUCTION)** use `deploy/monolith/stage1-build.sh` and `stage2-deploy.sh` for
+> enterprise VM deployments. See [INDEX.md § Code Map](INDEX.md#what-s-in-this-repo)
+> for the full distinction.
+
+---
+
+## Preflight Checks
+
+Run these before any deployment to catch common blockers early.
+
+```bash
+# 1. Docker installed and running
+docker version >/dev/null 2>&1 && echo "OK: Docker" || echo "FAIL: Docker not found or not running"
+
+# 2. Docker Compose v2+
+docker compose version 2>/dev/null | grep -q 'v2' && echo "OK: Compose v2" || echo "FAIL: Docker Compose v2 not found"
+
+# 3. Ports available (demo mode)
+for port in 3000 4040 9090; do
+    (echo >/dev/tcp/localhost/$port) 2>/dev/null && echo "FAIL: Port $port already in use" || echo "OK: Port $port available"
+done
+
+# 4. Disk space (need >10GB free for images + data)
+avail=$(df -BG /var/lib/docker 2>/dev/null | awk 'NR==2{print $4}' | tr -d 'G')
+[[ "${avail:-0}" -ge 10 ]] && echo "OK: ${avail}GB free" || echo "WARN: Only ${avail:-?}GB free (recommend 10GB+)"
+
+# 5. RAM (need >8GB for 12 containers)
+total=$(free -g 2>/dev/null | awk '/^Mem:/{print $2}')
+[[ "${total:-0}" -ge 8 ]] && echo "OK: ${total}GB RAM" || echo "WARN: Only ${total:-?}GB RAM (recommend 8GB+)"
+```
 
 ---
 
@@ -19,7 +54,9 @@ Ports are assigned dynamically and written to `.env` by the deploy script. The r
 
 ## Deployment
 
-### Bash Scripts
+### Demo Mode (DEMO)
+
+Local docker-compose with 12 containers. Use for demos, development, and testing.
 
 ```bash
 # Full pipeline (quiet mode with progress spinner)
@@ -54,9 +91,103 @@ bash scripts/teardown.sh
 
 ---
 
+### Production VM Mode (PRODUCTION)
+
+Two-stage deployment for enterprise RHEL VMs. Stage 1 runs on your workstation
+(builds images, transfers to VM). Stage 2 runs on the VM (loads images, deploys).
+
+**Stage 1 — Build and transfer (from Mac/workstation):**
+
+```bash
+cd deploy/monolith
+
+# Basic — pull images, save, SCP to VM
+./stage1-build.sh --vm-host 10.1.2.3
+
+# With SSH user and TLS certs
+./stage1-build.sh --vm-host 10.1.2.3 --vm-user deployer --tls-cert cert.pem --tls-key key.pem
+
+# Build only (no transfer — useful for pre-staging)
+./stage1-build.sh --build-only
+```
+
+**Stage 2 — Deploy on VM (as root):**
+
+```bash
+# Deploy with Nginx TLS (production default)
+sudo /tmp/pyroscope-deploy/stage2-deploy.sh
+
+# Deploy HTTP-only (dev/testing)
+sudo /tmp/pyroscope-deploy/stage2-deploy.sh --http-only
+
+# Skip firewalld configuration
+sudo /tmp/pyroscope-deploy/stage2-deploy.sh --skip-firewall
+
+# Day-2 operations
+sudo /tmp/pyroscope-deploy/stage2-deploy.sh --status
+sudo /tmp/pyroscope-deploy/stage2-deploy.sh --stop
+sudo /tmp/pyroscope-deploy/stage2-deploy.sh --restart
+```
+
+**Alternative — single-script deployment:**
+
+```bash
+cd deploy/monolith
+
+# Full stack on VM (Pyroscope + Grafana)
+bash deploy.sh full-stack --target vm
+
+# With self-signed TLS
+bash deploy.sh full-stack --target vm --tls --tls-self-signed
+
+# Enterprise CA certs
+bash deploy.sh full-stack --target vm --tls --tls-cert /path/to/cert.pem --tls-key /path/to/key.pem
+
+# Pyroscope only (no Grafana)
+bash deploy.sh full-stack --target vm --skip-grafana
+
+# Dry run — validate without making changes
+bash deploy.sh full-stack --target vm --dry-run
+
+# Air-gapped deployment
+bash deploy.sh save-images
+scp pyroscope-stack-images.tar operator@vm01:/tmp/
+bash deploy.sh full-stack --target vm --load-images /tmp/pyroscope-stack-images.tar
+
+# Day-2
+bash deploy.sh status
+bash deploy.sh stop
+bash deploy.sh clean
+bash deploy.sh logs
+```
+
+**Ansible deployment:**
+
+```bash
+cd deploy/monolith/ansible
+
+# Deploy full stack
+ansible-playbook -i inventory/hosts.yml playbooks/deploy.yml
+
+# Deploy with Nginx TLS
+ansible-playbook -i inventory/hosts.yml playbooks/deploy-nginx-tls.yml
+
+# Status / stop / clean
+ansible-playbook -i inventory/hosts.yml playbooks/status.yml
+ansible-playbook -i inventory/hosts.yml playbooks/stop.yml
+ansible-playbook -i inventory/hosts.yml playbooks/clean.yml
+```
+
+> **Production deploy details:** See [deploy/monolith/README.md](../deploy/monolith/README.md)
+> for full documentation, [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md)
+> for Ansible specifics, and [capacity-planning.md](capacity-planning.md) for infrastructure
+> requirements and team scoping checklists.
+
+---
+
 ## Verification
 
-### Automated
+### Automated (DEMO)
 
 ```bash
 bash scripts/validate.sh

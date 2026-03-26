@@ -366,9 +366,14 @@ See [docs/INDEX.md](docs/INDEX.md) for a full documentation map with learning pa
 
 ## Project Structure
 
+> **Code classification:** Items marked **DEMO** are for local testing and learning.
+> Items marked **PRODUCTION** are enterprise deployment automation.
+> Items marked **APPLICATION** are real FaaS function code.
+> Items marked **BOTH** serve dual purpose. See [docs/INDEX.md](docs/INDEX.md) for details.
+
 ```
 pyroscope/
-├── app/                             # Bank microservices application (Java/Vert.x)
+├── app/                             # [DEMO] Bank microservices with deliberate bottlenecks
 │   ├── build.gradle                 # Gradle build (shadow plugin)
 │   ├── Dockerfile                   # Multi-stage: Gradle → JRE
 │   └── src/main/java/com/example/
@@ -383,7 +388,7 @@ pyroscope/
 │       ├── FaasVerticle.java        # FaaS runtime, function lifecycle
 │       └── handlers/                # Additional workload handlers
 │
-├── services/                        # FaaS BOR/SOR functions (Vert.x)
+├── services/                        # [APPLICATION] FaaS BOR/SOR functions (Vert.x)
 │   ├── build.gradle                 # Shared dependency versions + plugin config
 │   ├── settings.gradle              # Multi-project build (4 subprojects)
 │   ├── gradlew                      # Single shared Gradle wrapper
@@ -401,7 +406,7 @@ pyroscope/
 │       ├── bor/                     # Same functions, Java 17+ features (records, switch expressions)
 │       └── sor/                     # Same functions, Java 17+ features
 │
-├── config/
+├── config/                          # [BOTH] Config files — demo values, production-grade comments
 │   ├── grafana/
 │   │   ├── dashboards/              # 6 Grafana dashboards (JSON)
 │   │   └── provisioning/            # Datasources, dashboard provider, plugins
@@ -412,10 +417,10 @@ pyroscope/
 │       ├── pyroscope.properties     # Java agent config (shared across services)
 │       └── pyroscope.yaml           # Pyroscope server config
 │
-├── deploy/
-│   ├── monolith/                    # Single-node Pyroscope server (VM/EC2)
-│   │   ├── deploy.sh               # Bash: VM, local, K8s, OpenShift
-│   │   └── ansible/                # Ansible role + playbooks
+├── deploy/                          # [PRODUCTION] Enterprise deployment automation
+│   ├── monolith/                    # VM deployment: stage1-build.sh → stage2-deploy.sh
+│   │   ├── deploy.sh               # Multi-target deployer (VM, K8s, OCP, air-gapped)
+│   │   └── ansible/                # Ansible role + playbooks for enterprise VMs
 │   ├── grafana/                     # Standalone Grafana image build
 │   ├── helm/pyroscope/              # Unified Helm chart (monolith + microservices, K8s + OCP)
 │   └── microservices/               # Distributed Pyroscope deployment
@@ -425,7 +430,7 @@ pyroscope/
 │
 ├── postman/                         # Postman collection + environment
 │
-├── scripts/
+├── scripts/                         # [DEMO] Local demo lifecycle and analysis tools
 │   ├── run.sh                       # Main entry point — deploy, load, validate, teardown
 │   ├── deploy.sh                    # Build + start containers
 │   ├── generate-load.sh             # Traffic generation to all 9 services
@@ -439,9 +444,9 @@ pyroscope/
 │   ├── check-dashboards.sh          # Dashboard validation
 │   └── lib/                         # Python analysis modules
 │
-├── docker-compose.yaml              # 12 containers (3 infra + 9 services)
-├── docker-compose.optimized.yaml    # Overlay: enable OPTIMIZED=true
-├── docker-compose.no-pyroscope.yaml # Overlay: disable profiling agent
+├── docker-compose.yaml              # [DEMO] 12 containers (3 infra + 9 services)
+├── docker-compose.optimized.yaml    # [DEMO] Overlay: enable OPTIMIZED=true
+├── docker-compose.no-pyroscope.yaml # [DEMO] Overlay: disable profiling agent
 └── README.md
 ```
 
