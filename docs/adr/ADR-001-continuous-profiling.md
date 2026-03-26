@@ -52,12 +52,20 @@ that caused the issue are no longer present by the time the profiler is attached
 
 ### Return on investment
 
-| Category | Cost |
-|----------|------|
-| Engineering effort (Phase 1) | 7-10 weeks FTE |
-| Infrastructure | 1 VM (2 CPU, 4 GB RAM, 100 GB disk) from existing fleet |
-| Software licensing | $0 |
-| Ongoing maintenance | < 2 hours/month (container updates, retention management) |
+| Category | Phase 1a (single monolith) | Phase 1b (HA with object storage) |
+|----------|:-------------------------:|:---------------------------------:|
+| Engineering effort | 7-10 weeks FTE | +1-2 weeks incremental |
+| Infrastructure | 1 VM (4 CPU, 8 GB RAM, 250 GB) | 2-4 VMs + S3-compatible object storage (MinIO or cloud) |
+| Object storage | Not required | MinIO: ~$3,000 one-time + ~$1,000/year; Cloud S3: ~$150-300/year |
+| Software licensing | $0 | $0 |
+| Ongoing maintenance | < 2 hours/month | < 4 hours/month |
+| Annual infrastructure cost | ~$5,900 | ~$10,450-11,300 |
+| 3-year TCO (50 hosts) | ~$42,700 | ~$36,350-41,900 |
+| 3-year savings vs commercial APM | $24,300-90,300 | $25,100-96,650 |
+
+Annual returns from MTTR reduction, avoided redeployments, infrastructure right-sizing,
+and prevented outages total **$19,800-39,800/year** — a **2-7x ROI** against infrastructure
+costs. Full calculations in [what-is-pyroscope.md § 5](../what-is-pyroscope.md).
 
 ---
 

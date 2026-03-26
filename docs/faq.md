@@ -279,17 +279,17 @@ slower (red).
 
 ### How much does Pyroscope cost?
 
-$0 for software licensing. The only costs are infrastructure (1 VM for monolith mode)
-and engineering time to deploy and maintain.
+$0 for software licensing. The only costs are infrastructure and engineering time.
 
-| Cost category | Pyroscope | Commercial APM (50 hosts) |
-|--------------|:---------:|:------------------------:|
-| Software license | $0/year | $9,000-21,000/year |
-| Infrastructure | 1 VM (existing fleet) | Included in SaaS price |
-| Engineering | 7-10 weeks Phase 1 | 1-2 weeks (vendor-managed) |
-| Data ownership | You own all data | Vendor retains data |
+| Cost category | Pyroscope Phase 1a | Pyroscope Phase 1b (HA) | Commercial APM (50 hosts) |
+|--------------|:---------:|:---------:|:------------------------:|
+| Software license | $0/year | $0/year | $9,000-21,000/year |
+| Infrastructure | 1 VM (~$2,000/year) | 2-4 VMs + object storage (~$11,300/year) | Included in SaaS price |
+| Engineering | 7-10 weeks setup | +1-2 weeks incremental | 1-2 weeks (vendor-managed) |
+| 3-year TCO | ~$42,700 | ~$41,900 (on-prem) | $27,000-75,000 (licensing only) |
+| Data ownership | You own all data | You own all data | Vendor retains data |
 
-> **Full cost analysis:** [what-is-pyroscope.md § 5](what-is-pyroscope.md)
+> **Full cost analysis with calculations:** [what-is-pyroscope.md § 5](what-is-pyroscope.md)
 > **Project timeline:** [project-plan-phase1.md § 5](project-plan-phase1.md)
 
 ### Why not just use Datadog / New Relic / Dynatrace?
@@ -313,14 +313,23 @@ profiling is not already bundled or when air-gapped / data-sovereignty requireme
 
 The primary return is **MTTR reduction**. With continuous profiling, root-cause identification
 drops from 30-90 minutes (manual flame graph analysis during an incident) to 5-15 minutes
-(data already captured, automated triage available). For a team handling 2-4 performance
-incidents per month, this saves 2-6 engineering hours per month.
+(data already captured, automated triage available). For a team handling 4 performance
+incidents per month at $100/hr engineer cost, this saves ~$2,400/year in MTTR alone.
 
-Secondary returns include:
-- Catching performance regressions before they reach production (diff report)
-- Proactive optimization of fleet-wide hotspots (fleet search)
-- Eliminating the need for expensive commercial profiling tools
+Combined annual returns (50-host deployment):
 
+| Return category | Annual value |
+|----------------|:------------:|
+| MTTR reduction (4 incidents/month × 30 min saved) | $2,400 |
+| Avoided redeployments during investigations | $2,400 |
+| Infrastructure right-sizing (10-30% of compute spend) | $5,000-15,000 |
+| Prevented outages (1-2 regressions caught early) | $10,000-20,000 |
+| **Total annual return** | **$19,800-39,800** |
+
+Against annual infrastructure costs of ~$5,900 (Phase 1a) to ~$11,300 (Phase 1b with
+object storage), this delivers a **2-7x annual ROI**.
+
+> **Full TCO breakdown with calculations:** [what-is-pyroscope.md § 5](what-is-pyroscope.md)
 > **MTTR data:** [what-is-pyroscope.md § 4](what-is-pyroscope.md)
 
 ---
