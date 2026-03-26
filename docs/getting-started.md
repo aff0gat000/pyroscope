@@ -47,13 +47,13 @@ See [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) f
 | **Monolith mode** | Single-process Pyroscope deployment; supports up to ~100 profiled services |
 | **Microservices mode** | 7-component Pyroscope deployment; supports 100+ services with HA and horizontal scaling |
 | **MTTR** | Mean Time To Resolution — average time from incident detection to root cause identification |
-| **NFS** | Network File System — shared storage required by Pyroscope microservices mode |
+| **Object storage** | S3-compatible storage backend (MinIO, AWS S3, GCS, Azure Blob) required by Pyroscope for multi-instance and microservices modes |
 | **OCP** | OpenShift Container Platform — Red Hat's enterprise Kubernetes distribution |
 | **OTel** | OpenTelemetry — open-source observability framework for metrics, traces, logs (profiling signal emerging) |
 | **pbrun** | PowerBroker run — enterprise privilege escalation tool (similar to sudo) |
 | **PVC** | PersistentVolumeClaim — Kubernetes storage request |
 | **Querier** | Pyroscope component that executes profile queries |
-| **RWX** | ReadWriteMany — Kubernetes storage access mode required by microservices mode (NFS, CephFS) |
+| **RWX** | ReadWriteMany — Kubernetes storage access mode required by microservices mode |
 | **SOR** | System of Record — data access layer in the FaaS function architecture; wraps Pyroscope API |
 | **TLS** | Transport Layer Security — encryption for data in transit (HTTPS) |
 | **Verticle** | Vert.x unit of deployment — each FaaS function runs as a separate Verticle |

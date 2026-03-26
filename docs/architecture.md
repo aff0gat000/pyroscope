@@ -87,13 +87,13 @@ graph TB
 |-----------|-----------------|------------------------|---------------|
 | **Components** | All 7 components in a single process | All 7 components in a single process × N instances | Each component is an independent container/pod |
 | **Scaling** | Vertical only (add CPU/RAM to the single instance) | Horizontal — add instances behind F5. Each instance runs all 7 components | Horizontal per component (scale ingesters and queriers independently) |
-| **Storage** | Local filesystem at `/data` inside the container | Shared filesystem (NFS / object storage) mounted by all instances | Shared filesystem (NFS / RWX PVC) at `/data/pyroscope` per ingester |
+| **Storage** | Local filesystem at `/data` inside the container | S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) shared by all instances | S3-compatible object storage or RWX PVC at `/data/pyroscope` per ingester |
 | **High availability** | No built-in HA; single point of failure | Yes — F5 health checks remove unhealthy instances. Shared storage means any instance can serve queries | Yes — replicated ingesters, multiple queriers, hash ring rebalancing |
 | **Memberlist** | Not used (all components are in-process) | Not used — each instance is independent. F5 distributes traffic | Required — ingesters form a hash ring via memberlist gossip on port 7946 |
-| **Complexity** | Low — single container, single config file | Medium — multiple VMs, shared storage, F5 pool configuration | Higher — 7+ containers, shared storage provisioning, network policies |
-| **Object storage** | Optional (S3/GCS for long-term) | Recommended (shared S3/MinIO for cross-instance data access) | Optional (S3/GCS for long-term) |
+| **Complexity** | Low — single container, single config file | Medium — multiple VMs, object storage, F5 pool configuration | Higher — 7+ containers, object storage provisioning, network policies |
+| **Object storage** | Optional (S3/GCS for long-term) | Required (shared S3/MinIO for cross-instance data access) | Optional (S3/GCS for long-term) |
 | **When to use** | Fewer than ~100 profiled applications, dev/staging, PoC, single-team use | 50-200 profiled applications, need HA without microservices complexity | 100+ profiled applications, production HA requirement, multi-team shared platform |
-| **Minimum resources** | 2 CPU, 4 GB RAM, 50 GB disk | 2× (4 CPU, 8 GB RAM) VMs + shared storage | 8 CPU, 16 GB RAM, 100 GB RWX storage |
+| **Minimum resources** | 2 CPU, 4 GB RAM, 50 GB disk | 2× (4 CPU, 8 GB RAM) VMs + object storage | 8 CPU, 16 GB RAM, 100 GB RWX storage |
 
 ---
 
@@ -167,7 +167,7 @@ graph TB
 
 Multiple Pyroscope monolith instances run on separate VMs, each fronted by Nginx TLS.
 An F5 load balancer distributes agent pushes and Grafana queries across all instances.
-All instances share a common storage backend (NFS or S3-compatible object storage) so
+All instances share a common S3-compatible object storage backend (MinIO, AWS S3, GCS, or Azure Blob) so
 that any instance can serve queries for any data, regardless of which instance ingested it.
 
 ```mermaid
@@ -211,8 +211,8 @@ graph TB
         PyroN["Nginx + Pyroscope<br/>(same pattern)"]
     end
 
-    subgraph "Shared Storage"
-        Storage[("NFS Export or<br/>S3-compatible<br/>Object Storage<br/>(MinIO / Ceph RGW)")]
+    subgraph "Shared Object Storage"
+        Storage[("S3-compatible<br/>Object Storage<br/>(MinIO / AWS S3 /<br/>GCS / Azure Blob)")]
     end
 
     subgraph "Monitoring VMs"
@@ -239,32 +239,29 @@ graph TB
 **Key characteristics:**
 - Each VM runs the same Nginx + Pyroscope monolith stack — identical configuration
 - F5 VIP distributes traffic across all VMs. Health check: `GET /ready` on port 4040
-- **Shared storage is mandatory.** Without it, each instance only sees its own data
-- **NFS option:** Mount the same NFS export at `/data` on every VM. Simple but introduces file-level locking considerations
-- **Object storage option (recommended):** Configure all instances to use the same S3/MinIO bucket. No file locking issues, better for concurrent writes
+- **Shared object storage is mandatory.** Without it, each instance only sees its own data
+- **Object storage:** Configure all instances to use the same S3-compatible bucket (MinIO, AWS S3, GCS, or Azure Blob). This is the only shared storage backend supported by Grafana Pyroscope for multi-instance deployments. No file locking issues, scales well with concurrent writers
 - No memberlist — each instance is independent. F5 handles failover
 - Any instance can serve queries for any data because storage is shared
 - Scale horizontally by adding more VMs to the F5 pool
 
-**Storage configuration (object storage — recommended):**
+**Storage configuration (object storage):**
 ```yaml
 # pyroscope.yaml — identical on every instance
 storage:
   backend: s3
   s3:
     bucket_name: pyroscope-profiles
-    endpoint: minio.company.com:9000    # or NFS: use local filesystem backend
+    endpoint: minio.company.com:9000
     access_key_id: ${MINIO_ACCESS_KEY}
     secret_access_key: ${MINIO_SECRET_KEY}
     insecure: false
 ```
 
-**Storage configuration (NFS — simpler but less scalable):**
-```bash
-# On each Pyroscope VM — mount the same NFS export
-mount -t nfs nfs-server.company.com:/pyroscope-data /data
-# Then Pyroscope uses the default local filesystem backend at /data
-```
+> **Why object storage?** Grafana Pyroscope officially supports S3-compatible, GCS, Azure Blob, and
+> Swift object storage backends for shared data across instances. NFS / shared filesystems are not
+> a supported storage backend. Ingesters flush blocks to local disk first, then upload to the object
+> store. See [Grafana Pyroscope storage docs](https://grafana.com/docs/pyroscope/latest/configure-server/storage/).
 
 **F5 configuration:**
 | Setting | Value | Notes |
@@ -283,7 +280,7 @@ mount -t nfs nfs-server.company.com:/pyroscope-data /data
 | HA mechanism | F5 removes unhealthy VMs from pool | Hash ring rebalancing, ingester replication |
 | Scaling granularity | Whole instances only | Per-component (e.g., add queriers without adding ingesters) |
 | Sweet spot | 50-200 profiled services | 200+ profiled services |
-| Storage | Shared NFS or object storage | RWX PVC (NFS/CephFS) |
+| Storage | S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) | S3-compatible object storage or RWX PVC |
 | Best for | Teams comfortable with VMs who need HA without Kubernetes complexity | Teams on OpenShift who need fine-grained scaling |
 
 ---
@@ -718,25 +715,19 @@ Pyroscope container
 ### Multi-instance monolith mode (Phase 1b)
 
 ```
-Shared storage (NFS or S3-compatible object storage)
+S3-compatible object storage (MinIO / AWS S3 / GCS / Azure Blob)
 ├── Instance 1 writes here ─┐
-├── Instance 2 writes here ──┼── All instances read/write the same storage
+├── Instance 2 writes here ──┼── All instances read/write the same bucket
 └── Instance N writes here ─┘
 
-Option A — Object storage (recommended):
   S3 / MinIO bucket: pyroscope-profiles
   └── All instances configured with same bucket, endpoint, credentials
   └── Pyroscope handles concurrent access internally
-
-Option B — NFS:
-  NFS export: nfs-server:/pyroscope-data
-  └── Mounted at /data on every VM
-  └── All instances read/write the same filesystem
-  └── File-level locking managed by NFS server
+  └── Ingesters flush blocks to local disk, then upload to object store
+  └── Compactor merges blocks in the bucket for query efficiency
 ```
 
-- **Object storage (recommended):** No file locking issues, scales better with multiple writers
-- **NFS:** Simpler to set up but introduces NFS lock contention under heavy write load
+- **Object storage is required** for multi-instance deployments. This is the only shared storage backend supported by Grafana Pyroscope. No file locking issues, scales well with concurrent writers, built-in replication
 - **Each instance runs its own compactor** — configure `compactor.compaction_interval` to stagger compaction across instances to avoid contention
 - **Sizing:** Same per-JVM estimate as single monolith. Aggregate across all instances
 

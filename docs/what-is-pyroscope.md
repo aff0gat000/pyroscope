@@ -246,7 +246,7 @@ When ingestion volume exceeds single-node capacity (>100 services, HA requiremen
 multi-cluster aggregation), migrate to microservices mode with 9 distributed components.
 
 - **Components:** distributor, ingester, compactor, store-gateway, query-frontend, query-scheduler, querier, overrides-exporter, gateway
-- **Storage:** Requires RWX (NFS or object storage)
+- **Storage:** Requires S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob)
 - **HA:** Replicas per component, independent scaling
 - **Capacity:** Hundreds to thousands of services
 

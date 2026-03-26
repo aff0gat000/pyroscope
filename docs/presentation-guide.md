@@ -63,7 +63,7 @@ Use this table directly from [capacity-planning.md](capacity-planning.md):
 
 **Slide 5 — Ask (1 min)**
 - Phase 1: One VM, 10-20 services, 4-6 weeks
-- Phase 1b: Add HA with second VM + shared storage
+- Phase 1b: Add HA with second VM + object storage (MinIO / S3)
 - Phase 2: Migrate to OCP microservices when ready
 
 ### Common Objections
@@ -91,7 +91,7 @@ Get architectural approval for deployment topology and network requirements.
 **Part 2 — Deployment Phases (10 min)**
 - Show the 3-phase progression diagram from [deployment-guide.md §2](deployment-guide.md#2-pyroscope-server-mode)
 - Phase 1a: Single monolith VM — show [architecture.md §3a](architecture.md#3a-vm-single-monolith-with-nginx-tls-phase-1a) topology diagram
-- Phase 1b: Multi-instance with shared storage — show [architecture.md §3a-ii](architecture.md#3a-ii-vm-multi-instance-monolith-with-shared-storage-phase-1b)
+- Phase 1b: Multi-instance with object storage — show [architecture.md §3a-ii](architecture.md#3a-ii-vm-multi-instance-monolith-with-shared-storage-phase-1b)
 - Phase 2: OCP microservices — show [architecture.md §3d](architecture.md#3d-ocp-microservices-helm-chart-phase-2)
 
 **Part 3 — Network + Ports (10 min)**

@@ -158,10 +158,10 @@ env:
 > Single monolith supports up to ~100 services. For HA or beyond 100 services, move to
 > multi-instance monolith (Phase 1b) or microservices (Phase 2).
 
-### Phase 1b: Multi-Instance Monolith (multiple VMs with shared storage)
+### Phase 1b: Multi-Instance Monolith (multiple VMs with object storage)
 
-Each VM runs the same Pyroscope + Nginx stack. F5 distributes traffic. Shared storage
-(object storage or NFS) allows any instance to serve queries for any data.
+Each VM runs the same Pyroscope + Nginx stack. F5 distributes traffic. S3-compatible
+object storage (MinIO, AWS S3, GCS, or Azure Blob) allows any instance to serve queries for any data.
 
 **Per-VM sizing (each instance):**
 
@@ -169,15 +169,14 @@ Each VM runs the same Pyroscope + Nginx stack. F5 distributes traffic. Shared st
 |----------|--------------|-------|
 | CPU | 4 cores | Same as single monolith |
 | Memory | 8 GB | In-memory head blocks per instance |
-| Local disk | 50 GB | Temp/WAL only if using object storage; 250 GB if NFS |
+| Local disk | 50 GB | WAL and temporary blocks before upload to object storage |
 | Network | < 5 Mbps | Per-VM ingestion bandwidth |
 
-**Shared storage sizing:**
+**Object storage sizing:**
 
 | Storage type | Sizing | Notes |
 |-------------|--------|-------|
-| Object storage (S3/MinIO) | 50-500 GB | Same formula as single monolith. No local disk needed for profile data |
-| NFS | 250-500 GB | Mounted at `/data` on all VMs. NFS server needs sufficient IOPS |
+| S3-compatible (MinIO, AWS S3, GCS, Azure Blob) | 50-500 GB | Same formula as single monolith. Local disk is for WAL/temp only |
 
 **Instance count guidelines:**
 
@@ -192,8 +191,7 @@ Each VM runs the same Pyroscope + Nginx stack. F5 distributes traffic. Shared st
 | Component | Specification | Notes |
 |-----------|--------------|-------|
 | F5 VIP | `pyroscope.company.com:443` | Health check: `GET /ready` on :4040 |
-| Object storage | MinIO cluster or S3-compatible | 2+ nodes for HA. Or use existing enterprise object storage |
-| NFS server (if NFS) | Dedicated NFS export | NFSv4 recommended. Sufficient IOPS for concurrent writers |
+| Object storage | MinIO cluster or S3-compatible | 2+ nodes for HA. Or use existing enterprise object storage (AWS S3, GCS, Azure Blob) |
 | TLS certificate | Same cert on all Nginx instances | Wildcard or SAN cert for VIP FQDN |
 
 > **Why multi-instance over microservices?** Multi-instance monolith gives you HA and
@@ -528,7 +526,7 @@ spec:
 
 Multiple Pyroscope monolith instances on separate VMs, each with Nginx TLS. F5
 distributes agent traffic and Grafana queries across all instances. All instances
-share storage (object storage or NFS) so any instance can serve queries for any data.
+share an S3-compatible object storage backend so any instance can serve queries for any data.
 
 #### Architecture
 
@@ -560,8 +558,8 @@ graph LR
         Nginx2 -->|"proxy_pass"| Pyro2
     end
 
-    subgraph "Shared Storage"
-        S3[("S3 / MinIO<br/>or NFS Export")]
+    subgraph "Shared Object Storage"
+        S3[("S3-compatible<br/>Object Storage<br/>(MinIO / AWS S3 /<br/>GCS / Azure Blob)")]
     end
 
     subgraph "Monitoring VMs"
@@ -599,7 +597,7 @@ graph LR
 | 2 | F5 VIP | Pyroscope VM 1..N | **TCP 4040** | HTTPS | F5 → VMs | F5 pool members → Nginx TLS |
 | 3 | Grafana VM | F5 VIP | **TCP 443** | HTTPS | VM → F5 | Datasource queries via VIP |
 | 4 | Prometheus VM | Pyroscope VM 1..N | **TCP 4040** | HTTPS | VM → VM | Metrics scrape per instance |
-| 5 | Pyroscope VM 1..N | Object storage / NFS | **TCP 9000** (MinIO) or **TCP 2049** (NFS) | HTTPS / NFS | VM → Storage | Profile data read/write |
+| 5 | Pyroscope VM 1..N | Object storage (MinIO / S3) | **TCP 9000** (MinIO) or **TCP 443** (AWS S3 / GCS / Azure) | HTTPS | VM → Storage | Profile data read/write |
 | 6 | Admin workstation | F5 VIP | **TCP 443** | HTTPS | LAN → F5 | Pyroscope UI |
 
 > **New vs single monolith:** Row 5 (shared storage access) is the key addition.
@@ -612,16 +610,22 @@ graph LR
 | OS | RHEL 8/9 | Same image/config on every VM |
 | CPU | 4 cores | Per-instance |
 | Memory | 8 GB | Per-instance |
-| Local disk | 50 GB (object storage) or 250 GB (NFS) | Object storage: local disk is for WAL/temp only |
+| Local disk | 50 GB | WAL and temporary blocks before upload to object storage |
 | Docker | Docker CE or Podman | Same version on all VMs |
 | TLS Certificate | Same cert on all VMs (VIP FQDN) | Enterprise CA-signed |
 
-#### Shared Storage Requirements
+#### Object Storage Requirements
 
-| Option | Specification | Pros | Cons |
-|--------|--------------|------|------|
-| **Object storage (recommended)** | MinIO cluster or S3-compatible, 250 GB - 1 TB | No file locking issues, scales well with concurrent writers, built-in replication | Additional infrastructure (MinIO cluster) |
-| **NFS** | NFSv4 export, 250 GB - 1 TB, sufficient IOPS | Simple setup, familiar to most teams | File-level locking under concurrent writes, NFS server is single point of failure |
+| Backend | Specification | Notes |
+|---------|--------------|-------|
+| **MinIO (on-premise)** | MinIO cluster, 250 GB - 1 TB | 2+ nodes for HA. S3-compatible API. Deploy on-premise for data sovereignty |
+| **AWS S3** | S3 bucket, 250 GB - 1 TB | Managed service, no infrastructure to maintain |
+| **GCS** | GCS bucket, 250 GB - 1 TB | Managed service, service account authentication |
+| **Azure Blob** | Blob container, 250 GB - 1 TB | Managed service, managed identity or key authentication |
+
+> **Why object storage?** Grafana Pyroscope officially supports S3-compatible, GCS, Azure Blob, and Swift
+> object storage backends for shared data across instances. NFS / shared filesystems are not a supported
+> storage backend. See [Grafana Pyroscope storage docs](https://grafana.com/docs/pyroscope/latest/configure-server/storage/).
 
 #### Pyroscope Configuration (object storage mode)
 
@@ -642,7 +646,7 @@ storage:
 | Setting | Value | Notes |
 |---------|-------|-------|
 | Pool members | `VM1:4040`, `VM2:4040`, ..., `VMn:4040` | All Pyroscope VMs |
-| Load balancing | Round-robin or least-connections | Instances are stateless with shared storage |
+| Load balancing | Round-robin or least-connections | Instances are stateless with shared object storage |
 | Health monitor | HTTPS `GET /ready` on port 4040 | Removes unhealthy instances automatically |
 | Session persistence | None required | Any instance can serve any request |
 
@@ -886,17 +890,16 @@ security teams. Hand the relevant section directly to each team.
 | **Monitoring** | Prometheus scrape target: `https://VM_IP:4040/metrics` | Days | Standard service discovery or static config |
 | **Grafana** | Pyroscope datasource | Days | URL: `https://pyroscope.company.com` |
 
-### Phase 1b: VM Multi-Instance Monolith with Shared Storage
+### Phase 1b: VM Multi-Instance Monolith with Object Storage
 
 Everything from Phase 1a, plus:
 
 | Team | What to request | Lead time | Details |
 |------|----------------|:---------:|---------|
 | **VM / Infrastructure** | Additional RHEL VMs (2-4 total) — 4 CPU, 8 GB RAM each | 1-2 weeks | Same Docker image, same config as first VM |
-| **Storage** | Object storage: MinIO cluster or S3-compatible (250 GB - 1 TB) | 1-2 weeks | Or NFS export if object storage is not available |
-| **Storage** | (If NFS) Dedicated NFS export with sufficient IOPS | 1-2 weeks | NFSv4 recommended. Mount at `/data` on all VMs |
+| **Storage** | S3-compatible object storage: MinIO cluster, AWS S3, GCS, or Azure Blob (250 GB - 1 TB) | 1-2 weeks | MinIO for on-premise; or use existing enterprise object storage |
 | **Network** | F5 pool: add additional VMs as pool members (TCP 4040) | Days | Same VIP, add members. Health check: `GET /ready` |
-| **Network** | Firewall rule: Pyroscope VMs → Object storage / NFS server | 1-2 weeks | TCP 9000 (MinIO) or TCP 2049 (NFS) |
+| **Network** | Firewall rule: Pyroscope VMs → Object storage | 1-2 weeks | TCP 9000 (MinIO) or TCP 443 (AWS S3 / GCS / Azure) |
 | **Network** | Prometheus scrape targets: all Pyroscope VMs individually | Days | One scrape target per VM (not via VIP) |
 | **Security / PKI** | Same TLS cert on all VMs (or wildcard cert) | Days | VIP FQDN cert — already issued in Phase 1a |
 
@@ -930,15 +933,15 @@ Everything from Phase 1a, plus:
 
 | Trigger | Symptom | Action |
 |---------|---------|--------|
-| HA requirement | Single point of failure unacceptable | Add second VM, configure shared storage, add to F5 pool |
+| HA requirement | Single point of failure unacceptable | Add second VM, configure object storage, add to F5 pool |
 | Approaching 100 profiled services | Query latency increasing | Add instances to distribute load |
 | DR/maintenance windows | Need zero-downtime upgrades | Second instance handles traffic during rolling upgrades |
 
 **Migration steps (1a → 1b):**
 
-1. Provision shared storage (MinIO/S3 or NFS export)
-2. Reconfigure existing Pyroscope to use shared storage backend
-3. Verify data is accessible from shared storage
+1. Provision S3-compatible object storage (MinIO cluster, AWS S3, GCS, or Azure Blob)
+2. Reconfigure existing Pyroscope to use the object storage backend
+3. Verify data is accessible from object storage
 4. Provision second VM with identical Nginx + Pyroscope config
 5. Add second VM to F5 pool
 6. Verify F5 health checks pass for both VMs
