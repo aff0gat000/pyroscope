@@ -9,6 +9,141 @@ to infrastructure, network, and storage teams.
 
 ---
 
+## Why Pyroscope: Enterprise Value Proposition
+
+### The problem continuous profiling solves
+
+Traditional observability (logs, metrics, traces) tells you **what** is slow or
+failing. Continuous profiling tells you **why** — down to the exact function,
+line of code, and call path consuming CPU, memory, or holding locks.
+
+Without profiling, performance investigations follow this pattern:
+
+1. Alert fires (high latency, OOM kill, thread starvation)
+2. Team reviews dashboards — sees the symptom but not the cause
+3. Engineers attempt to reproduce locally — often cannot replicate production load
+4. Ad-hoc profiling is attached in production — requires restart, access, and timing
+5. Root cause found days or weeks later
+
+With continuous profiling always on, step 5 happens at step 1. The profile data
+is already captured. Open Grafana, select the time window, read the flame graph.
+
+### Quantified value
+
+| Benefit | Without profiling | With Pyroscope | Impact |
+|---------|------------------|----------------|--------|
+| **Mean time to root cause (MTTR)** | Hours to days — reproduce, attach profiler, wait for recurrence | Minutes — flame graph already captured for the incident window | 5-50x faster root cause identification |
+| **Production debugging** | Requires SSH access, JVM restarts, or debug builds in production | Always-on, no restarts, no code changes, no elevated access needed | Eliminates emergency profiling sessions |
+| **Resource optimization** | Over-provisioned "just in case" — CPU/memory requests based on guesswork | Data-driven right-sizing — flame graphs show actual CPU/memory consumers per function | 10-30% infrastructure cost reduction through right-sizing |
+| **Performance regression detection** | Caught in production by end users or alerts, after deployment | Before/after flame graph comparison shows new hotspots immediately | Regressions caught in minutes, not days |
+| **Cross-team debugging** | "It's not my service" — finger-pointing between teams | Shared flame graph data across all services — objective, function-level evidence | Eliminates blame games with data |
+| **Knowledge transfer** | Senior engineers carry performance knowledge in their heads | Flame graphs document how the system actually behaves under load | Institutional knowledge is captured automatically |
+
+### When to implement
+
+Pyroscope is worth implementing when **any** of these apply:
+
+- You have JVM services in production that experience periodic latency spikes, OOM kills, or thread contention
+- Performance investigations regularly take more than a few hours
+- Teams over-provision resources because they lack data on actual usage
+- You need to validate that code changes don't introduce performance regressions
+- Multiple teams share infrastructure and need objective performance data
+- You're running on OpenShift/Kubernetes where attaching ad-hoc profilers is difficult
+
+### When it may not be needed
+
+- Small number of services (< 5) with well-understood performance characteristics
+- Batch-only workloads with no latency requirements
+- Environments where 3-5% CPU overhead is not acceptable (rare — see below)
+
+---
+
+## Performance Impact Assessment
+
+> **Bottom line: the agent overhead is small, predictable, and bounded.
+> It does not grow with application load.** The profiler samples at a fixed
+> interval regardless of how busy the JVM is.
+
+### Agent overhead per JVM pod
+
+| Resource | Overhead | Behavior under load | Notes |
+|----------|----------|:-------------------:|-------|
+| **CPU** | 3-5% | **Constant** — does not increase with application throughput | Sampling is timer-based (every 10ms). Whether the JVM handles 10 req/s or 10,000 req/s, the profiler takes the same number of samples |
+| **Memory** | ~30 MB | **Constant** — does not grow with heap size | Agent buffer for batching samples before upload. Independent of application memory |
+| **Network** | 10-50 KB per push (every 10s) | **Constant** — compressed profile payloads are small | ~100-500 KB/min per pod. Negligible compared to application traffic |
+| **Latency** | < 1ms per sample | **Imperceptible** — safepoint bias is minimal with itimer | No stop-the-world pauses. JFR itimer sampling does not require JVM safepoints |
+| **Disk** | 0 | N/A | Agent stores nothing locally — profiles are pushed to server immediately |
+
+### Why the overhead is safe for production
+
+1. **Sampling, not instrumentation.** The agent does not modify bytecode or wrap
+   method calls. It periodically snapshots the call stack using JFR (Java Flight
+   Recorder), which is built into the JVM and designed for always-on production use.
+
+2. **itimer-based, not perf-based.** We use `itimer` (interval timer) rather than
+   Linux `perf_events`. itimer has no kernel dependency, no `CAP_PERFMON`
+   requirement, and works in unprivileged containers. It also avoids the overhead
+   spikes that perf-based sampling can cause under heavy context switching.
+
+3. **Fixed sample rate.** The 10ms interval means ~100 samples/second regardless
+   of application load. A JVM processing 1 request/second gets the same profiling
+   overhead as one processing 100,000 requests/second.
+
+4. **Bounded memory.** The agent buffer is a fixed-size ring buffer (~30 MB). It
+   does not grow with heap size, number of threads, or request volume.
+
+5. **Graceful degradation.** If the Pyroscope server is unreachable, the agent
+   retains samples in its buffer and retries on the next push interval. It does
+   not block the application, throw exceptions, or accumulate unbounded memory.
+
+### Profile types and their overhead
+
+All three profile types are enabled by default in our configuration:
+
+| Profile type | What it captures | Overhead | Configuration |
+|-------------|-----------------|:--------:|--------------|
+| **CPU (itimer)** | Function-level CPU time — which methods consume the most CPU cycles | ~2-3% CPU | `pyroscope.profiler.event=itimer` at 10ms interval |
+| **Allocation** | Heap allocation hotspots — which methods create the most garbage, causing GC pressure | ~1% CPU | `pyroscope.profiler.alloc=512k` — samples allocations >= 512 KB |
+| **Lock contention** | Thread blocking — which `synchronized` blocks, `ReentrantLock` calls, or monitors cause waits | < 0.5% CPU | `pyroscope.profiler.lock=10ms` — captures lock waits >= 10ms |
+| **Combined total** | All three above | **~3-5% CPU, ~30 MB RAM** | All enabled simultaneously in `pyroscope.properties` |
+
+### Comparison with alternatives
+
+| Approach | Overhead | Always-on? | Production-safe? | Visibility |
+|----------|:--------:|:----------:|:----------------:|:----------:|
+| **Pyroscope agent (JFR/itimer)** | 3-5% CPU | Yes | Yes | CPU + alloc + lock, function-level |
+| Java Flight Recorder (manual) | 1-3% CPU | No (on-demand) | Yes | Requires JVM restart or `jcmd` access |
+| VisualVM / JProfiler (remote attach) | 10-30% CPU | No (on-demand) | Risky | Deep detail but high overhead |
+| `async-profiler` (manual) | 3-5% CPU | No (on-demand) | Yes | Same engine as Pyroscope, but no central storage |
+| APM agents (Datadog, New Relic) | 5-15% CPU | Yes | Yes | Traces + some profiling, higher overhead |
+| No profiling | 0% | N/A | N/A | Blind to function-level performance |
+
+> **Pyroscope uses async-profiler under the hood** — the same battle-tested engine
+> used by Netflix, Uber, and other large-scale JVM shops. The Pyroscope agent adds
+> central collection, storage, and Grafana integration on top.
+
+### Rollback plan
+
+If the agent must be removed for any reason:
+
+```yaml
+# Remove this line from the pod spec:
+# JAVA_TOOL_OPTIONS: "-javaagent:/opt/pyroscope/pyroscope.jar"
+
+# Or set to empty:
+env:
+  - name: JAVA_TOOL_OPTIONS
+    value: ""
+```
+
+- **Rollback time:** Pod restart (~30 seconds)
+- **Data impact:** Historical profiles remain in Pyroscope. No data loss.
+- **Application impact:** Zero. The agent has no runtime hooks, no bytecode
+  modifications, and no application code dependencies. Removing it is the same
+  as never having added it.
+
+---
+
 ## Server Sizing
 
 | Resource | Phase 1 (Up to 20 Svcs) | Medium (50 Svcs) | Large (100 Svcs) |
