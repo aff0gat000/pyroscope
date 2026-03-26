@@ -146,14 +146,61 @@ env:
 
 ## Server Sizing
 
-| Resource | Phase 1 (Up to 20 Svcs) | Medium (50 Svcs) | Large (100 Svcs) |
+### Phase 1a: Single Monolith (one VM)
+
+| Resource | Small (Up to 20 Svcs) | Medium (50 Svcs) | Large (100 Svcs) |
 |----------|--------------------------|-------------------|-------------------|
 | CPU      | 2 cores                  | 4 cores           | 8 cores           |
 | Memory   | 4 GB                     | 8 GB              | 16 GB             |
 | Disk     | 100 GB                   | 250 GB            | 500 GB            |
 | Network  | < 1 Mbps                 | < 5 Mbps          | < 10 Mbps         |
 
-> Monolith mode supports up to ~100 services. Beyond that, migrate to microservices mode.
+> Single monolith supports up to ~100 services. For HA or beyond 100 services, move to
+> multi-instance monolith (Phase 1b) or microservices (Phase 2).
+
+### Phase 1b: Multi-Instance Monolith (multiple VMs with shared storage)
+
+Each VM runs the same Pyroscope + Nginx stack. F5 distributes traffic. Shared storage
+(object storage or NFS) allows any instance to serve queries for any data.
+
+**Per-VM sizing (each instance):**
+
+| Resource | Specification | Notes |
+|----------|--------------|-------|
+| CPU | 4 cores | Same as single monolith |
+| Memory | 8 GB | In-memory head blocks per instance |
+| Local disk | 50 GB | Temp/WAL only if using object storage; 250 GB if NFS |
+| Network | < 5 Mbps | Per-VM ingestion bandwidth |
+
+**Shared storage sizing:**
+
+| Storage type | Sizing | Notes |
+|-------------|--------|-------|
+| Object storage (S3/MinIO) | 50-500 GB | Same formula as single monolith. No local disk needed for profile data |
+| NFS | 250-500 GB | Mounted at `/data` on all VMs. NFS server needs sufficient IOPS |
+
+**Instance count guidelines:**
+
+| Profiled services | Recommended instances | F5 pool | Shared storage |
+|:-----------------:|:--------------------:|:-------:|:--------------:|
+| 20-50 | 2 (active-active) | Round-robin | 250 GB |
+| 50-100 | 2-3 | Least-connections | 500 GB |
+| 100-200 | 3-4 | Least-connections | 500 GB - 1 TB |
+
+**Additional infrastructure:**
+
+| Component | Specification | Notes |
+|-----------|--------------|-------|
+| F5 VIP | `pyroscope.company.com:443` | Health check: `GET /ready` on :4040 |
+| Object storage | MinIO cluster or S3-compatible | 2+ nodes for HA. Or use existing enterprise object storage |
+| NFS server (if NFS) | Dedicated NFS export | NFSv4 recommended. Sufficient IOPS for concurrent writers |
+| TLS certificate | Same cert on all Nginx instances | Wildcard or SAN cert for VIP FQDN |
+
+> **Why multi-instance over microservices?** Multi-instance monolith gives you HA and
+> horizontal scaling with the operational simplicity of the monolith. Each VM runs an
+> identical stack. No memberlist, no hash ring, no per-component scaling. The trade-off:
+> you cannot scale components independently (e.g., add queriers without adding ingesters).
+> If you need per-component scaling, move to Phase 2 microservices.
 
 See [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) for Phase 1 VM specification.
 
@@ -337,7 +384,7 @@ Each component runs as a separate pod/container and can be scaled independently.
 
 ---
 
-### Deployment Type A: VM Monolith (Nginx TLS) — Production Default
+### Deployment Type A1: VM Single Monolith (Nginx TLS) — Phase 1a
 
 Docker containers on a dedicated VM. OCP-hosted JVM application pods run the
 Pyroscope Java agent, which pushes profiles over HTTPS. Nginx terminates TLS on
@@ -477,7 +524,159 @@ spec:
 
 ---
 
-### Deployment Type B: OCP Microservices — Full OpenShift Deployment
+### Deployment Type A2: VM Multi-Instance Monolith (Shared Storage) — Phase 1b
+
+Multiple Pyroscope monolith instances on separate VMs, each with Nginx TLS. F5
+distributes agent traffic and Grafana queries across all instances. All instances
+share storage (object storage or NFS) so any instance can serve queries for any data.
+
+#### Architecture
+
+```mermaid
+graph LR
+    subgraph "OpenShift Cluster"
+        subgraph "App Pod"
+            JVM["JVM App Server"]
+            Agent["Pyroscope Java Agent"]
+            JVM --- Agent
+        end
+        Pod2["App Pod 2 + agent"]
+        PodN["App Pod N + agent"]
+    end
+
+    subgraph "F5 / Load Balancer"
+        VIP["VIP :443<br/>pyroscope.company.com<br/>Health: GET /ready"]
+    end
+
+    subgraph "Pyroscope VM 1 (RHEL)"
+        Nginx1["Nginx :4040 TLS"]
+        Pyro1["Pyroscope :4041"]
+        Nginx1 -->|"proxy_pass"| Pyro1
+    end
+
+    subgraph "Pyroscope VM 2 (RHEL)"
+        Nginx2["Nginx :4040 TLS"]
+        Pyro2["Pyroscope :4041"]
+        Nginx2 -->|"proxy_pass"| Pyro2
+    end
+
+    subgraph "Shared Storage"
+        S3[("S3 / MinIO<br/>or NFS Export")]
+    end
+
+    subgraph "Monitoring VMs"
+        Grafana["Grafana :3000"]
+        Prom["Prometheus :9090"]
+    end
+
+    Agent -->|"HTTPS TCP 443"| VIP
+    Pod2 -->|"HTTPS TCP 443"| VIP
+    PodN -->|"HTTPS TCP 443"| VIP
+    VIP -->|"HTTPS TCP 4040"| Nginx1
+    VIP -->|"HTTPS TCP 4040"| Nginx2
+
+    Pyro1 -->|"read/write"| S3
+    Pyro2 -->|"read/write"| S3
+
+    Grafana -->|"HTTPS TCP 443"| VIP
+    Prom -->|"HTTPS TCP 4040"| Nginx1
+    Prom -->|"HTTPS TCP 4040"| Nginx2
+```
+
+#### Components per VM (identical on each)
+
+| Component | Image / Process | Port | Listens on | Purpose |
+|-----------|----------------|:----:|:----------:|---------|
+| **Nginx** | `nginx:alpine` or OS-installed | **4040** | `0.0.0.0` | TLS termination. Accepts HTTPS from F5 VIP. Forwards to Pyroscope on 127.0.0.1:4041 |
+| **Pyroscope** | `grafana/pyroscope:1.18.0` | **4041** | `127.0.0.1` | Monolith mode. Reads/writes shared storage backend |
+| **Docker Engine** | `docker-ce` | — | — | Container runtime |
+
+#### Port Matrix
+
+| # | Source | Destination | Port | Protocol | Direction | Purpose |
+|---|--------|-------------|:----:|----------|-----------|---------|
+| 1 | OCP worker nodes | F5 VIP | **TCP 443** | HTTPS | OCP → F5 | Agent push (`POST /ingest`) |
+| 2 | F5 VIP | Pyroscope VM 1..N | **TCP 4040** | HTTPS | F5 → VMs | F5 pool members → Nginx TLS |
+| 3 | Grafana VM | F5 VIP | **TCP 443** | HTTPS | VM → F5 | Datasource queries via VIP |
+| 4 | Prometheus VM | Pyroscope VM 1..N | **TCP 4040** | HTTPS | VM → VM | Metrics scrape per instance |
+| 5 | Pyroscope VM 1..N | Object storage / NFS | **TCP 9000** (MinIO) or **TCP 2049** (NFS) | HTTPS / NFS | VM → Storage | Profile data read/write |
+| 6 | Admin workstation | F5 VIP | **TCP 443** | HTTPS | LAN → F5 | Pyroscope UI |
+
+> **New vs single monolith:** Row 5 (shared storage access) is the key addition.
+> F5 pool has multiple members instead of one. Prometheus must scrape each VM individually.
+
+#### VM Infrastructure Requirements (per instance)
+
+| Resource | Specification | Notes |
+|----------|--------------|-------|
+| OS | RHEL 8/9 | Same image/config on every VM |
+| CPU | 4 cores | Per-instance |
+| Memory | 8 GB | Per-instance |
+| Local disk | 50 GB (object storage) or 250 GB (NFS) | Object storage: local disk is for WAL/temp only |
+| Docker | Docker CE or Podman | Same version on all VMs |
+| TLS Certificate | Same cert on all VMs (VIP FQDN) | Enterprise CA-signed |
+
+#### Shared Storage Requirements
+
+| Option | Specification | Pros | Cons |
+|--------|--------------|------|------|
+| **Object storage (recommended)** | MinIO cluster or S3-compatible, 250 GB - 1 TB | No file locking issues, scales well with concurrent writers, built-in replication | Additional infrastructure (MinIO cluster) |
+| **NFS** | NFSv4 export, 250 GB - 1 TB, sufficient IOPS | Simple setup, familiar to most teams | File-level locking under concurrent writes, NFS server is single point of failure |
+
+#### Pyroscope Configuration (object storage mode)
+
+```yaml
+# pyroscope.yaml — IDENTICAL on every instance
+storage:
+  backend: s3
+  s3:
+    bucket_name: pyroscope-profiles
+    endpoint: minio.company.com:9000
+    access_key_id: ${MINIO_ACCESS_KEY}
+    secret_access_key: ${MINIO_SECRET_KEY}
+    insecure: false
+```
+
+#### F5 Pool Configuration
+
+| Setting | Value | Notes |
+|---------|-------|-------|
+| Pool members | `VM1:4040`, `VM2:4040`, ..., `VMn:4040` | All Pyroscope VMs |
+| Load balancing | Round-robin or least-connections | Instances are stateless with shared storage |
+| Health monitor | HTTPS `GET /ready` on port 4040 | Removes unhealthy instances automatically |
+| Session persistence | None required | Any instance can serve any request |
+
+#### Agent Configuration (same as single monolith)
+
+```properties
+# Agents point to the VIP — they don't know about individual instances
+pyroscope.server.address=https://pyroscope.company.com
+```
+
+#### OCP Egress Policy (same as single monolith)
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-pyroscope-egress
+  namespace: my-app-namespace
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: <F5_VIP_IP>/32
+      ports:
+        - protocol: TCP
+          port: 443
+```
+
+---
+
+### Deployment Type B: OCP Microservices — Phase 2 (Full OpenShift Deployment)
 
 All Pyroscope components run as separate pods in a dedicated OpenShift namespace.
 JVM application pods push profiles to the distributor service over the cluster SDN.
@@ -673,7 +872,7 @@ spec:
 Use these checklists when coordinating with infrastructure, network, storage, and
 security teams. Hand the relevant section directly to each team.
 
-### VM Monolith with Nginx TLS (Phase 1)
+### Phase 1a: VM Single Monolith with Nginx TLS
 
 | Team | What to request | Lead time | Details |
 |------|----------------|:---------:|---------|
@@ -687,7 +886,21 @@ security teams. Hand the relevant section directly to each team.
 | **Monitoring** | Prometheus scrape target: `https://VM_IP:4040/metrics` | Days | Standard service discovery or static config |
 | **Grafana** | Pyroscope datasource | Days | URL: `https://pyroscope.company.com` |
 
-### OCP Microservices (Phase 2)
+### Phase 1b: VM Multi-Instance Monolith with Shared Storage
+
+Everything from Phase 1a, plus:
+
+| Team | What to request | Lead time | Details |
+|------|----------------|:---------:|---------|
+| **VM / Infrastructure** | Additional RHEL VMs (2-4 total) — 4 CPU, 8 GB RAM each | 1-2 weeks | Same Docker image, same config as first VM |
+| **Storage** | Object storage: MinIO cluster or S3-compatible (250 GB - 1 TB) | 1-2 weeks | Or NFS export if object storage is not available |
+| **Storage** | (If NFS) Dedicated NFS export with sufficient IOPS | 1-2 weeks | NFSv4 recommended. Mount at `/data` on all VMs |
+| **Network** | F5 pool: add additional VMs as pool members (TCP 4040) | Days | Same VIP, add members. Health check: `GET /ready` |
+| **Network** | Firewall rule: Pyroscope VMs → Object storage / NFS server | 1-2 weeks | TCP 9000 (MinIO) or TCP 2049 (NFS) |
+| **Network** | Prometheus scrape targets: all Pyroscope VMs individually | Days | One scrape target per VM (not via VIP) |
+| **Security / PKI** | Same TLS cert on all VMs (or wildcard cert) | Days | VIP FQDN cert — already issued in Phase 1a |
+
+### Phase 2: OCP Microservices
 
 | Team | What to request | Lead time | Details |
 |------|----------------|:---------:|---------|
@@ -711,22 +924,42 @@ security teams. Hand the relevant section directly to each team.
 
 ---
 
-## Migration Path: Monolith to Microservices
+## Migration Path
+
+### Phase 1a → Phase 1b (single monolith → multi-instance monolith)
 
 | Trigger | Symptom | Action |
 |---------|---------|--------|
-| > 100 profiled services | Ingestion latency increasing | Plan microservices migration |
+| HA requirement | Single point of failure unacceptable | Add second VM, configure shared storage, add to F5 pool |
+| Approaching 100 profiled services | Query latency increasing | Add instances to distribute load |
+| DR/maintenance windows | Need zero-downtime upgrades | Second instance handles traffic during rolling upgrades |
+
+**Migration steps (1a → 1b):**
+
+1. Provision shared storage (MinIO/S3 or NFS export)
+2. Reconfigure existing Pyroscope to use shared storage backend
+3. Verify data is accessible from shared storage
+4. Provision second VM with identical Nginx + Pyroscope config
+5. Add second VM to F5 pool
+6. Verify F5 health checks pass for both VMs
+7. Agents require no changes — they push to the same VIP
+
+### Phase 1b → Phase 2 (multi-instance monolith → OCP microservices)
+
+| Trigger | Symptom | Action |
+|---------|---------|--------|
+| > 200 profiled services | Even multi-instance cannot keep up | Plan microservices migration |
 | Query latency > 10s sustained | Grafana timeouts on wide time ranges | Scale queriers independently (requires microservices) |
-| HA requirement | Single point of failure unacceptable | Microservices mode with 3 ingesters provides write-path HA |
+| Per-component scaling needed | Ingestion fine but queries are slow | Microservices mode separates ingestion and query scaling |
 | Multi-team shared platform | Multiple teams need isolated access | Microservices with tenant isolation |
 
-### Migration steps
+**Migration steps (1b → Phase 2):**
 
-1. Deploy microservices mode in parallel (new namespace, new storage)
+1. Deploy microservices mode in parallel (new OCP namespace, new storage)
 2. Point a subset of agents to the new distributor endpoint
 3. Validate data flow and query performance
 4. Gradually migrate remaining agents
-5. Decommission monolith VM
+5. Decommission monolith VMs
 
 > **Data is not migrated.** The monolith and microservices instances have separate
 > storage. Historical data on the monolith remains queryable until the VM is

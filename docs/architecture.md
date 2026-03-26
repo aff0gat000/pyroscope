@@ -11,7 +11,7 @@ Target audience: architects, security reviewers, platform engineers.
 
 - [1. Pyroscope Components](#1-pyroscope-components)
 - [2. Deployment Mode Comparison](#2-deployment-mode-comparison)
-- [3. Topology Diagrams](#3-topology-diagrams) -- [3a. VM Monolith](#3a-vm-monolith-phase-1--current-deployment) | [3b. OCP Monolith](#3b-ocp-monolith-helm-chart) | [3c. VM Microservices](#3c-vm-microservices-docker-compose) | [3d. OCP Microservices](#3d-ocp-microservices-helm-chart) | [3e. Hybrid](#3e-hybrid-vm-pyroscope--ocp-agents)
+- [3. Topology Diagrams](#3-topology-diagrams) -- [3a. VM Single Monolith](#3a-vm-single-monolith-with-nginx-tls-phase-1a) | [3a-ii. VM Multi-Instance Monolith](#3a-ii-vm-multi-instance-monolith-with-shared-storage-phase-1b) | [3b. OCP Monolith](#3b-ocp-monolith-helm-chart) | [3c. VM Microservices](#3c-vm-microservices-docker-compose) | [3d. OCP Microservices](#3d-ocp-microservices-helm-chart-phase-2) | [3e. Hybrid](#3e-hybrid-vm-pyroscope--ocp-agents)
 - [4. Data Flow Diagrams](#4-data-flow-diagrams) -- [4a. Write Path](#4a-write-path-agent--storage) | [4b. Read Path](#4b-read-path-query--response) | [4c. Agent Push Flow](#4c-agent-push-flow)
 - [5. Network Boundaries](#5-network-boundaries)
 - [6. Storage Architecture](#6-storage-architecture)
@@ -83,23 +83,23 @@ graph TB
 
 ## 2. Deployment Mode Comparison
 
-| Dimension | Monolith | Microservices |
-|-----------|----------|---------------|
-| **Components** | All 7 components in a single process | Each component is an independent container/pod |
-| **Scaling** | Vertical only (add CPU/RAM to the single instance) | Horizontal per component (scale ingesters and queriers independently) |
-| **Storage** | Local filesystem at `/data` inside the container | Shared filesystem (NFS / RWX PVC) at `/data/pyroscope` per ingester |
-| **High availability** | No built-in HA; single point of failure | Yes -- replicated ingesters, multiple queriers, hash ring rebalancing |
-| **Memberlist** | Not used (all components are in-process) | Required -- ingesters form a hash ring via memberlist gossip on port 7946 |
-| **Complexity** | Low -- single container, single config file | Higher -- 7+ containers, shared storage provisioning, network policies |
-| **Object storage** | Optional (S3/GCS for long-term) | Optional (S3/GCS for long-term) |
-| **When to use** | Fewer than ~100 profiled applications, dev/staging, PoC, single-team use | 100+ profiled applications, production HA requirement, multi-team shared platform |
-| **Minimum resources** | 2 CPU, 4 GB RAM, 50 GB disk | 8 CPU, 16 GB RAM, 100 GB RWX storage |
+| Dimension | Single Monolith | Multi-Instance Monolith | Microservices |
+|-----------|-----------------|------------------------|---------------|
+| **Components** | All 7 components in a single process | All 7 components in a single process × N instances | Each component is an independent container/pod |
+| **Scaling** | Vertical only (add CPU/RAM to the single instance) | Horizontal — add instances behind F5. Each instance runs all 7 components | Horizontal per component (scale ingesters and queriers independently) |
+| **Storage** | Local filesystem at `/data` inside the container | Shared filesystem (NFS / object storage) mounted by all instances | Shared filesystem (NFS / RWX PVC) at `/data/pyroscope` per ingester |
+| **High availability** | No built-in HA; single point of failure | Yes — F5 health checks remove unhealthy instances. Shared storage means any instance can serve queries | Yes — replicated ingesters, multiple queriers, hash ring rebalancing |
+| **Memberlist** | Not used (all components are in-process) | Not used — each instance is independent. F5 distributes traffic | Required — ingesters form a hash ring via memberlist gossip on port 7946 |
+| **Complexity** | Low — single container, single config file | Medium — multiple VMs, shared storage, F5 pool configuration | Higher — 7+ containers, shared storage provisioning, network policies |
+| **Object storage** | Optional (S3/GCS for long-term) | Recommended (shared S3/MinIO for cross-instance data access) | Optional (S3/GCS for long-term) |
+| **When to use** | Fewer than ~100 profiled applications, dev/staging, PoC, single-team use | 50-200 profiled applications, need HA without microservices complexity | 100+ profiled applications, production HA requirement, multi-team shared platform |
+| **Minimum resources** | 2 CPU, 4 GB RAM, 50 GB disk | 2× (4 CPU, 8 GB RAM) VMs + shared storage | 8 CPU, 16 GB RAM, 100 GB RWX storage |
 
 ---
 
 ## 3. Topology Diagrams
 
-### 3a. VM Monolith with Nginx TLS (Phase 1 -- production default)
+### 3a. VM Single Monolith with Nginx TLS (Phase 1a)
 
 Pyroscope and Nginx run as Docker containers on a dedicated RHEL VM. Nginx
 terminates TLS on port 4040 and forwards to Pyroscope on 4041 (localhost only).
@@ -160,6 +160,131 @@ graph TB
 - Agents push via F5 VIP on TCP 443; F5 forwards to VM on TCP 4040
 - Pyroscope never initiates outbound connections to OCP
 - No gRPC, no memberlist — monolith runs all 7 components in a single process
+
+---
+
+### 3a-ii. VM Multi-Instance Monolith with Shared Storage (Phase 1b)
+
+Multiple Pyroscope monolith instances run on separate VMs, each fronted by Nginx TLS.
+An F5 load balancer distributes agent pushes and Grafana queries across all instances.
+All instances share a common storage backend (NFS or S3-compatible object storage) so
+that any instance can serve queries for any data, regardless of which instance ingested it.
+
+```mermaid
+graph TB
+    subgraph "OCP 4.12 Cluster"
+        direction TB
+        subgraph "App Pod 1"
+            JVM1["JVM App"]
+            PA1["Pyroscope Agent"]
+            JVM1 --- PA1
+        end
+        subgraph "App Pod 2"
+            JVM2["JVM App"]
+            PA2["Pyroscope Agent"]
+            JVM2 --- PA2
+        end
+        PodN["App Pod N<br/>+ Pyroscope Agent"]
+    end
+
+    subgraph "F5 Load Balancer"
+        VIP["VIP :443<br/>pyroscope.company.com<br/>Round-robin or least-connections"]
+    end
+
+    subgraph "Pyroscope VM 1 (RHEL)"
+        subgraph "Docker (VM1)"
+            Nginx1["Nginx :4040<br/>TLS termination"]
+            Pyro1["Pyroscope :4041<br/>monolith mode<br/>HTTP localhost only"]
+        end
+        Nginx1 -->|"proxy_pass<br/>127.0.0.1:4041"| Pyro1
+    end
+
+    subgraph "Pyroscope VM 2 (RHEL)"
+        subgraph "Docker (VM2)"
+            Nginx2["Nginx :4040<br/>TLS termination"]
+            Pyro2["Pyroscope :4041<br/>monolith mode<br/>HTTP localhost only"]
+        end
+        Nginx2 -->|"proxy_pass<br/>127.0.0.1:4041"| Pyro2
+    end
+
+    subgraph "Pyroscope VM N (RHEL)"
+        PyroN["Nginx + Pyroscope<br/>(same pattern)"]
+    end
+
+    subgraph "Shared Storage"
+        Storage[("NFS Export or<br/>S3-compatible<br/>Object Storage<br/>(MinIO / Ceph RGW)")]
+    end
+
+    subgraph "Monitoring VMs"
+        Grafana["Grafana :3000<br/>Pyroscope datasource"]
+        Prom["Prometheus :9090"]
+    end
+
+    PA1 -->|"HTTPS POST /ingest<br/>TCP 443"| VIP
+    PA2 -->|"HTTPS TCP 443"| VIP
+    PodN -->|"HTTPS TCP 443"| VIP
+    VIP -->|"HTTPS TCP 4040"| Nginx1
+    VIP -->|"HTTPS TCP 4040"| Nginx2
+    VIP -->|"HTTPS TCP 4040"| PyroN
+
+    Pyro1 -->|"read/write"| Storage
+    Pyro2 -->|"read/write"| Storage
+    PyroN -->|"read/write"| Storage
+
+    Grafana -->|"HTTPS TCP 443<br/>query via VIP"| VIP
+    Prom -->|"HTTPS TCP 4040<br/>GET /metrics"| Nginx1
+    Prom -->|"HTTPS TCP 4040<br/>GET /metrics"| Nginx2
+```
+
+**Key characteristics:**
+- Each VM runs the same Nginx + Pyroscope monolith stack — identical configuration
+- F5 VIP distributes traffic across all VMs. Health check: `GET /ready` on port 4040
+- **Shared storage is mandatory.** Without it, each instance only sees its own data
+- **NFS option:** Mount the same NFS export at `/data` on every VM. Simple but introduces file-level locking considerations
+- **Object storage option (recommended):** Configure all instances to use the same S3/MinIO bucket. No file locking issues, better for concurrent writes
+- No memberlist — each instance is independent. F5 handles failover
+- Any instance can serve queries for any data because storage is shared
+- Scale horizontally by adding more VMs to the F5 pool
+
+**Storage configuration (object storage — recommended):**
+```yaml
+# pyroscope.yaml — identical on every instance
+storage:
+  backend: s3
+  s3:
+    bucket_name: pyroscope-profiles
+    endpoint: minio.company.com:9000    # or NFS: use local filesystem backend
+    access_key_id: ${MINIO_ACCESS_KEY}
+    secret_access_key: ${MINIO_SECRET_KEY}
+    insecure: false
+```
+
+**Storage configuration (NFS — simpler but less scalable):**
+```bash
+# On each Pyroscope VM — mount the same NFS export
+mount -t nfs nfs-server.company.com:/pyroscope-data /data
+# Then Pyroscope uses the default local filesystem backend at /data
+```
+
+**F5 configuration:**
+| Setting | Value | Notes |
+|---------|-------|-------|
+| Pool members | VM1:4040, VM2:4040, ..., VMn:4040 | All Pyroscope VMs |
+| Load balancing | Round-robin or least-connections | Both work — instances are stateless with shared storage |
+| Health monitor | HTTPS GET `/ready` on port 4040 | Returns 200 when Pyroscope is ready to accept data |
+| Persistence | None required | Instances are interchangeable with shared storage |
+| VIP address | `pyroscope.company.com:443` | Single DNS entry for all agents |
+
+**When to use multi-instance monolith vs microservices:**
+
+| Consideration | Multi-Instance Monolith | Microservices (Phase 2) |
+|---------------|------------------------|------------------------|
+| Operational complexity | Low — same config on every VM, F5 handles routing | Higher — 7+ components, memberlist, per-component scaling |
+| HA mechanism | F5 removes unhealthy VMs from pool | Hash ring rebalancing, ingester replication |
+| Scaling granularity | Whole instances only | Per-component (e.g., add queriers without adding ingesters) |
+| Sweet spot | 50-200 profiled services | 200+ profiled services |
+| Storage | Shared NFS or object storage | RWX PVC (NFS/CephFS) |
+| Best for | Teams comfortable with VMs who need HA without Kubernetes complexity | Teams on OpenShift who need fine-grained scaling |
 
 ---
 
@@ -265,7 +390,7 @@ graph TB
 
 ---
 
-### 3d. OCP Microservices (Helm chart)
+### 3d. OCP Microservices (Helm chart — Phase 2)
 
 Full distributed deployment on OpenShift. Each component is a separate Deployment with
 its own Service. Headless service for memberlist discovery.
@@ -574,7 +699,7 @@ graph TB
 
 ## 6. Storage Architecture
 
-### Monolith mode
+### Single monolith mode (Phase 1a)
 
 ```
 Pyroscope container
@@ -589,6 +714,31 @@ Pyroscope container
 - **Volume:** Docker named volume (`pyroscope-data`) or bind mount
 - **Sizing:** ~1 GB per 10 profiled JVMs per day (varies with profile frequency and cardinality)
 - **Backup:** Snapshot the Docker volume or `/data` directory
+
+### Multi-instance monolith mode (Phase 1b)
+
+```
+Shared storage (NFS or S3-compatible object storage)
+├── Instance 1 writes here ─┐
+├── Instance 2 writes here ──┼── All instances read/write the same storage
+└── Instance N writes here ─┘
+
+Option A — Object storage (recommended):
+  S3 / MinIO bucket: pyroscope-profiles
+  └── All instances configured with same bucket, endpoint, credentials
+  └── Pyroscope handles concurrent access internally
+
+Option B — NFS:
+  NFS export: nfs-server:/pyroscope-data
+  └── Mounted at /data on every VM
+  └── All instances read/write the same filesystem
+  └── File-level locking managed by NFS server
+```
+
+- **Object storage (recommended):** No file locking issues, scales better with multiple writers
+- **NFS:** Simpler to set up but introduces NFS lock contention under heavy write load
+- **Each instance runs its own compactor** — configure `compactor.compaction_interval` to stagger compaction across instances to avoid contention
+- **Sizing:** Same per-JVM estimate as single monolith. Aggregate across all instances
 
 ### Microservices mode
 

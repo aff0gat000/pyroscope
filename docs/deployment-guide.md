@@ -44,14 +44,19 @@ graph TD
 
 ```mermaid
 graph TD
-    A{How many apps<br/>sending profiles?} -->|"< 100 apps<br/>simpler setup"| B["<b>Monolith</b><br/>Single process"]
-    A -->|"> 100 apps<br/>need HA"| C["<b>Microservices</b><br/>9 distributed components<br/>Needs RWX storage (NFS)"]
+    A{How many apps<br/>sending profiles?} -->|"< 100 apps<br/>simpler setup"| B["<b>Phase 1a: Single Monolith</b><br/>One VM, one process"]
+    A -->|"50-200 apps<br/>need HA"| D["<b>Phase 1b: Multi-Instance Monolith</b><br/>Multiple VMs, shared storage, F5"]
+    A -->|"> 200 apps<br/>need per-component scaling"| C["<b>Phase 2: Microservices</b><br/>9 distributed components on OCP"]
+
+    B -->|"Need HA later?"| D
+    D -->|"Need per-component<br/>scaling later?"| C
 ```
 
 | Outcome | Go to |
 |---------|-------|
-| Monolith -- single process, simple operations | Sections [7](#7-monolith-manual-vm-deployment) - [11](#11-monolith-local-docker-compose) |
-| Microservices -- 9 components, HA, NFS required | [Section 12: Microservices mode](#12-microservices-mode) |
+| Phase 1a: Single monolith — one VM, simple operations | Sections [7](#7-monolith-manual-vm-deployment) - [11](#11-monolith-local-docker-compose) |
+| Phase 1b: Multi-instance monolith — multiple VMs, shared storage, F5 LB | [capacity-planning.md § Deployment Type A2](capacity-planning.md#deployment-type-a2-vm-multi-instance-monolith-shared-storage--phase-1b) |
+| Phase 2: Microservices — 9 components on OCP, HA, per-component scaling | [Section 12: Microservices mode](#12-microservices-mode) |
 
 ---
 
