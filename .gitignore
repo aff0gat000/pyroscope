@@ -14,5 +14,8 @@ build/
 # Config snapshots (dump-config output)
 config-snapshots/
 
+# Confluence export output
+confluence-export/
+
 # IDE / tool config
 .claude/

@@ -1,7 +1,98 @@
 # Documentation Index
 
-35 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
+36 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
 documentation standard used by Kubernetes, Django, Grafana, and other CNCF projects.
+
+---
+
+## How to read this documentation
+
+### What's in this repo
+
+This repository contains **four types of content**. Knowing which is which prevents
+confusion about what's "real" vs what's a demo.
+
+```
+pyroscope/
+│
+├── app/                         DEMO — Bank microservices with deliberate bottlenecks
+│   └── src/                     9 Vert.x verticles with intentional performance anti-patterns
+│                                (recursive Fibonacci, SHA-256 reuse, synchronized hot paths)
+│                                Purpose: generate interesting flame graphs for learning
+│
+├── deploy/                      PRODUCTION — Enterprise deployment automation
+│   ├── monolith/                VM deployment: stage1-build.sh (Mac) → stage2-deploy.sh (VM)
+│   │   ├── deploy.sh            Multi-target deployer (VM, K8s, OCP, air-gapped)
+│   │   └── ansible/             Ansible role for enterprise VMs (TLS, Grafana, idempotent)
+│   ├── helm/pyroscope/          Helm chart for Kubernetes and OpenShift (monolith + microservices)
+│   ├── microservices/vm/        Docker Compose with NFS for multi-component VM deployment
+│   └── grafana/                 Standalone Grafana image build with Pyroscope plugin baked in
+│
+├── services/                    APPLICATION — FaaS BOR/SOR analysis functions
+│   ├── faas-jvm11/              Phase 1: Java 11 (triage, diff report, fleet search)
+│   └── faas-jvm21/              Phase 2: Java 21 (records, switch expressions)
+│
+├── config/                      BOTH — Configuration files used by demo AND production
+│   ├── pyroscope/pyroscope.properties   Java agent config (demo values, production-grade comments)
+│   ├── pyroscope/pyroscope.yaml         Pyroscope server config
+│   ├── grafana/                         Dashboard JSON, datasources, provisioning
+│   └── prometheus/                      Scrape config, alert rules
+│
+├── scripts/                     DEMO — Local demo lifecycle and analysis tools
+│   ├── run.sh                   Main entry point: deploy → load → validate → teardown
+│   ├── deploy.sh                Build + start 12 containers locally
+│   ├── generate-load.sh         Traffic generator for all 9 services
+│   ├── bottleneck.sh            Automated root-cause analysis
+│   └── ...                      validate, diagnose, benchmark, teardown
+│
+├── docker-compose.yaml          DEMO — 12 containers (9 services + Pyroscope + Prometheus + Grafana)
+│
+├── docs/                        DOCUMENTATION — You are here
+│
+└── postman/                     DEMO — Postman collection for interactive API exploration
+```
+
+**Key distinction:**
+- **To run the demo locally**: use `scripts/run.sh` and `docker-compose.yaml`
+- **To deploy to production VMs**: use `deploy/monolith/stage1-build.sh` → `stage2-deploy.sh`
+- **To deploy to Kubernetes/OCP**: use `deploy/helm/pyroscope/`
+- **Agent config for production**: start from `config/pyroscope/pyroscope.properties` — it has extensive comments explaining each setting
+
+### Canonical sources (avoid duplication)
+
+Several topics appear across multiple documents. To avoid contradictions, each topic
+has **one canonical source**. All other documents should cross-reference it.
+
+| Topic | Canonical source | Don't duplicate in |
+|-------|-----------------|-------------------|
+| Agent overhead (3-5% CPU, ~30 MB) | [capacity-planning.md § Performance Impact](capacity-planning.md#performance-impact-assessment) | Other docs should say "3-5% CPU overhead ([details](capacity-planning.md#performance-impact-assessment))" |
+| Profile types (CPU, alloc, lock, wall) | [agent-configuration-reference.md § Profile Types](agent-configuration-reference.md#1-profile-types) | Other docs should link, not repeat the full table |
+| Port matrix | [architecture.md § 7 Port Matrix](architecture.md#7-port-matrix-summary) | capacity-planning.md has deployment-specific ports; architecture.md has the master list |
+| Agent configuration properties | [agent-configuration-reference.md](agent-configuration-reference.md) | capacity-planning.md has quick examples; agent-config-ref has the full reference |
+| Deployment topologies | [architecture.md § 3 Topology Diagrams](architecture.md#3-topology-diagrams) | Other docs should link to the diagram, not redraw it |
+
+### Presenting to different audiences
+
+See [presentation-guide.md](presentation-guide.md) for audience-specific presentation
+flows, slide structures, objection handling, and tips. Quick reference:
+
+| Audience | Time | Start with | Key doc to share |
+|----------|:----:|------------|-----------------|
+| Leadership | 15 min | MTTR + cost savings | [what-is-pyroscope.md](what-is-pyroscope.md) |
+| Architects | 30 min | Topology diagrams + phasing | [capacity-planning.md](capacity-planning.md) |
+| Developers | 30 min | Live flame graph demo | [demo-runbook.md](demo-runbook.md) |
+| SREs | 30 min | Deploy scripts + runbook | [deployment-guide.md](deployment-guide.md) |
+| Security | 20 min | Data classification + network model | [security-model.md](security-model.md) |
+
+### Exporting to Confluence
+
+```bash
+bash scripts/export-to-confluence.sh                    # Export all docs
+bash scripts/export-to-confluence.sh docs/runbook.md    # Single file
+bash scripts/export-to-confluence.sh --list             # List available docs
+```
+
+Output goes to `confluence-export/`. Paste into Confluence → Edit → Insert → Markup → Confluence Wiki.
 
 ---
 
@@ -42,8 +133,6 @@ Start here if you are new to Pyroscope or continuous profiling.
 | Document | Description |
 |----------|-------------|
 | [getting-started.md](getting-started.md) | Day-one orientation — glossary, environment setup, reading path by role, team contacts |
-| [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview — what it is, what problem it solves, cost, adoption phases |
-| [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
 | [reading-flame-graphs.md](reading-flame-graphs.md) | How to read flame graphs — axes, width, color, self vs total time |
 | [demo-runbook.md](demo-runbook.md) | Step-by-step demo agenda with commands and talking points (20-25 min) |
 | [profiling-scenarios.md](profiling-scenarios.md) | 6 hands-on scenarios with quick reference of all bottlenecks by service |
@@ -57,15 +146,16 @@ Follow these when you have a specific goal.
 | Document | Description |
 |----------|-------------|
 | [deployment-guide.md](deployment-guide.md) | Deploy Pyroscope — decision trees, quick reference, step-by-step, firewall rules |
-| [continuous-profiling-runbook.md](continuous-profiling-runbook.md) | Agent configuration, Grafana integration, bottleneck analysis workflow |
+| [continuous-profiling-runbook.md](continuous-profiling-runbook.md) | End-to-end implementation — intro to profiling, agent setup, Grafana integration, analysis workflow |
 | [grafana-setup.md](grafana-setup.md) | Connect Grafana to Pyroscope via provisioning files |
 | [monitoring-guide.md](monitoring-guide.md) | Monitor Pyroscope server health — endpoints, metrics reference, alert rules |
 | [upgrade-guide.md](upgrade-guide.md) | Upgrade and rollback — pre-upgrade checklist, procedures for all deployment methods |
 | [troubleshooting.md](troubleshooting.md) | Diagnose common issues — no data, empty flame graphs, connectivity, overhead |
 | [tls-setup.md](tls-setup.md) | TLS setup — F5 VIP, native TLS, Nginx/Envoy proxy, certificate strategies, agent trust |
-| [runbook.md](runbook.md) | Incident response playbooks and operational procedures |
+| [runbook.md](runbook.md) | Operations and incident response — demo and production procedures, playbooks |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — epics, stories, timeline, effort estimates |
 | [workflow.md](workflow.md) | Development workflow — issues, PRs, async communication, incremental adoption |
+| [presentation-guide.md](presentation-guide.md) | How to present Pyroscope to leadership, architects, developers, SREs, and security |
 
 ---
 
@@ -75,11 +165,11 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 
 | Document | Description |
 |----------|-------------|
+| [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview — what continuous profiling is, business case, cost, adoption phases |
 | [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
 | [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
 | [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — two-tier labeling (automatic + LabeledFuture), async limitations |
 | [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint |
-| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Reference guide — internals, operations, competitive analysis, talking points |
 
 ---
 
@@ -92,7 +182,9 @@ Look up specific facts while working.
 | [configuration-reference.md](configuration-reference.md) | All configuration keys — agent properties, pyroscope.yaml, deploy.sh flags, Ansible, Helm |
 | [agent-configuration-reference.md](agent-configuration-reference.md) | Java agent deep dive — profile types, thread context, Vert.x edge cases, OpenTelemetry integration |
 | [capacity-planning.md](capacity-planning.md) | Sizing (Phase 1a single monolith, Phase 1b multi-instance monolith, Phase 2 OCP microservices), networking, firewall rules, enterprise scoping |
+| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Expert reference — internals, competitive analysis, talking points by audience |
 | [sla-slo.md](sla-slo.md) | SLO definitions — data availability, query latency, RPO/RTO, error budget, escalation matrix |
+| [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
 | [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search, Phase 1/2 |
 | [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |
 | [endpoint-reference.md](endpoint-reference.md) | Complete endpoint list with curl examples for all 9 services |
@@ -106,19 +198,19 @@ Look up specific facts while working.
 
 ## Deployment references
 
-Infrastructure-level READMEs for operators.
+Infrastructure-level READMEs for operators. These are **production code**, not demo.
 
-| Document | Description |
-|----------|-------------|
-| [deploy/monolith/README.md](../deploy/monolith/README.md) | Monolith Pyroscope server — deploy.sh, build-and-push.sh, Ansible |
-| [deploy/monolith/DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) | Pyroscope image build and push to internal registry (air-gapped) |
-| [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
-| [deploy/microservices/README.md](../deploy/microservices/README.md) | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
-| [deploy/microservices/vm/README.md](../deploy/microservices/vm/README.md) | Microservices on VM — NFS-backed Docker Compose |
-| [deploy/helm/pyroscope/](../deploy/helm/pyroscope/) | Unified Helm chart — monolith and microservices, OCP and K8s |
-| [deploy/profiling-workload/README.md](../deploy/profiling-workload/README.md) | Profiling workload — validates Pyroscope on VM (no OCP needed) |
-| [deploy/grafana/README.md](../deploy/grafana/README.md) | Standalone Grafana image build |
-| [deploy/grafana/DOCKER-BUILD.md](../deploy/grafana/DOCKER-BUILD.md) | Grafana image build with Pyroscope datasource baked in (air-gapped) |
+| Document | Type | Description |
+|----------|:----:|-------------|
+| [deploy/monolith/README.md](../deploy/monolith/README.md) | Production | Monolith Pyroscope server — deploy.sh, build-and-push.sh, Ansible |
+| [deploy/monolith/DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) | Production | Pyroscope image build and push to internal registry (air-gapped) |
+| [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Production | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
+| [deploy/microservices/README.md](../deploy/microservices/README.md) | Production | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
+| [deploy/microservices/vm/README.md](../deploy/microservices/vm/README.md) | Production | Microservices on VM — NFS-backed Docker Compose |
+| [deploy/helm/pyroscope/](../deploy/helm/pyroscope/) | Production | Unified Helm chart — monolith and microservices, OCP and K8s |
+| [deploy/profiling-workload/README.md](../deploy/profiling-workload/README.md) | Testing | Profiling workload — validates Pyroscope on VM (no OCP needed) |
+| [deploy/grafana/README.md](../deploy/grafana/README.md) | Production | Standalone Grafana image build |
+| [deploy/grafana/DOCKER-BUILD.md](../deploy/grafana/DOCKER-BUILD.md) | Production | Grafana image build with Pyroscope datasource baked in (air-gapped) |
 
 ---
 
@@ -149,23 +241,30 @@ Fill-in templates for change management and governance.
 > "Why should we fund this?"
 
 1. [what-is-pyroscope.md](what-is-pyroscope.md) — business case, cost, risk assessment
-2. [project-plan-phase1.md](project-plan-phase1.md) — project plan, timeline, effort estimates
-3. [pyroscope-reference-guide.md § Talking Points](pyroscope-reference-guide.md) — funding justification and competitive analysis
-4. [continuous-profiling-runbook.md](continuous-profiling-runbook.md) — MTTR reduction data
+2. [capacity-planning.md § Value Proposition](capacity-planning.md#why-pyroscope-enterprise-value-proposition) — quantified benefits
+3. [project-plan-phase1.md](project-plan-phase1.md) — project plan, timeline, effort estimates
+4. [presentation-guide.md § Leadership](presentation-guide.md#presentation-1-leadership--funding-15-minutes) — how to present to executives
+
+### Architects / tech leads
+
+> "What's the architecture and what do we need?"
+
+1. [architecture.md](architecture.md) — component internals, topology diagrams, data flow
+2. [capacity-planning.md](capacity-planning.md) — sizing, networking, enterprise scoping checklists
+3. [deployment-guide.md § Decision Trees](deployment-guide.md#1-what-are-you-deploying) — choose deployment mode
+4. [presentation-guide.md § Architecture](presentation-guide.md#presentation-2-architecture-review-30-minutes) — how to present to architects
 
 ### Operators / SREs
 
 > "How do I deploy and operate this?"
 
-1. [project-plan-phase1.md](project-plan-phase1.md) — project plan with prerequisites and milestones
-2. [deployment-guide.md](deployment-guide.md) — choose deployment mode (decision trees 1-7)
+1. [deployment-guide.md](deployment-guide.md) — choose deployment mode (decision trees 1-7)
+2. [deploy/monolith/README.md](../deploy/monolith/README.md) — production deploy scripts (stage1 + stage2)
 3. [architecture.md](architecture.md) — understand topology and port requirements
-4. [security-model.md](security-model.md) — authentication gaps and network isolation requirements
-5. [tls-setup.md](tls-setup.md) — TLS strategy and certificate setup
-6. [monitoring-guide.md](monitoring-guide.md) — configure Prometheus alerts for the server
-7. [upgrade-guide.md](upgrade-guide.md) — perform upgrades safely
-8. [troubleshooting.md](troubleshooting.md) — diagnose issues
-9. [runbook.md](runbook.md) — incident response procedures
+4. [tls-setup.md](tls-setup.md) — TLS strategy and certificate setup
+5. [monitoring-guide.md](monitoring-guide.md) — configure Prometheus alerts for the server
+6. [runbook.md](runbook.md) — operations procedures and incident response playbooks
+7. [troubleshooting.md](troubleshooting.md) — diagnose issues
 
 ### Developers
 
@@ -181,10 +280,9 @@ Fill-in templates for change management and governance.
 
 > "How do I show this to my team?"
 
-1. [what-is-pyroscope.md](what-is-pyroscope.md) — understand the value proposition
-2. [reading-flame-graphs.md](reading-flame-graphs.md) — learn to read flame graphs
-3. [demo-runbook.md](demo-runbook.md) — follow the 20-minute agenda
-4. [dashboard-guide.md](dashboard-guide.md) — know which panels to highlight
+1. [presentation-guide.md](presentation-guide.md) — pick the right presentation for your audience
+2. [demo-runbook.md](demo-runbook.md) — follow the 20-minute live demo agenda
+3. [dashboard-guide.md](dashboard-guide.md) — know which panels to highlight
 
 ### FaaS function developers
 
@@ -221,3 +319,4 @@ Immutable records of key technical decisions and the reasoning behind them.
 | Tool | Description |
 |------|-------------|
 | [scripts/mermaid-to-svg.sh](../scripts/mermaid-to-svg.sh) | Convert Mermaid diagrams in docs to SVG images |
+| [scripts/export-to-confluence.sh](../scripts/export-to-confluence.sh) | Export Markdown docs to Confluence wiki markup for pasting into Confluence pages |
