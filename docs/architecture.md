@@ -99,24 +99,41 @@ graph TB
 
 ## 3. Topology Diagrams
 
-### 3a. VM Monolith (Phase 1 -- current deployment)
+### 3a. VM Monolith with Nginx TLS (Phase 1 -- production default)
 
-Single Pyroscope container on a dedicated VM. OCP-hosted Vert.x FaaS pods push profiles
-over the network. Grafana and Prometheus run on separate VMs.
+Pyroscope and Nginx run as Docker containers on a dedicated RHEL VM. Nginx
+terminates TLS on port 4040 and forwards to Pyroscope on 4041 (localhost only).
+An F5 VIP fronts the VM with a DNS entry. OCP-hosted JVM application pods push
+profiles over HTTPS via the VIP.
 
 ```mermaid
 graph TB
     subgraph "OCP 4.12 Cluster"
         direction TB
-        FaaS1["Vert.x FaaS Pod 1<br/>java agent → pyroscope.jar"]
-        FaaS2["Vert.x FaaS Pod 2<br/>java agent → pyroscope.jar"]
-        FaaSN["Vert.x FaaS Pod N<br/>java agent → pyroscope.jar"]
+        subgraph "App Pod 1"
+            JVM1["JVM App"]
+            PA1["Pyroscope Agent"]
+            JVM1 --- PA1
+        end
+        subgraph "App Pod 2"
+            JVM2["JVM App"]
+            PA2["Pyroscope Agent"]
+            JVM2 --- PA2
+        end
+        PodN["App Pod N<br/>+ Pyroscope Agent"]
     end
 
-    subgraph "Pyroscope VM"
-        direction TB
-        Pyro["Pyroscope :4040<br/>monolith mode<br/>grafana/pyroscope:1.18.0"]
-        Vol[("Local volume<br/>/data")]
+    subgraph "F5"
+        VIP["VIP :443<br/>pyroscope.company.com"]
+    end
+
+    subgraph "Pyroscope VM (RHEL)"
+        subgraph "Docker"
+            Nginx["Nginx :4040<br/>TLS termination"]
+            Pyro["Pyroscope :4041<br/>monolith mode<br/>HTTP localhost only"]
+        end
+        Vol[("Local volume /data")]
+        Nginx -->|"proxy_pass<br/>127.0.0.1:4041"| Pyro
         Pyro --- Vol
     end
 
@@ -128,18 +145,21 @@ graph TB
         Prom["Prometheus :9090<br/>scrape config"]
     end
 
-    FaaS1 -->|"HTTP POST /ingest<br/>TCP 4040"| Pyro
-    FaaS2 -->|"HTTP POST /ingest<br/>TCP 4040"| Pyro
-    FaaSN -->|"HTTP POST /ingest<br/>TCP 4040"| Pyro
+    PA1 -->|"HTTPS POST /ingest<br/>TCP 443"| VIP
+    PA2 -->|"HTTPS TCP 443"| VIP
+    PodN -->|"HTTPS TCP 443"| VIP
+    VIP -->|"HTTPS<br/>TCP 4040"| Nginx
 
-    Grafana -->|"HTTP query<br/>TCP 4040"| Pyro
-    Prom -->|"HTTP GET /metrics<br/>TCP 4040"| Pyro
+    Grafana -->|"HTTPS query<br/>TCP 4040"| Nginx
+    Prom -->|"HTTPS GET /metrics<br/>TCP 4040"| Nginx
 ```
 
 **Key characteristics:**
-- Single port (TCP 4040) for all external traffic
-- Agents push to Pyroscope; Pyroscope never initiates outbound connections to OCP
-- All cross-boundary traffic is HTTP (no gRPC, no memberlist)
+- All external traffic is HTTPS — Nginx TLS on :4040, Pyroscope HTTP on :4041 (localhost only)
+- Port 4041 is **never** exposed externally; Nginx proxies to `127.0.0.1:4041`
+- Agents push via F5 VIP on TCP 443; F5 forwards to VM on TCP 4040
+- Pyroscope never initiates outbound connections to OCP
+- No gRPC, no memberlist — monolith runs all 7 components in a single process
 
 ---
 
@@ -317,24 +337,31 @@ graph TB
 
 ---
 
-### 3e. Hybrid: VM Pyroscope + OCP Agents
+### 3e. Hybrid: VM Pyroscope (Nginx TLS) + OCP Agents
 
-The current production topology. Pyroscope server runs on a dedicated VM in monolith
-mode. OCP-hosted application pods push profiles across the network boundary.
+The current production topology. Pyroscope and Nginx run as Docker containers on a
+dedicated VM. Nginx terminates TLS on :4040. OCP-hosted application pods push
+profiles across the network boundary via an F5 VIP.
 
 ```mermaid
 graph TB
     subgraph "Corporate Network"
         subgraph "OCP 4.12 Cluster"
-            FaaS1["Vert.x FaaS Pod 1<br/>java agent → pyroscope.jar"]
-            FaaS2["Vert.x FaaS Pod 2<br/>java agent → pyroscope.jar"]
-            FaaSN["Vert.x FaaS Pod N<br/>java agent → pyroscope.jar"]
+            FaaS1["App Pod 1<br/>JVM + Pyroscope Agent"]
+            FaaS2["App Pod 2<br/>JVM + Pyroscope Agent"]
+            FaaSN["App Pod N<br/>JVM + Pyroscope Agent"]
+        end
+
+        subgraph "F5"
+            VIP["VIP :443<br/>pyroscope.company.com"]
         end
 
         subgraph "VM Infrastructure"
             subgraph "Pyroscope VM"
-                Pyro["Pyroscope :4040<br/>monolith mode"]
+                Nginx["Nginx :4040 TLS"]
+                Pyro["Pyroscope :4041<br/>monolith (localhost)"]
                 Vol[("Local disk /data")]
+                Nginx -->|"proxy_pass<br/>127.0.0.1:4041"| Pyro
                 Pyro --- Vol
             end
 
@@ -347,25 +374,27 @@ graph TB
             end
         end
 
-        FaaS1 -->|"HTTP POST /ingest<br/>TCP 4040"| Pyro
-        FaaS2 -->|"HTTP POST /ingest<br/>TCP 4040"| Pyro
-        FaaSN -->|"HTTP POST /ingest<br/>TCP 4040"| Pyro
+        FaaS1 -->|"HTTPS POST /ingest<br/>TCP 443"| VIP
+        FaaS2 -->|"HTTPS TCP 443"| VIP
+        FaaSN -->|"HTTPS TCP 443"| VIP
+        VIP -->|"HTTPS TCP 4040"| Nginx
 
-        Grafana -->|"HTTP query<br/>TCP 4040"| Pyro
-        Prom -->|"HTTP GET /metrics<br/>TCP 4040"| Pyro
+        Grafana -->|"HTTPS query<br/>TCP 4040"| Nginx
+        Prom -->|"HTTPS GET /metrics<br/>TCP 4040"| Nginx
     end
 
     Firewall["Corporate Firewall"]
     Admin["Admin Browser"]
 
-    Admin -->|"HTTPS / VPN"| Firewall
-    Firewall --> Grafana
+    Admin -->|"HTTPS :443"| VIP
 ```
 
 **Key characteristics:**
-- Only TCP 4040 crosses the OCP-to-VM boundary (agents push to Pyroscope)
+- All external traffic is HTTPS — Nginx TLS terminates on :4040, proxies to Pyroscope on :4041
+- Agents push via F5 VIP :443; F5 forwards to VM :4040 (HTTPS)
+- Port 4041 is internal only (localhost) — never exposed externally
 - Pyroscope never initiates outbound connections to OCP
-- Grafana and Prometheus are on the VM infrastructure network
+- Grafana and Prometheus connect to Nginx :4040 (HTTPS)
 - All traffic within the corporate network; no public internet exposure
 
 ---
@@ -497,13 +526,17 @@ graph TB
     subgraph "Corporate Network / Firewall Boundary"
         subgraph "OCP Cluster Network"
             direction TB
-            OCPPods["App Pods<br/>(Vert.x FaaS)<br/>Java agent attached"]
+            OCPPods["App Pods<br/>JVM + Pyroscope Agent"]
             OCPSvc["OCP Services<br/>& Routes"]
+        end
+
+        subgraph "F5"
+            VIP["VIP :443<br/>pyroscope.company.com"]
         end
 
         subgraph "VM Infrastructure Network"
             direction TB
-            PyroVM["Pyroscope VM<br/>:4040"]
+            NginxVM["Pyroscope VM<br/>Nginx :4040 TLS<br/>Pyroscope :4041 localhost"]
             GrafVM["Grafana VM<br/>:3000"]
             PromVM["Prometheus VM<br/>:9090"]
         end
@@ -511,10 +544,11 @@ graph TB
 
     AdminNet["Admin Workstation<br/>(Corporate LAN / VPN)"]
 
-    OCPPods -->|"TCP 4040<br/>HTTP POST /ingest<br/>(egress from OCP)"| PyroVM
-    GrafVM -->|"TCP 4040<br/>HTTP query"| PyroVM
-    PromVM -->|"TCP 4040<br/>HTTP GET /metrics"| PyroVM
-    AdminNet -->|"TCP 4040 (Pyroscope UI)<br/>TCP 3000 (Grafana UI)"| PyroVM
+    OCPPods -->|"HTTPS TCP 443<br/>POST /ingest<br/>(egress from OCP)"| VIP
+    VIP -->|"HTTPS TCP 4040"| NginxVM
+    GrafVM -->|"HTTPS TCP 4040<br/>query"| NginxVM
+    PromVM -->|"HTTPS TCP 4040<br/>GET /metrics"| NginxVM
+    AdminNet -->|"HTTPS TCP 443<br/>(Pyroscope UI via VIP)"| VIP
     AdminNet -->|"TCP 3000"| GrafVM
 ```
 
@@ -522,13 +556,17 @@ graph TB
 
 | Source Zone | Destination Zone | Port | Protocol | Direction | Purpose |
 |-------------|------------------|------|----------|-----------|---------|
-| OCP cluster | VM infrastructure | TCP 4040 | HTTP | OCP egress | Agent push (`POST /ingest`) |
-| VM infrastructure | VM infrastructure | TCP 4040 | HTTP | Internal | Grafana queries, Prometheus scrape |
-| Corporate LAN | VM infrastructure | TCP 4040 | HTTP | Ingress | Admin access to Pyroscope UI |
+| OCP cluster | F5 VIP | TCP 443 | HTTPS | OCP egress | Agent push (`POST /ingest`) via VIP |
+| F5 VIP | VM infrastructure | TCP 4040 | HTTPS | F5 → VM | Nginx TLS termination on Pyroscope VM |
+| VM infrastructure | VM infrastructure | TCP 4040 | HTTPS | Internal | Grafana queries, Prometheus scrape → Nginx TLS |
+| Corporate LAN | F5 VIP | TCP 443 | HTTPS | Ingress | Admin access to Pyroscope UI |
 | Corporate LAN | VM infrastructure | TCP 3000 | HTTP | Ingress | Admin access to Grafana UI |
-| OCP cluster | OCP cluster (microservices mode) | TCP 7946 | TCP+UDP | Internal | Memberlist gossip (ingesters only) |
-| OCP cluster | OCP cluster (microservices mode) | TCP 4040 | HTTP | Internal | Inter-component communication |
+| OCP cluster (microservices) | OCP cluster (microservices) | TCP 7946 | TCP+UDP | Internal | Memberlist gossip (ingesters only) |
+| OCP cluster (microservices) | OCP cluster (microservices) | TCP 4040 | HTTP | Internal | Inter-component communication |
 
+> **Port 4041 does not appear above.** It is localhost-only on the Pyroscope VM.
+> Nginx proxies `0.0.0.0:4040 → 127.0.0.1:4041`. Never open 4041 externally.
+>
 > **Outbound from Pyroscope:** None. Pyroscope does not initiate connections to agents,
 > Grafana, or Prometheus. All traffic is inbound to the Pyroscope server.
 
@@ -597,24 +635,27 @@ storage:
 
 Quick reference for firewall rules and network policy configuration.
 
-| Port | Protocol | Component | Direction | Mode | Purpose |
-|------|----------|-----------|-----------|------|---------|
-| **4040** | TCP / HTTP | All (monolith) or Distributor (microservices) | Inbound | All | Agent push (`POST /ingest`), Grafana queries, Prometheus scrape, UI |
-| **4041** | TCP / HTTP | Query Frontend (VM microservices) | Inbound | Microservices (VM) | Grafana query endpoint (mapped port in Docker Compose) |
-| **4040** | TCP / HTTPS | Nginx TLS proxy | Inbound | Monolith (HTTPS) | TLS-terminated agent push and queries (Pyroscope moves to :4041) |
-| **4443** | TCP / HTTPS | Envoy TLS proxy (legacy) | Inbound | Monolith (HTTPS, legacy) | TLS-terminated agent push and queries |
-| **9095** | TCP / gRPC | Internal inter-component | Internal | Microservices | gRPC communication between components |
-| **7946** | TCP + UDP | Ingester memberlist | Internal | Microservices | Hash ring gossip, peer discovery, ring state propagation |
-| **3000** | TCP / HTTP | Grafana | Inbound | All (if deployed) | Grafana web UI and API |
-| **443** | TCP / HTTPS | Envoy TLS proxy or OCP Route | Inbound | HTTPS / OCP | TLS-terminated Grafana access |
+### All ports
+
+| Port | Protocol | Component | Listens on | Mode | Purpose |
+|------|----------|-----------|:----------:|------|---------|
+| **443** | TCP / HTTPS | F5 VIP | F5 | VM Monolith (production) | VIP entry point. F5 forwards to Nginx on VM :4040 |
+| **4040** | TCP / HTTPS | Nginx TLS proxy | `0.0.0.0` on VM | VM Monolith (production) | TLS termination. Accepts agent push, Grafana queries, Prometheus scrape. Proxies to Pyroscope :4041 |
+| **4041** | TCP / HTTP | Pyroscope monolith | `127.0.0.1` on VM | VM Monolith (production) | **Internal only.** Nginx → Pyroscope. Never exposed externally |
+| **4040** | TCP / HTTP | Distributor | `0.0.0.0` in pod | OCP Microservices | Agent push (`POST /ingest`). Distributor routes to ingesters via hash ring |
+| **4040** | TCP / HTTP | All components | `0.0.0.0` in pod | OCP Microservices | Inter-component HTTP (querier↔ingester, querier↔store-gateway, query-frontend↔scheduler) |
+| **4041** | TCP / HTTP | Query Frontend | `0.0.0.0` in container | VM Microservices (Compose) | Grafana query endpoint (host-mapped port in Docker Compose) |
+| **7946** | TCP + UDP | Ingester memberlist | `0.0.0.0` in pod | Microservices (all) | Hash ring gossip, peer discovery, ring state propagation |
+| **9404** | TCP / HTTP | JMX Exporter (in app pods) | `0.0.0.0` in pod | All (optional) | Prometheus scrape for JVM metrics (heap, GC, threads) |
+| **3000** | TCP / HTTP | Grafana | `0.0.0.0` | All (if deployed) | Grafana web UI and API |
+| **443** | TCP / HTTPS | OCP Route | Cluster router | OCP Microservices | TLS edge termination for external Grafana access to query-frontend |
 
 ### Mode-specific port requirements
 
-| Deployment Mode | Required Ports | Notes |
-|-----------------|---------------|-------|
-| VM Monolith (HTTP) | 4040 | Single port for everything |
-| VM Monolith (HTTPS) | 4040 (Nginx TLS) | Nginx terminates TLS on :4040, proxies to Pyroscope on :4041 internally |
-| OCP Monolith | 4040 (cluster-internal), 443 (Route) | Cluster SDN handles internal routing |
-| VM Microservices | 4040 (push), 4041 (query), 7946 (memberlist) | Memberlist is container-network only |
-| OCP Microservices | 4040 (per-component), 7946 (memberlist) | All internal to cluster SDN |
-| Hybrid (VM + OCP) | 4040 (cross-boundary) | Only port that crosses OCP-to-VM boundary |
+| Deployment Mode | External Ports | Internal Ports | Notes |
+|-----------------|:-------------:|:--------------:|-------|
+| **VM Monolith + Nginx TLS** (production default) | 443 (VIP), 4040 (Nginx TLS on VM) | 4041 (Pyroscope localhost) | Nginx terminates TLS on :4040, proxies to :4041. Never open 4041 externally |
+| OCP Monolith | 443 (Route) | 4040 (cluster-internal) | Cluster SDN handles internal routing |
+| VM Microservices (Compose) | 4040 (push), 4041 (query) | 7946 (memberlist) | Memberlist is container-network only |
+| **OCP Microservices** (production HA) | 443 (Route) | 4040 (per-component), 7946 (memberlist) | All internal to cluster SDN. Route exposes query-frontend |
+| Hybrid (VM + OCP) | 443 (VIP), 4040 (Nginx TLS on VM) | 4041 (Pyroscope localhost) | Only HTTPS :443 crosses OCP-to-F5 boundary |
