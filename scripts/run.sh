@@ -277,7 +277,7 @@ print_ready_banner() {
 restart_with_optimized() {
   echo "  Restarting all services with OPTIMIZED=true..."
   cd "$PROJECT_DIR"
-  docker compose -f docker-compose.yaml -f docker-compose.optimized.yaml up -d --no-deps \
+  docker compose -f docker-compose.yaml -f docker-compose.optimized.yaml up -d --no-deps --build \
     api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service faas-server
   wait_for_services
 }
@@ -285,7 +285,7 @@ restart_with_optimized() {
 restart_without_optimized() {
   echo "  Restarting all services without optimizations (default)..."
   cd "$PROJECT_DIR"
-  docker compose -f docker-compose.yaml up -d --no-deps \
+  docker compose -f docker-compose.yaml up -d --no-deps --build \
     api-gateway order-service payment-service fraud-service account-service loan-service notification-service stream-service faas-server
   wait_for_services
 }
