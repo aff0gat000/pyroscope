@@ -48,12 +48,16 @@ MERMAID_LIVE_URL="${MERMAID_LIVE_URL:-}"
 # --- Detect mermaid-cli ---
 if command -v mmdc &>/dev/null; then
     HAS_MMDC=true
-    # Build mmdc args — add puppeteer config if present
+    # Build mmdc args — add puppeteer config if present (check repo root, then home dir)
     MMDC_ARGS=(-b white)
     if [[ -f "${REPO_ROOT}/.puppeteerrc.json" ]]; then
         MMDC_ARGS+=(-p "${REPO_ROOT}/.puppeteerrc.json")
     elif [[ -f "${REPO_ROOT}/puppeteer-config.json" ]]; then
         MMDC_ARGS+=(-p "${REPO_ROOT}/puppeteer-config.json")
+    elif [[ -f "${HOME}/.puppeteerrc.json" ]]; then
+        MMDC_ARGS+=(-p "${HOME}/.puppeteerrc.json")
+    elif [[ -f "${HOME}/puppeteer-config.json" ]]; then
+        MMDC_ARGS+=(-p "${HOME}/puppeteer-config.json")
     fi
 else
     HAS_MMDC=false
