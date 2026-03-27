@@ -58,6 +58,26 @@ if command -v mmdc &>/dev/null; then
         MMDC_ARGS+=(-p "${HOME}/.puppeteerrc.json")
     elif [[ -f "${HOME}/puppeteer-config.json" ]]; then
         MMDC_ARGS+=(-p "${HOME}/puppeteer-config.json")
+    else
+        # Auto-detect system Chrome and create a temp puppeteer config
+        CHROME_PATH=""
+        if [[ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]]; then
+            CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+        elif command -v google-chrome &>/dev/null; then
+            CHROME_PATH="$(command -v google-chrome)"
+        elif command -v google-chrome-stable &>/dev/null; then
+            CHROME_PATH="$(command -v google-chrome-stable)"
+        elif command -v chromium-browser &>/dev/null; then
+            CHROME_PATH="$(command -v chromium-browser)"
+        elif command -v chromium &>/dev/null; then
+            CHROME_PATH="$(command -v chromium)"
+        fi
+        if [[ -n "$CHROME_PATH" ]]; then
+            PUPPETEER_TMP=$(mktemp "${TMPDIR:-/tmp}/puppeteerrc.XXXXXX.json")
+            printf '{"executablePath":"%s"}\n' "$CHROME_PATH" > "$PUPPETEER_TMP"
+            MMDC_ARGS+=(-p "$PUPPETEER_TMP")
+            echo "Using system Chrome: ${CHROME_PATH}"
+        fi
     fi
 else
     HAS_MMDC=false
