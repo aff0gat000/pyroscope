@@ -97,10 +97,12 @@ bash scripts/export-to-confluence.sh --enterprise
 export CONFLUENCE_URL=https://wiki.company.com
 export CONFLUENCE_SPACE_KEY=PYRO
 export CONFLUENCE_TOKEN=your-personal-access-token
+
+# Preview what would be uploaded (dry run — default)
 bash scripts/upload-to-confluence.sh --enterprise
 
-# Dry run first (validates without uploading)
-CONFLUENCE_DRY_RUN=true bash scripts/upload-to-confluence.sh --enterprise
+# Upload for real (requires --confirm)
+bash scripts/upload-to-confluence.sh --enterprise --confirm
 
 # Export/upload a single file
 bash scripts/export-to-confluence.sh docs/runbook.md

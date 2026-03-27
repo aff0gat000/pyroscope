@@ -40,38 +40,47 @@
 #                         Default: "Pyroscope - "
 #   CONFLUENCE_EXPORT_DIR Directory containing .confluence.txt files
 #                         Default: ./confluence-export
-#   CONFLUENCE_DRY_RUN    Set to "true" to validate without uploading
-#                         Default: false
+#   CONFLUENCE_DRY_RUN    Ignored — dry run is the default. Use --confirm to upload.
 #   CONFLUENCE_VERIFY_SSL Set to "false" to skip TLS verification (self-signed certs)
 #                         Default: true
 #
+# Workflow:
+#   Step 1: Export docs to Confluence markup files
+#     bash scripts/export-to-confluence.sh --enterprise
+#
+#   Step 2: Preview what would be uploaded (dry run — default behavior)
+#     bash scripts/upload-to-confluence.sh --enterprise
+#
+#   Step 3: Actually upload (requires --confirm flag)
+#     bash scripts/upload-to-confluence.sh --enterprise --confirm
+#
 # Usage:
-#   # Upload enterprise docs using PAT (Confluence Server/DC 9.2.3)
+#   # Set environment (or use .env file)
 #   export CONFLUENCE_URL=https://wiki.company.com
 #   export CONFLUENCE_SPACE_KEY=PYRO
 #   export CONFLUENCE_TOKEN=your-personal-access-token
+#
+#   # Preview enterprise docs (dry run — no uploads)
 #   bash scripts/upload-to-confluence.sh --enterprise
 #
-#   # Upload all exported docs
-#   bash scripts/upload-to-confluence.sh
+#   # Upload enterprise docs for real
+#   bash scripts/upload-to-confluence.sh --enterprise --confirm
+#
+#   # Upload all exported docs (not just enterprise)
+#   bash scripts/upload-to-confluence.sh --confirm
 #
 #   # Upload a single file
-#   bash scripts/upload-to-confluence.sh tls-setup.confluence.txt
-#
-#   # Dry run (validate only, no uploads)
-#   CONFLUENCE_DRY_RUN=true bash scripts/upload-to-confluence.sh --enterprise
+#   bash scripts/upload-to-confluence.sh tls-setup.confluence.txt --confirm
 #
 #   # Upload under an existing parent page (skip auto-create)
-#   CONFLUENCE_PARENT_ID=12345678 bash scripts/upload-to-confluence.sh --enterprise
+#   CONFLUENCE_PARENT_ID=12345678 bash scripts/upload-to-confluence.sh --enterprise --confirm
 #
 #   # Confluence Cloud (basic auth with email + API token)
-#   export CONFLUENCE_AUTH_TYPE=basic
-#   export CONFLUENCE_USER=john.doe@company.com
-#   export CONFLUENCE_TOKEN=your-api-token
-#   bash scripts/upload-to-confluence.sh --enterprise
+#   CONFLUENCE_AUTH_TYPE=basic CONFLUENCE_USER=john.doe@company.com \
+#     bash scripts/upload-to-confluence.sh --enterprise --confirm
 #
 #   # Use .env file
-#   source .env.confluence && bash scripts/upload-to-confluence.sh --enterprise
+#   source .env.confluence && bash scripts/upload-to-confluence.sh --enterprise --confirm
 # =============================================================================
 
 set -euo pipefail
@@ -82,7 +91,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 # --- Parse arguments first (--help doesn't need env vars) ---
 SINGLE_FILE=""
 ARGS_LIST=false
-ARGS_DRY_RUN=false
+ARGS_CONFIRM=false
 ARGS_ENTERPRISE=false
 
 for arg in "$@"; do
@@ -91,7 +100,7 @@ for arg in "$@"; do
             sed -n '/^# Usage:/,/^# ====/p' "$0" | grep '^#' | sed 's/^# \?//'
             exit 0 ;;
         --list)       ARGS_LIST=true ;;
-        --dry-run)    ARGS_DRY_RUN=true ;;
+        --confirm)    ARGS_CONFIRM=true ;;
         --enterprise) ARGS_ENTERPRISE=true ;;
     esac
 done
@@ -113,10 +122,12 @@ CONFLUENCE_PARENT_ID="${CONFLUENCE_PARENT_ID:-}"
 CONFLUENCE_PARENT_TITLE="${CONFLUENCE_PARENT_TITLE:-Pyroscope Documentation}"
 CONFLUENCE_LABEL="${CONFLUENCE_LABEL:-pyroscope-docs}"
 CONFLUENCE_PREFIX="${CONFLUENCE_PREFIX:-Pyroscope - }"
-CONFLUENCE_DRY_RUN="${CONFLUENCE_DRY_RUN:-false}"
 CONFLUENCE_VERIFY_SSL="${CONFLUENCE_VERIFY_SSL:-true}"
 
-if [[ "$ARGS_DRY_RUN" == "true" ]]; then
+# Default to dry run — must pass --confirm to actually upload
+if [[ "$ARGS_CONFIRM" == "true" ]]; then
+    CONFLUENCE_DRY_RUN=false
+else
     CONFLUENCE_DRY_RUN=true
 fi
 
@@ -579,7 +590,8 @@ echo "Done. ${success} uploaded, ${failed} failed (${total} total)."
 
 if [[ "$CONFLUENCE_DRY_RUN" == "true" ]]; then
     echo ""
-    echo "This was a dry run. Set CONFLUENCE_DRY_RUN=false (or unset) to upload for real."
+    echo "This was a dry run. Add --confirm to upload for real:"
+    echo "  bash scripts/upload-to-confluence.sh --enterprise --confirm"
 fi
 
 echo ""
