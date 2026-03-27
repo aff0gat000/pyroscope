@@ -250,7 +250,7 @@ Decision trees for deploying Pyroscope on OCP 4.12+ using the unified Helm chart
 ```mermaid
 graph TD
     A{Server mode?} -->|"Monolith<br/>< 100 apps"| B{Namespace strategy?}
-    A -->|"Microservices<br/>> 100 apps, HA"| C{RWX storage available?}
+    A -->|"Microservices<br/>> 100 apps, HA"| C{S3-compatible object storage available?}
 
     B -->|Same namespace as apps| D["helm upgrade --install pyroscope deploy/helm/pyroscope/<br/>-n APP_NS -f examples/monolith-same-namespace.yaml<br/>Section 10b"]
     B -->|Dedicated namespace| E{NetworkPolicy enforced?}
@@ -259,7 +259,7 @@ graph TD
     E -->|Yes| G["Edit allowedNamespaces in values file<br/>helm upgrade --install ... -f monolith-dedicated-namespace.yaml<br/>Section 10b"]
 
     C -->|Yes| H["helm upgrade --install pyroscope deploy/helm/pyroscope/<br/>-n pyroscope --create-namespace<br/>-f examples/microservices-openshift.yaml<br/>Section 12c"]
-    C -->|No| I["Set up NFS provisioner first<br/>then return here"]
+    C -->|No| I["Set up S3-compatible object storage first<br/>(MinIO, AWS S3, GCS, or Azure Blob)<br/>then return here"]
 ```
 
 | Scenario | Example values file | Agent target URL |
@@ -1435,8 +1435,8 @@ bash deploy.sh clean --target local
 
 ## 12. Microservices mode
 
-Runs Pyroscope as 9 separate, independently scalable components. Requires NFS-backed
-shared storage (ReadWriteMany). All storage is filesystem-based -- no MinIO or S3.
+Runs Pyroscope as 9 separate, independently scalable components. Requires S3-compatible
+object storage (MinIO, AWS S3, GCS, Azure Blob) shared by all components.
 
 ### Architecture
 
@@ -1460,17 +1460,17 @@ graph TB
     SG[Store Gateway]
     C[Compactor]
 
-    subgraph Shared Storage
-        NFS[("NFS / RWX PVC")]
+    subgraph Object Storage
+        S3[("S3-compatible storage<br/>(MinIO / AWS S3 / GCS / Azure Blob)")]
     end
 
-    ING1 -->|flush| NFS
-    ING2 -->|flush| NFS
-    ING3 -->|flush| NFS
+    ING1 -->|flush| S3
+    ING2 -->|flush| S3
+    ING3 -->|flush| S3
     Q1 -->|read| SG
     Q2 -->|read| SG
-    SG -->|read blocks| NFS
-    C -->|compact blocks| NFS
+    SG -->|read blocks| S3
+    C -->|compact blocks| S3
 ```
 
 **Components:**
@@ -1487,7 +1487,7 @@ graph TB
 
 ### 12a. VM with Docker Compose
 
-**Prerequisites:** NFS mount at `/mnt/pyroscope-data` shared across all VMs.
+**Prerequisites:** S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) accessible from all VMs.
 
 ```bash
 cd deploy/microservices/vm
@@ -1510,7 +1510,7 @@ bash deploy.sh clean
 
 ### 12b. Kubernetes
 
-**Prerequisites:** ReadWriteMany (RWX) storage provisioner (NFS, CephFS, etc.).
+**Prerequisites:** S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob Storage).
 
 ```bash
 # Install with Helm
@@ -1634,7 +1634,7 @@ curl -X POST http://localhost:8088/fn/invoke/fibonacci
 curl -X POST "http://localhost:8088/fn/burst/fibonacci?count=100"
 ```
 
-See [docs/faas-server.md](faas-server.md) for the full function API reference,
+See docs/faas-server.md (available in the repo) for the full function API reference,
 including all 11 built-in functions and their profiling signatures.
 
 ---
@@ -2221,12 +2221,12 @@ docker start pyroscope
 | Path | Purpose |
 |------|---------|
 | [docs/deployment-guide.md](deployment-guide.md) | This guide |
-| [docs/faas-server.md](faas-server.md) | FaaS server API and function reference |
+| docs/faas-server.md (in repo) | FaaS server API and function reference |
 | [docs/grafana-setup.md](grafana-setup.md) | Grafana configuration details |
-| [docs/dashboard-guide.md](dashboard-guide.md) | Dashboard usage guide |
+| docs/dashboard-guide.md (in repo) | Dashboard usage guide |
 | [docs/reading-flame-graphs.md](reading-flame-graphs.md) | Flame graph interpretation |
 | [README.md](../README.md) | System architecture, data flow, service catalog |
-| [docs/endpoint-reference.md](endpoint-reference.md) | API endpoint reference |
+| docs/endpoint-reference.md (in repo) | API endpoint reference |
 
 ---
 

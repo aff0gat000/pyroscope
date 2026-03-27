@@ -163,7 +163,7 @@ Suggested panels for a Pyroscope health dashboard (create manually in Grafana):
 | Query Latency (p95) | `histogram_quantile(0.95, pyroscope_query_frontend_queue_duration_seconds_bucket)` | Time series | Yellow: 3s, Red: 10s |
 
 Cross-ref: [grafana-setup.md](grafana-setup.md) for Grafana datasource configuration.
-Cross-ref: [dashboard-guide.md](dashboard-guide.md) for existing application dashboards.
+Cross-ref: dashboard-guide.md (available in the repo at docs/dashboard-guide.md) for existing application dashboards.
 
 ---
 

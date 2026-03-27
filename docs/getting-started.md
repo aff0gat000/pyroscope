@@ -53,7 +53,7 @@ See [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) f
 | **pbrun** | PowerBroker run — enterprise privilege escalation tool (similar to sudo) |
 | **PVC** | PersistentVolumeClaim — Kubernetes storage request |
 | **Querier** | Pyroscope component that executes profile queries |
-| **RWX** | ReadWriteMany — Kubernetes storage access mode required by microservices mode |
+| **RWX** | ReadWriteMany — Kubernetes storage access mode. Microservices mode uses S3-compatible object storage instead |
 | **SOR** | System of Record — data access layer in the FaaS function architecture; wraps Pyroscope API |
 | **TLS** | Transport Layer Security — encryption for data in transit (HTTPS) |
 | **Verticle** | Vert.x unit of deployment — each FaaS function runs as a separate Verticle |
@@ -113,11 +113,11 @@ Start with this document, then follow the path for your role.
 |------|-----------|-----------|
 | Leadership / project management | [what-is-pyroscope.md](what-is-pyroscope.md) | [project-plan-phase1.md](project-plan-phase1.md), [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) |
 | Operators / SREs | [deployment-guide.md](deployment-guide.md) | [architecture.md](architecture.md), [monitoring-guide.md](monitoring-guide.md), [troubleshooting.md](troubleshooting.md) |
-| Developers | [reading-flame-graphs.md](reading-flame-graphs.md) | [profiling-scenarios.md](profiling-scenarios.md), [sample-queries.md](sample-queries.md) |
+| Developers | [reading-flame-graphs.md](reading-flame-graphs.md) | profiling-scenarios.md (available in the repo at docs/profiling-scenarios.md), sample-queries.md (available in the repo at docs/sample-queries.md) |
 | FaaS function developers | [function-reference.md](function-reference.md) | [function-architecture.md](function-architecture.md), [production-questionnaire-phase1.md](production-questionnaire-phase1.md) |
 | Governance / change managers | [security-model.md](security-model.md) | [sla-slo.md](sla-slo.md), [templates/change-request.md](templates/change-request.md) |
 
-See [INDEX.md](INDEX.md) for the complete documentation index with audience-specific reading paths.
+See INDEX.md (available in the repo at docs/INDEX.md) for the complete documentation index with audience-specific reading paths.
 
 ---
 
@@ -153,5 +153,5 @@ ls docs/*.md | wc -l
 # Expected: 30+ files
 ```
 
-See [workflow.md](workflow.md) for the development workflow and contribution guidelines.
-See [demo-runbook.md](demo-runbook.md) for a guided 20-minute Pyroscope demo.
+See workflow.md (available in the repo at docs/workflow.md) for the development workflow and contribution guidelines.
+See demo-runbook.md (available in the repo at docs/demo-runbook.md) for a guided 20-minute Pyroscope demo.

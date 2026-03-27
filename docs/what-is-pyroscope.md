@@ -185,7 +185,7 @@ With profiling, step 1 is: open the CPU flame graph for payment-service, see `sh
 |--------|----------|
 | **Ingestion per service** | 10-50 KB per upload, every 10 seconds |
 | **Storage per service per month** | 1-5 GB (depends on cardinality and retention) |
-| **Default retention** | 24 hours (configurable up to years) |
+| **Default retention** | 30 days (configurable; Pyroscope default is unlimited) |
 | **Compression** | Automatic; pprof wire format + server-side compaction |
 
 ### Server resources (monolith mode)
@@ -392,7 +392,7 @@ change only — agents continue to push profiles to the same endpoint.
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
 | **3-8% CPU overhead** on instrumented JVMs | Certain (by design) | Low — bounded, does not grow with load | Tunable sampling rate; disable individual profile types if needed |
-| **Storage growth** on Pyroscope server | Expected | Low — predictable, linear with service count | Retention policies (default 24 h), configurable up to years; storage tiers |
+| **Storage growth** on Pyroscope server | Expected | Low — predictable, linear with service count | Retention policies (enterprise default 30 days, configurable); storage tiers |
 | **Pyroscope server downtime** | Possible | Minimal — agents queue and retry; applications unaffected | Monolith: systemd auto-restart. Microservices: HA replicas |
 | **Network bandwidth** from agents to server | Low | Negligible — 0.5-5 KB/s per JVM | Compressed pprof format; configurable upload interval |
 | **Compatibility issues** with JVM versions | Low | Medium — profiling may not attach | Tested with JDK 11, 17, 21; uses standard JVMTI interface |

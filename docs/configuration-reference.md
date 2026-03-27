@@ -152,7 +152,7 @@ Key values from `deploy/helm/pyroscope/values.yaml`.
 | `mode` | `monolith` | Deployment mode (`monolith`, `microservices`) |
 | `image.repository` | `grafana/pyroscope` | Container image repository |
 | `image.tag` | `"1.18.0"` | Container image tag |
-| `storage.accessMode` | `ReadWriteOnce` | PVC access mode (`ReadWriteMany` for microservices) |
+| `storage.accessMode` | `ReadWriteOnce` | PVC access mode (monolith only; microservices use S3-compatible object storage) |
 | `storage.size` | `10Gi` | PVC storage size |
 | `route.enabled` | `true` | Create OpenShift Route |
 | `networkPolicy.enabled` | `false` | Create NetworkPolicy for cross-namespace access |
