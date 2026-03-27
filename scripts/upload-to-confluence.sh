@@ -541,19 +541,42 @@ upload_attachments() {
             continue
         fi
 
-        local response
-        response=$(curl "${CURL_OPTS[@]}" "${AUTH_ARGS[@]}" -w "\n%{http_code}" \
-            -X POST \
-            -H "X-Atlassian-Token: nocheck" \
-            -F "file=@${png}" \
-            "${API_BASE}/${page_id}/child/attachment" 2>/dev/null) || true
+        # Check if attachment already exists on the page
+        local existing_att_id=""
+        local att_response
+        att_response=$(curl "${CURL_OPTS[@]}" "${AUTH_ARGS[@]}" \
+            "${API_BASE}/${page_id}/child/attachment?filename=${png_name}" 2>/dev/null) || true
+        if [[ "$HAS_JQ" == "true" ]]; then
+            existing_att_id=$(echo "$att_response" | jq -r '.results[0].id // empty' 2>/dev/null)
+        fi
 
-        local http_code
+        local response http_code
+        if [[ -n "$existing_att_id" ]]; then
+            # Update existing attachment
+            response=$(curl "${CURL_OPTS[@]}" "${AUTH_ARGS[@]}" -w "\n%{http_code}" \
+                -X POST \
+                -H "X-Atlassian-Token: nocheck" \
+                -F "file=@${png}" \
+                -F "minorEdit=true" \
+                "${API_BASE}/${page_id}/child/attachment/${existing_att_id}/data" 2>/dev/null) || true
+        else
+            # Create new attachment
+            response=$(curl "${CURL_OPTS[@]}" "${AUTH_ARGS[@]}" -w "\n%{http_code}" \
+                -X POST \
+                -H "X-Atlassian-Token: nocheck" \
+                -F "file=@${png}" \
+                -F "minorEdit=true" \
+                "${API_BASE}/${page_id}/child/attachment" 2>/dev/null) || true
+        fi
+
         http_code=$(echo "$response" | tail -1)
         if [[ "$http_code" == "200" ]]; then
             echo "    ATTACHED: ${png_name}"
         else
             echo "    ATTACH FAILED: ${png_name} (HTTP ${http_code})" >&2
+            if [[ "$HAS_JQ" == "true" ]]; then
+                echo "$response" | head -1 | jq -r '.message // empty' 2>/dev/null | sed 's/^/               /' >&2
+            fi
         fi
     done
 }
