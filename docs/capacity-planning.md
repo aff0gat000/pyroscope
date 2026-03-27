@@ -303,7 +303,7 @@ total_bandwidth_KB_s = services × avg_push_size_KB / push_interval_s
 | Ingestion drops            | Agents timing out on push     | Add CPU and memory, check network bandwidth                     |
 | > 100 profiled services    | Approaching monolith ceiling  | Plan migration to microservices mode                            |
 
-See [pyroscope-reference-guide.md](pyroscope-reference-guide.md) for detailed scaling guidance.
+See pyroscope-reference-guide.md (available in the repo at docs/pyroscope-reference-guide.md) for detailed scaling guidance.
 
 ---
 
@@ -353,20 +353,20 @@ Each component runs as a separate pod/container and can be scaled independently.
 
 ### Aggregate sizing by scale
 
-| Scale | Services | Total CPU (request) | Total Memory (request) | RWX Storage | Network |
-|-------|:--------:|:-------------------:|:---------------------:|:-----------:|:-------:|
+| Scale | Services | Total CPU (request) | Total Memory (request) | Object Storage | Network |
+|-------|:--------:|:-------------------:|:---------------------:|:--------------:|:-------:|
 | Small | 50-100 | 8 cores | 12 Gi | 100 Gi | < 5 Mbps |
 | Medium | 100-250 | 14 cores | 20 Gi | 250 Gi | < 10 Mbps |
 | Large | 250-500 | 24 cores | 40 Gi | 500 Gi | < 25 Mbps |
 
 ### Storage requirements
 
-| Type | Mount | Access mode | Storage class | Sizing |
-|------|-------|:-----------:|---------------|--------|
-| Profile data | `/data/pyroscope` | ReadWriteMany (RWX) | NFS, CephFS, OCS | See retention table above |
+| Type | Backend | Sizing | Notes |
+|------|---------|--------|-------|
+| Profile data | S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) | See retention table above | Ingesters flush blocks to local disk first, then upload to the object store |
 
-> **RWX is mandatory.** Ingesters, store-gateway, and compactor all read/write the same
-> volume. ReadWriteOnce (RWO) does not work for microservices mode.
+> **Object storage is required.** Ingesters, store-gateway, and compactor all access the same
+> object storage bucket. NFS / shared filesystems are not a supported storage backend.
 
 ---
 
@@ -719,7 +719,7 @@ graph TB
             SGPod["Store Gateway Pod"]
             CompPod["Compactor Pod"]
 
-            PVC[("RWX PVC<br/>/data/pyroscope<br/>NFS / CephFS / OCS")]
+            ObjStore[("S3-compatible Object Storage<br/>(MinIO / AWS S3 / GCS / Azure Blob)")]
 
             DistSvc --> DistPod
             QFSvc --> QFPod
@@ -740,9 +740,9 @@ graph TB
             Ing2 <-.->|"TCP+UDP 7946<br/>memberlist gossip"| IngSvc
             Ing3 <-.->|"TCP+UDP 7946<br/>memberlist gossip"| IngSvc
 
-            Ing1 & Ing2 & Ing3 -->|"flush blocks"| PVC
-            SGPod -->|"read blocks"| PVC
-            CompPod -->|"compact + retention"| PVC
+            Ing1 & Ing2 & Ing3 -->|"flush blocks"| ObjStore
+            SGPod -->|"read blocks"| ObjStore
+            CompPod -->|"compact + retention"| ObjStore
         end
 
         Route["OCP Route<br/>pyroscope.apps.cluster.company.com<br/>:443 TLS edge termination"]
@@ -770,8 +770,8 @@ graph TB
 
 **Aggregate resource requirements:**
 
-| Scale | Profiled services | Total CPU (request) | Total Memory (request) | RWX Storage | Network |
-|-------|:-----------------:|:-------------------:|:---------------------:|:-----------:|:-------:|
+| Scale | Profiled services | Total CPU (request) | Total Memory (request) | Object Storage | Network |
+|-------|:-----------------:|:-------------------:|:---------------------:|:--------------:|:-------:|
 | Small | 50-100 | 8 cores | 12 Gi | 100 Gi | < 5 Mbps |
 | Medium | 100-250 | 14 cores | 20 Gi | 250 Gi | < 10 Mbps |
 | Large | 250-500 | 24 cores | 40 Gi | 500 Gi | < 25 Mbps |
@@ -812,7 +812,7 @@ graph TB
 |----------|--------------|-------|
 | Namespace | `pyroscope` (dedicated) | Resource quota: 16 CPU, 24 Gi memory minimum |
 | RBAC | ServiceAccount with Deployment, Service, PVC, ConfigMap permissions | For Helm chart deployment |
-| Storage | RWX PersistentVolumeClaim — 100-500 Gi | **Must be ReadWriteMany** (NFS, CephFS, or OCS). RWO does not work — ingesters, store-gateway, and compactor all read/write the same volume |
+| Storage | S3-compatible object storage — 100-500 Gi | MinIO, AWS S3, GCS, or Azure Blob Storage. Ingesters, store-gateway, and compactor all access the same object storage bucket |
 | Route | TLS edge termination | Hostname: `pyroscope.apps.cluster.company.com` |
 | SCC | `restricted` (default) is sufficient | No privileged containers needed |
 | Image | `grafana/pyroscope:1.18.0` | All 7 components use the same image with different `-target=` flags |
@@ -910,7 +910,7 @@ Everything from Phase 1a, plus:
 | **OCP Platform** | Dedicated namespace (`pyroscope`) | Days | Resource quota: 16 CPU, 24 Gi memory |
 | **OCP Platform** | RBAC: service account with Deployment/Service/PVC/ConfigMap permissions | Days | For Helm chart deployment |
 | **OCP Platform** | OCP Route with TLS edge termination | Days | Hostname: `pyroscope.apps.cluster.company.com` |
-| **Storage** | RWX PersistentVolume — 100-500 Gi | 1-2 weeks | StorageClass: NFS, CephFS, or OCS. **Must be ReadWriteMany** |
+| **Storage** | S3-compatible object storage — 100-500 Gi | 1-2 weeks | MinIO, AWS S3, GCS, or Azure Blob Storage. See object storage requirements above |
 | **Network** | NetworkPolicy: allow ingress from app namespaces → pyroscope namespace, TCP 4040 | Days | See NetworkPolicy YAML above |
 | **Network** | NetworkPolicy: allow TCP+UDP 7946 within pyroscope namespace | Days | Required for ingester memberlist gossip |
 | **Security** | Review: no PII in profile data | 1 week | Profiles contain function names and stack traces only — no request payloads, no secrets |

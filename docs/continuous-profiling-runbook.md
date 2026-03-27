@@ -231,7 +231,7 @@ apiVersion: 1
 datasources:
   - name: Pyroscope
     type: grafana-pyroscope-datasource
-    uid: pyroscope
+    uid: pyroscope-ds
     url: http://pyroscope:4040
     access: proxy
     isDefault: false

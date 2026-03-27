@@ -7,7 +7,7 @@ continuous profiling stack. Covers both the **local demo** (docker-compose) and
 > **Demo vs Production:** This runbook covers both modes. Sections marked **(DEMO)**
 > use `scripts/run.sh` and `docker-compose.yaml` for local testing. Sections marked
 > **(PRODUCTION)** use `deploy/monolith/stage1-build.sh` and `stage2-deploy.sh` for
-> enterprise VM deployments. See [INDEX.md § Code Map](INDEX.md#whats-in-this-repo)
+> enterprise VM deployments. See INDEX.md § Code Map (available in the repo at docs/INDEX.md)
 > for the full distinction.
 
 ---

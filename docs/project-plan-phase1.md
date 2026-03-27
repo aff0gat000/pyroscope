@@ -149,7 +149,7 @@ Connect Pyroscope to existing monitoring infrastructure.
 | 4.5 Verify Pyroscope server health metrics in Prometheus | S | 30m | — | 4.4 | `pyroscope_ingestion_*` metrics present |
 
 > **Reference:** [grafana-setup.md](grafana-setup.md) for datasource provisioning.
-> [dashboard-guide.md](dashboard-guide.md) for panel-by-panel reference.
+> dashboard-guide.md (available in the repo at docs/dashboard-guide.md) for panel-by-panel reference.
 
 ---
 
@@ -347,7 +347,7 @@ gain new capabilities, and 4 new SOR endpoints are added.
 | PostgreSQL database | Persistence for baselines, audit trails, service registry, alert rules | DBA provisions a PostgreSQL instance |
 | 4 new SORs | Baseline, History, Registry, AlertRule | PostgreSQL + schema.sql applied |
 | v2 BOR functions | Baseline comparison, threshold annotation, ownership enrichment, audit trail | New SORs deployed and URLs configured |
-| Microservices mode (optional) | Horizontal scaling if ingestion exceeds single-node capacity | OCP namespace + RWX storage class |
+| Microservices mode (optional) | Horizontal scaling if ingestion exceeds single-node capacity | OCP namespace + S3-compatible object storage |
 
 > The upgrade from Phase 1 to Phase 2 is documented in
 > [production-questionnaire-phase2.md § Upgrade path](production-questionnaire-phase2.md).

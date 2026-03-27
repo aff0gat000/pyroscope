@@ -100,7 +100,7 @@ changes are needed — the agent attaches via `JAVA_TOOL_OPTIONS`.
 | Mode | Components | When to use |
 |------|-----------|-------------|
 | **Monolith** | Single process | Up to ~100 services, simplest to operate |
-| **Microservices** | 7 components (distributor, ingester, querier, query-frontend, query-scheduler, compactor, store-gateway) | 100+ services, need HA, horizontal scaling |
+| **Microservices** | 9 components (distributor, ingester, querier, query-frontend, query-scheduler, compactor, store-gateway, overrides-exporter, gateway) | 100+ services, need HA, horizontal scaling |
 
 > **Architecture details:** [architecture.md](architecture.md)
 > **Decision trees:** [deployment-guide.md](deployment-guide.md)
@@ -196,7 +196,7 @@ or number of threads. JFR is built into the JVM and has been production-safe sin
 
 ### How much disk does Pyroscope use?
 
-Approximately 1-5 GB per monitored service per month with default 24-hour retention.
+Approximately 1-5 GB per monitored service per month with 30-day retention (configurable).
 A 100 GB disk supports roughly 20 services. Retention is configurable — longer retention
 increases storage linearly.
 
@@ -221,7 +221,7 @@ Yes. For monolith mode, back up the `/data` directory. For microservices mode wi
 object storage, use your object store's backup mechanism. PVC snapshots work for
 Kubernetes deployments.
 
-> **Backup procedures:** [pyroscope-reference-guide.md § Backup and restore](pyroscope-reference-guide.md)
+> **Backup procedures:** pyroscope-reference-guide.md § Backup and restore (available in the repo at docs/pyroscope-reference-guide.md)
 
 ---
 
@@ -249,7 +249,7 @@ Pyroscope. Flame graphs render directly in Grafana panels alongside your existin
 Prometheus and Loki dashboards.
 
 > **Setup guide:** [grafana-setup.md](grafana-setup.md)
-> **Dashboard reference:** [dashboard-guide.md](dashboard-guide.md)
+> **Dashboard reference:** dashboard-guide.md (available in the repo at docs/dashboard-guide.md)
 
 ### Can I query Pyroscope from the command line?
 
@@ -263,7 +263,7 @@ curl http://<server>:4040/pyroscope/render?query=list
 curl "http://<server>:4040/pyroscope/render?query=process_cpu:cpu:nanoseconds:cpu:nanoseconds{service_name=\"my-app\"}&from=now-1h&until=now"
 ```
 
-> **Query examples:** [sample-queries.md](sample-queries.md)
+> **Query examples:** sample-queries.md (available in the repo at docs/sample-queries.md)
 
 ### How do I compare two time periods (before/after a deploy)?
 
@@ -307,7 +307,7 @@ If your organization already has a commercial APM with profiling features includ
 your contract, it may be simpler to use that. Pyroscope is the clear choice when
 profiling is not already bundled or when air-gapped / data-sovereignty requirements exist.
 
-> **Competitive analysis:** [pyroscope-reference-guide.md § Competitive analysis](pyroscope-reference-guide.md)
+> **Competitive analysis:** pyroscope-reference-guide.md § Competitive analysis (available in the repo at docs/pyroscope-reference-guide.md)
 
 ### What is the ROI?
 
@@ -344,5 +344,5 @@ object storage), this delivers a **2-7x annual ROI**.
 | [deployment-guide.md](deployment-guide.md) | Step-by-step deployment with decision trees |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan and timeline |
 | [function-reference.md](function-reference.md) | BOR/SOR API reference |
-| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Reference guide and competitive analysis |
+| pyroscope-reference-guide.md (in repo) | Reference guide and competitive analysis |
 | [troubleshooting.md](troubleshooting.md) | Diagnostic procedures |

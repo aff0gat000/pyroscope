@@ -13,7 +13,7 @@ Target audience: anyone presenting Pyroscope to stakeholders.
 |----------|:----:|-----------|------|------|---------|
 | **VP / Director** | 15 min | Cost savings + MTTR reduction | Value table, before/after flame graph (one slide) | Architecture, agent config, ports | [what-is-pyroscope.md](what-is-pyroscope.md) |
 | **Architects / Tech Leads** | 30 min | Architecture + deployment phases | Topology diagrams, deployment decision tree, phasing | Demo walkthrough, code-level details | [architecture.md](architecture.md) |
-| **Developers** | 30 min | Live demo — flame graphs are addictive | Live Grafana, 3 profiling scenarios, before/after fix | Infrastructure, capacity planning | [demo-runbook.md](demo-runbook.md) |
+| **Developers** | 30 min | Live demo — flame graphs are addictive | Live Grafana, 3 profiling scenarios, before/after fix | Infrastructure, capacity planning | demo-runbook.md (in repo) |
 | **SREs / Platform** | 30 min | Operational simplicity + incident response | Deploy scripts, monitoring, runbook playbooks | Business case, code patterns | [deployment-guide.md](deployment-guide.md) |
 | **Security / Compliance** | 20 min | Data classification + network isolation | Security model, no PII in profiles, network diagrams | Demo, performance optimization | [security-model.md](security-model.md) |
 | **Change Advisory Board** | 15 min | Risk assessment + rollback plan | Overhead data, rollback steps, change request template | Everything else | [templates/change-request.md](templates/change-request.md) |
@@ -115,7 +115,7 @@ Get architectural approval for deployment topology and network requirements.
 Show developers what profiling data looks like and how to use it.
 
 ### Flow
-Follow [demo-runbook.md](demo-runbook.md) exactly — it has a minute-by-minute agenda.
+Follow demo-runbook.md (available in the repo at docs/demo-runbook.md) exactly — it has a minute-by-minute agenda.
 
 **Key tips:**
 - Start the stack *before* the meeting: `bash scripts/run.sh`
@@ -208,7 +208,7 @@ Get security clearance for production deployment.
 ### After the meeting
 1. Share the relevant doc links (not the whole docs/ folder)
 2. For architects: share capacity-planning.md as the requirements handoff
-3. For developers: share the Grafana URL and profiling-scenarios.md
+3. For developers: share the Grafana URL and profiling-scenarios.md (available in the repo at docs/profiling-scenarios.md)
 4. For SREs: share the deploy/ README and runbook.md
 5. Follow up with a one-paragraph summary and next-step action items
 
