@@ -41,6 +41,9 @@
 #   CONFLUENCE_EXPORT_DIR Directory containing .confluence.txt files
 #                         Default: ./confluence-export
 #   CONFLUENCE_DRY_RUN    Ignored — dry run is the default. Use --confirm to upload.
+#   MERMAID_LIVE_URL      URL of your Mermaid Live instance (optional)
+#                         If set, a link is added below each diagram in exported pages
+#                         Example: https://mermaid.company.com
 #   CONFLUENCE_VERIFY_SSL Set to "false" to skip TLS verification (self-signed certs)
 #                         Default: true
 #
@@ -318,10 +321,80 @@ get_space_home_page_id() {
     fi
 }
 
+# --- Build parent page index body from manifest ---
+build_index_body() {
+    local body="h1. Pyroscope Documentation\n\n"
+    body+="Enterprise documentation for Pyroscope continuous profiling, organized by the [Diataxis framework|https://diataxis.fr/].\n\n"
+    body+="----\n\n"
+
+    local current_section=""
+
+    if [[ ! -f "$MANIFEST_FILE" ]]; then
+        # Fallback if manifest not available
+        body+="{children:sort=title|excerpt=simple}"
+        echo "$body"
+        return
+    fi
+
+    while IFS= read -r line; do
+        # Detect section headers (lines like "# --- Explanation ... ---")
+        if [[ "$line" =~ ^#\ ---\ (.+)\ --- ]]; then
+            section="${BASH_REMATCH[1]}"
+            # Extract just the category name (before the parenthetical)
+            section_name=$(echo "$section" | sed 's/ (.*//')
+            case "$section_name" in
+                Explanation)
+                    body+="h2. Explanation (Understanding-Oriented)\n\n"
+                    body+="Conceptual guides that explain how Pyroscope works and why.\n\n" ;;
+                Tutorials)
+                    body+="\nh2. Tutorials (Learning-Oriented)\n\n"
+                    body+="Step-by-step lessons to get started.\n\n" ;;
+                "How-to guides")
+                    body+="\nh2. How-to Guides (Task-Oriented)\n\n"
+                    body+="Practical guides for specific tasks.\n\n" ;;
+                Reference)
+                    body+="\nh2. Reference (Information-Oriented)\n\n"
+                    body+="Technical reference material.\n\n" ;;
+                "Architecture Decision Records")
+                    body+="\nh2. Architecture Decision Records\n\n" ;;
+                Templates)
+                    body+="\nh2. Templates\n\n" ;;
+            esac
+            continue
+        fi
+
+        # Skip pure comments and blank lines
+        [[ "$line" =~ ^#\  && ! "$line" =~ ^#\ --- ]] && [[ ! "$line" =~ \.md ]] && continue
+        [[ -z "$line" ]] && continue
+
+        # Parse doc entry: filename.md  # [X] Description
+        local entry desc
+        entry=$(echo "$line" | sed 's/#.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+        [[ -z "$entry" ]] && continue
+        desc=$(echo "$line" | sed -n 's/.*# *\[.\] *//p')
+        [[ -z "$desc" ]] && desc="$entry"
+
+        # Build page title (same logic as upload_page — hyphens to spaces in basename only)
+        local page_basename
+        page_basename=$(basename "$entry" .md)
+        page_basename=$(echo "$page_basename" | sed 's/-/ /g; s/  */ /g')
+        local page_title="${CONFLUENCE_PREFIX}${page_basename}"
+
+        body+="* [${desc}|${page_title}]\n"
+    done < "$MANIFEST_FILE"
+
+    body+="\n----\n\n"
+    body+="{children:sort=title|excerpt=simple}"
+
+    echo "$body"
+}
+
 # --- Create parent page under space home ---
 create_parent_page() {
     local title="$1"
     local home_id="$2"
+    local index_body
+    index_body=$(build_index_body)
 
     local payload
     payload=$(cat <<ENDJSON
@@ -332,7 +405,7 @@ create_parent_page() {
     "ancestors": [{"id": "${home_id}"}],
     "body": {
         "wiki": {
-            "value": "h1. ${title}\n\nThis page contains the Pyroscope continuous profiling documentation set.\n\nChild pages are organized by the [Diataxis framework|https://diataxis.fr/] — tutorials, how-to guides, explanation, and reference.\n\n{children:sort=title|excerpt=simple}",
+            "value": "${index_body}",
             "representation": "wiki"
         }
     },
@@ -374,6 +447,9 @@ ensure_parent_page() {
 
     if [[ "$CONFLUENCE_DRY_RUN" == "true" ]]; then
         echo "[DRY RUN] Would auto-create parent page: '${CONFLUENCE_PARENT_TITLE}' under space home"
+        echo ""
+        echo "  Parent page index would contain:"
+        build_index_body | sed 's/\\n/\n/g' | grep '^\*' | sed 's/^/    /'
         CONFLUENCE_PARENT_ID="DRY_RUN_PARENT"
         return 0
     fi
@@ -386,6 +462,43 @@ ensure_parent_page() {
     if [[ -n "$existing_id" ]]; then
         echo "found (id=${existing_id})"
         CONFLUENCE_PARENT_ID="$existing_id"
+        # Update the index body on existing parent page
+        echo -n "Updating parent page index... "
+        local index_body
+        index_body=$(build_index_body)
+        local version
+        version=$(get_page_version "$existing_id" 2>/dev/null) || version=0
+        local new_version=$((version + 1))
+        local update_payload
+        update_payload=$(cat <<ENDJSON
+{
+    "id": "${existing_id}",
+    "type": "page",
+    "title": "${CONFLUENCE_PARENT_TITLE}",
+    "space": {"key": "${CONFLUENCE_SPACE_KEY}"},
+    "version": {"number": ${new_version}},
+    "body": {
+        "wiki": {
+            "value": "${index_body}",
+            "representation": "wiki"
+        }
+    }
+}
+ENDJSON
+)
+        local update_response
+        update_response=$(curl "${CURL_OPTS[@]}" "${AUTH_ARGS[@]}" -w "\n%{http_code}" \
+            -X PUT \
+            -H "Content-Type: application/json" \
+            -d "$update_payload" \
+            "${API_BASE}/${existing_id}" 2>/dev/null) || true
+        local update_code
+        update_code=$(echo "$update_response" | tail -1)
+        if [[ "$update_code" == "200" ]]; then
+            echo "OK (v${new_version})"
+        else
+            echo "FAILED (HTTP ${update_code})"
+        fi
         return 0
     fi
     echo "not found"
@@ -416,6 +529,38 @@ ensure_parent_page() {
     CONFLUENCE_PARENT_ID="$parent_id"
 }
 
+# --- Upload attachments (mermaid PNGs) to a page ---
+upload_attachments() {
+    local page_id="$1"
+    local basename="$2"
+
+    for png in "${EXPORT_DIR}/${basename}"-mermaid-*.png; do
+        [[ -f "$png" ]] || continue
+        local png_name
+        png_name=$(basename "$png")
+
+        if [[ "$CONFLUENCE_DRY_RUN" == "true" ]]; then
+            echo "    [DRY RUN] Would ATTACH: ${png_name}"
+            continue
+        fi
+
+        local response
+        response=$(curl "${CURL_OPTS[@]}" "${AUTH_ARGS[@]}" -w "\n%{http_code}" \
+            -X POST \
+            -H "X-Atlassian-Token: nocheck" \
+            -F "file=@${png}" \
+            "${API_BASE}/${page_id}/child/attachment" 2>/dev/null) || true
+
+        local http_code
+        http_code=$(echo "$response" | tail -1)
+        if [[ "$http_code" == "200" ]]; then
+            echo "    ATTACHED: ${png_name}"
+        else
+            echo "    ATTACH FAILED: ${png_name} (HTTP ${http_code})" >&2
+        fi
+    done
+}
+
 # --- Upload or update a single page ---
 upload_page() {
     local file="$1"
@@ -423,9 +568,10 @@ upload_page() {
     basename=$(basename "$file" .confluence.txt)
 
     # Derive title from filename
-    local title="${CONFLUENCE_PREFIX}${basename}"
-    # Clean up title: replace hyphens with spaces, collapse multiple spaces
-    title=$(echo "$title" | sed 's/-/ /g; s/  */ /g')
+    # Clean up basename: replace hyphens with spaces, collapse multiple spaces
+    local clean_name
+    clean_name=$(echo "$basename" | sed 's/-/ /g; s/  */ /g')
+    local title="${CONFLUENCE_PREFIX}${clean_name}"
 
     local wiki_body
     wiki_body=$(cat "$file" | json_escape)
@@ -448,6 +594,7 @@ upload_page() {
 
         if [[ "$CONFLUENCE_DRY_RUN" == "true" ]]; then
             echo "  [DRY RUN] Would UPDATE: ${title} (id=${existing_id}, v${version} → v${new_version})"
+            upload_attachments "$existing_id" "$basename"
             return 0
         fi
 
@@ -483,6 +630,7 @@ ENDJSON
         http_code=$(echo "$response" | tail -1)
         if [[ "$http_code" == "200" ]]; then
             echo "  UPDATED: ${title} (id=${existing_id}, v${new_version})"
+            upload_attachments "$existing_id" "$basename"
         else
             echo "  FAILED:  ${title} (HTTP ${http_code})" >&2
             if [[ "$HAS_JQ" == "true" ]]; then
@@ -494,6 +642,7 @@ ENDJSON
         # Create new page
         if [[ "$CONFLUENCE_DRY_RUN" == "true" ]]; then
             echo "  [DRY RUN] Would CREATE: ${title}"
+            upload_attachments "DRY_RUN" "$basename"
             return 0
         fi
 
@@ -531,6 +680,9 @@ ENDJSON
                 page_id=$(echo "$response" | head -1 | jq -r '.id // empty' 2>/dev/null)
             fi
             echo "  CREATED: ${title}${page_id:+ (id=${page_id})}"
+            if [[ -n "$page_id" ]]; then
+                upload_attachments "$page_id" "$basename"
+            fi
         else
             echo "  FAILED:  ${title} (HTTP ${http_code})" >&2
             if [[ "$HAS_JQ" == "true" ]]; then

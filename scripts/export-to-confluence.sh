@@ -34,6 +34,24 @@ LIST_ONLY=false
 ENTERPRISE_ONLY=false
 MANIFEST_FILE="${DOCS_DIR}/confluence-manifest.txt"
 
+# --- Auto-load .env.confluence if present (never committed — in .gitignore) ---
+if [[ -f "${REPO_ROOT}/.env.confluence" ]]; then
+    echo "Loading config from .env.confluence"
+    # shellcheck disable=SC1091
+    source "${REPO_ROOT}/.env.confluence"
+fi
+
+# --- Confluence settings (used for cross-doc link conversion) ---
+CONFLUENCE_PREFIX="${CONFLUENCE_PREFIX:-Pyroscope - }"
+MERMAID_LIVE_URL="${MERMAID_LIVE_URL:-}"
+
+# --- Detect mermaid-cli ---
+if command -v mmdc &>/dev/null; then
+    HAS_MMDC=true
+else
+    HAS_MMDC=false
+fi
+
 # --- Parse arguments ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -70,31 +88,94 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 
+# --- Pre-extract and render Mermaid diagrams to PNG ---
+extract_and_render_mermaid() {
+    local input_file="$1"
+    local basename="$2"
+    local temp_dir="${OUTPUT_DIR}/.mermaid-tmp"
+    mkdir -p "$temp_dir"
+
+    # Extract mermaid blocks to .mmd files
+    awk -v dir="$temp_dir" -v base="$basename" '
+    /^```mermaid/ || /^ *```mermaid/ { in_m=1; count++; buf=""; next }
+    in_m && (/^```$/ || /^ *```$/) {
+        in_m=0
+        f = dir "/" base "-mermaid-" count ".mmd"
+        printf "%s", buf > f
+        close(f)
+        next
+    }
+    in_m { buf = (buf == "" ? $0 : buf "\n" $0) }
+    ' "$input_file"
+
+    # Render each .mmd to .png
+    for mmd in "${temp_dir}/${basename}"-mermaid-*.mmd; do
+        [[ -f "$mmd" ]] || continue
+        local num
+        num=$(basename "$mmd" | grep -o 'mermaid-[0-9]*' | grep -o '[0-9]*')
+        local png="${OUTPUT_DIR}/${basename}-mermaid-${num}.png"
+        if mmdc -i "$mmd" -o "$png" -b transparent 2>/dev/null; then
+            echo "    Rendered: $(basename "$png")"
+        else
+            echo "    WARNING: Failed to render mermaid diagram ${num}" >&2
+        fi
+    done
+}
+
 # --- Convert one Markdown file to Confluence wiki markup ---
 convert_to_confluence() {
     local input_file="$1"
     local output_file="$2"
+    local page_basename="$3"
 
+    PAGE_BASENAME="$page_basename" \
+    HAS_MMDC="$HAS_MMDC" \
+    MERMAID_LIVE_URL="$MERMAID_LIVE_URL" \
+    CONFLUENCE_PREFIX="$CONFLUENCE_PREFIX" \
     awk '
     BEGIN {
         in_code = 0
         in_mermaid = 0
+        mermaid_count = 0
+        mermaid_buf = ""
         code_lang = ""
         in_quote = 0
         table_row = 0    # 0 = not in table, 1 = header row, 2+ = data rows
     }
 
-    # --- Code blocks ---
+    # --- Mermaid blocks (render as PNG image + expandable source) ---
     /^```mermaid/ || /^ *```mermaid/ {
         flush_quote()
         in_mermaid = 1
-        in_code = 1
-        print "{info:title=Mermaid Diagram}"
-        print "This diagram is written in Mermaid syntax. Render it at https://mermaid.live or install the Mermaid plugin for Confluence."
-        print "{info}"
-        print "{code:language=none|title=Mermaid Diagram Source}"
+        mermaid_count++
+        mermaid_buf = ""
         next
     }
+    in_mermaid && (/^```$/ || /^ *```$/) {
+        in_mermaid = 0
+        png_name = ENVIRON["PAGE_BASENAME"] "-mermaid-" mermaid_count ".png"
+        if (ENVIRON["HAS_MMDC"] == "true") {
+            print "!" png_name "!"
+            print ""
+        }
+        print "{expand:title=View Mermaid Source}"
+        print "{code:language=none}"
+        print mermaid_buf
+        print "{code}"
+        print "{expand}"
+        if (ENVIRON["MERMAID_LIVE_URL"] != "") {
+            print ""
+            print "[Open in Mermaid Live|" ENVIRON["MERMAID_LIVE_URL"] "]"
+        }
+        next
+    }
+    in_mermaid {
+        if (mermaid_buf != "") mermaid_buf = mermaid_buf "\n"
+        mermaid_buf = mermaid_buf $0
+        next
+    }
+
+    # --- Code blocks ---
     (/^```[a-zA-Z]/ || /^ *```[a-zA-Z]/) && !in_code {
         flush_quote()
         in_code = 1
@@ -268,6 +349,8 @@ convert_to_confluence() {
                 # Strip path prefix and .md extension
                 gsub(/.*\//, "", md_file)
                 gsub(/\.md$/, "", md_file)
+                # Replace hyphens with spaces to match Confluence page titles
+                gsub(/-/, " ", md_file)
                 # Build Confluence page link: [text|PageTitle#anchor]
                 link_url = ENVIRON["CONFLUENCE_PREFIX"] md_file anchor
             }
@@ -285,7 +368,12 @@ process_file() {
     basename=$(basename "$input_file" .md)
     local output_file="${OUTPUT_DIR}/${basename}.confluence.txt"
 
-    convert_to_confluence "$input_file" "$output_file"
+    # Pre-render mermaid diagrams to PNG if mmdc is available
+    if [[ "$HAS_MMDC" == "true" ]]; then
+        extract_and_render_mermaid "$input_file" "$basename"
+    fi
+
+    convert_to_confluence "$input_file" "$output_file" "$basename"
     echo "  ${basename}.confluence.txt"
 }
 
