@@ -48,8 +48,16 @@ MERMAID_LIVE_URL="${MERMAID_LIVE_URL:-}"
 # --- Detect mermaid-cli ---
 if command -v mmdc &>/dev/null; then
     HAS_MMDC=true
+    # Build mmdc args — add puppeteer config if present
+    MMDC_ARGS=(-b white)
+    if [[ -f "${REPO_ROOT}/.puppeteerrc.json" ]]; then
+        MMDC_ARGS+=(-p "${REPO_ROOT}/.puppeteerrc.json")
+    elif [[ -f "${REPO_ROOT}/puppeteer-config.json" ]]; then
+        MMDC_ARGS+=(-p "${REPO_ROOT}/puppeteer-config.json")
+    fi
 else
     HAS_MMDC=false
+    MMDC_ARGS=()
 fi
 
 # --- Parse arguments ---
@@ -114,10 +122,12 @@ extract_and_render_mermaid() {
         local num
         num=$(basename "$mmd" | grep -o 'mermaid-[0-9]*' | grep -o '[0-9]*')
         local png="${OUTPUT_DIR}/${basename}-mermaid-${num}.png"
-        if mmdc -i "$mmd" -o "$png" -b transparent 2>/dev/null; then
+        # Try rendering — show errors to help diagnose failures
+        if mmdc -i "$mmd" -o "$png" "${MMDC_ARGS[@]}" 2>&1; then
             echo "    Rendered: $(basename "$png")"
         else
-            echo "    WARNING: Failed to render mermaid diagram ${num}" >&2
+            echo "    WARNING: Failed to render mermaid diagram ${num} (see mmdc errors above)" >&2
+            echo "    Tip: ensure Chromium/Puppeteer is installed: npx puppeteer browsers install chrome" >&2
         fi
     done
 }
