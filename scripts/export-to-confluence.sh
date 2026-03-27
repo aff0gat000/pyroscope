@@ -48,7 +48,8 @@ MERMAID_LIVE_URL="${MERMAID_LIVE_URL:-}"
 # --- Detect mermaid-cli ---
 if command -v mmdc &>/dev/null; then
     HAS_MMDC=true
-    # Build mmdc args — add puppeteer config if present (check repo root, then home dir)
+    # Build mmdc args — use puppeteer config if present, otherwise let mmdc
+    # use its own cached Chrome (installed via: npx puppeteer browsers install chrome)
     MMDC_ARGS=(-b white)
     if [[ -f "${REPO_ROOT}/.puppeteerrc.json" ]]; then
         MMDC_ARGS+=(-p "${REPO_ROOT}/.puppeteerrc.json")
@@ -58,26 +59,6 @@ if command -v mmdc &>/dev/null; then
         MMDC_ARGS+=(-p "${HOME}/.puppeteerrc.json")
     elif [[ -f "${HOME}/puppeteer-config.json" ]]; then
         MMDC_ARGS+=(-p "${HOME}/puppeteer-config.json")
-    else
-        # Auto-detect system Chrome and create a temp puppeteer config
-        CHROME_PATH=""
-        if [[ -x "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" ]]; then
-            CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-        elif command -v google-chrome &>/dev/null; then
-            CHROME_PATH="$(command -v google-chrome)"
-        elif command -v google-chrome-stable &>/dev/null; then
-            CHROME_PATH="$(command -v google-chrome-stable)"
-        elif command -v chromium-browser &>/dev/null; then
-            CHROME_PATH="$(command -v chromium-browser)"
-        elif command -v chromium &>/dev/null; then
-            CHROME_PATH="$(command -v chromium)"
-        fi
-        if [[ -n "$CHROME_PATH" ]]; then
-            PUPPETEER_TMP=$(mktemp "${TMPDIR:-/tmp}/puppeteerrc.XXXXXX.json")
-            printf '{"executablePath":"%s"}\n' "$CHROME_PATH" > "$PUPPETEER_TMP"
-            MMDC_ARGS+=(-p "$PUPPETEER_TMP")
-            echo "Using system Chrome: ${CHROME_PATH}"
-        fi
     fi
 else
     HAS_MMDC=false
