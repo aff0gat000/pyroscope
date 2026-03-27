@@ -88,6 +88,12 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# --- Auto-load .env.confluence if present (never committed — in .gitignore) ---
+if [[ -f "${REPO_ROOT}/.env.confluence" ]]; then
+    echo "Loading config from .env.confluence"
+    source "${REPO_ROOT}/.env.confluence"
+fi
+
 # --- Parse arguments first (--help doesn't need env vars) ---
 SINGLE_FILE=""
 ARGS_LIST=false
@@ -176,7 +182,7 @@ fi
 
 for arg in "$@"; do
     case "$arg" in
-        --help|-h|--dry-run|--list|--enterprise) continue ;;
+        --help|-h|--dry-run|--list|--enterprise|--confirm) continue ;;
         *)
             if [[ -f "$arg" ]]; then
                 SINGLE_FILE="$arg"
