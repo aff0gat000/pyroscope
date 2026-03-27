@@ -41,9 +41,6 @@
 #   CONFLUENCE_EXPORT_DIR Directory containing .confluence.txt files
 #                         Default: ./confluence-export
 #   CONFLUENCE_DRY_RUN    Ignored — dry run is the default. Use --confirm to upload.
-#   MERMAID_LIVE_URL      URL of your Mermaid Live instance (optional)
-#                         If set, a link is added below each diagram in exported pages
-#                         Example: https://mermaid.company.com
 #   CONFLUENCE_VERIFY_SSL Set to "false" to skip TLS verification (self-signed certs)
 #                         Default: true
 #

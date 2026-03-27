@@ -43,28 +43,14 @@ fi
 
 # --- Confluence settings (used for cross-doc link conversion) ---
 CONFLUENCE_PREFIX="${CONFLUENCE_PREFIX:-Pyroscope - }"
-MERMAID_LIVE_URL="${MERMAID_LIVE_URL:-}"
 
-# --- Detect mermaid renderer (Docker preferred, local mmdc as fallback) ---
-MERMAID_MODE="none"
+# --- Detect Docker for mermaid rendering ---
+HAS_DOCKER=false
 if command -v docker &>/dev/null && docker info &>/dev/null; then
-    MERMAID_MODE="docker"
+    HAS_DOCKER=true
     echo "Mermaid renderer: Docker (minlag/mermaid-cli)"
-elif command -v mmdc &>/dev/null; then
-    MERMAID_MODE="local"
-    MMDC_ARGS=(-b white)
-    if [[ -f "${REPO_ROOT}/.puppeteerrc.json" ]]; then
-        MMDC_ARGS+=(-p "${REPO_ROOT}/.puppeteerrc.json")
-    elif [[ -f "${REPO_ROOT}/puppeteer-config.json" ]]; then
-        MMDC_ARGS+=(-p "${REPO_ROOT}/puppeteer-config.json")
-    elif [[ -f "${HOME}/.puppeteerrc.json" ]]; then
-        MMDC_ARGS+=(-p "${HOME}/.puppeteerrc.json")
-    elif [[ -f "${HOME}/puppeteer-config.json" ]]; then
-        MMDC_ARGS+=(-p "${HOME}/puppeteer-config.json")
-    fi
-    echo "Mermaid renderer: local mmdc"
 else
-    echo "Mermaid renderer: none (install Docker or mmdc to render diagrams)"
+    echo "Mermaid renderer: none (install Docker to render diagrams as PNG)"
 fi
 
 # --- Parse arguments ---
@@ -103,24 +89,19 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 
-# --- Render a single .mmd file to .png ---
+# --- Render a single .mmd file to .png via Docker ---
 render_mermaid_png() {
     local mmd_file="$1"
     local png_file="$2"
-
-    if [[ "$MERMAID_MODE" == "docker" ]]; then
-        local mmd_dir mmd_name png_name
-        mmd_dir=$(dirname "$mmd_file")
-        mmd_name=$(basename "$mmd_file")
-        png_name=$(basename "$png_file")
-        docker run --rm -v "${mmd_dir}:/data" minlag/mermaid-cli \
-            -i "/data/${mmd_name}" -o "/data/${png_name}" -b white 2>&1
-        # Docker outputs to the same dir as input; move if needed
-        if [[ -f "${mmd_dir}/${png_name}" && "${mmd_dir}/${png_name}" != "$png_file" ]]; then
-            mv "${mmd_dir}/${png_name}" "$png_file"
-        fi
-    elif [[ "$MERMAID_MODE" == "local" ]]; then
-        mmdc -i "$mmd_file" -o "$png_file" "${MMDC_ARGS[@]}" 2>&1
+    local mmd_dir mmd_name png_name
+    mmd_dir=$(dirname "$mmd_file")
+    mmd_name=$(basename "$mmd_file")
+    png_name=$(basename "$png_file")
+    docker run --rm -v "${mmd_dir}:/data" minlag/mermaid-cli \
+        -i "/data/${mmd_name}" -o "/data/${png_name}" -b white 2>&1
+    # Docker outputs to the same dir as input; move if needed
+    if [[ -f "${mmd_dir}/${png_name}" && "${mmd_dir}/${png_name}" != "$png_file" ]]; then
+        mv "${mmd_dir}/${png_name}" "$png_file"
     fi
 }
 
@@ -165,8 +146,7 @@ convert_to_confluence() {
     local page_basename="$3"
 
     PAGE_BASENAME="$page_basename" \
-    MERMAID_MODE="$MERMAID_MODE" \
-    MERMAID_LIVE_URL="$MERMAID_LIVE_URL" \
+    HAS_DOCKER="$HAS_DOCKER" \
     CONFLUENCE_PREFIX="$CONFLUENCE_PREFIX" \
     awk '
     BEGIN {
@@ -190,7 +170,7 @@ convert_to_confluence() {
     in_mermaid && (/^```$/ || /^ *```$/) {
         in_mermaid = 0
         png_name = ENVIRON["PAGE_BASENAME"] "-mermaid-" mermaid_count ".png"
-        if (ENVIRON["MERMAID_MODE"] != "none") {
+        if (ENVIRON["HAS_DOCKER"] == "true") {
             print "!" png_name "!"
             print ""
         }
@@ -199,10 +179,6 @@ convert_to_confluence() {
         print mermaid_buf
         print "{code}"
         print "{expand}"
-        if (ENVIRON["MERMAID_LIVE_URL"] != "") {
-            print ""
-            print "[Open in Mermaid Live|" ENVIRON["MERMAID_LIVE_URL"] "]"
-        }
         next
     }
     in_mermaid {
@@ -404,8 +380,8 @@ process_file() {
     basename=$(basename "$input_file" .md)
     local output_file="${OUTPUT_DIR}/${basename}.confluence.txt"
 
-    # Pre-render mermaid diagrams to PNG if a renderer is available
-    if [[ "$MERMAID_MODE" != "none" ]]; then
+    # Pre-render mermaid diagrams to PNG via Docker
+    if [[ "$HAS_DOCKER" == "true" ]]; then
         extract_and_render_mermaid "$input_file" "$basename"
     fi
 
