@@ -13,6 +13,7 @@
 # --- Explanation (understanding-oriented) ---
 what-is-pyroscope.md                    # [E] Executive overview, business case, TCO
 architecture.md                         # [E] Component internals, topology, data flow
+function-architecture.md                # [E] BOR/SOR project structure, design patterns
 security-model.md                       # [E] Data classification, auth, compliance
 async-profiling-guide.md                # [E] Async framework profiling, labeling strategy
 faq.md                                  # [E] Frequently asked questions
@@ -34,6 +35,7 @@ project-plan-phase1.md                  # [H] Phase 1 project plan, timeline, ef
 presentation-guide.md                   # [H] Present to leadership, architects, devs, SREs
 
 # --- Reference (information-oriented) ---
+function-reference.md                   # [R] BOR/SOR function API, phases, endpoints
 configuration-reference.md              # [R] All config keys — agent, server, deploy, Helm
 agent-configuration-reference.md        # [R] Java agent deep dive — profile types, Vert.x
 capacity-planning.md                    # [R] Sizing, networking, firewall, enterprise scoping
