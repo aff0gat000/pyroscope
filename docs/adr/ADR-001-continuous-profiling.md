@@ -22,8 +22,9 @@ The initiative is phased:
 
 | Phase | Scope | Infrastructure |
 |-------|-------|---------------|
-| **Phase 1** | Pyroscope monolith on VM, Java agent on OCP pods, 3 BOR + 1 SOR analysis functions | 1 VM, existing OCP cluster |
-| **Phase 2** | PostgreSQL-backed SORs, v2 BOR functions, optional microservices mode | + PostgreSQL instance, optional OCP namespace |
+| **Phase 1a** | Single Pyroscope monolith on VM, Java agent on OCP pods, 3 BOR + 1 SOR analysis functions | 1 VM (local filesystem storage), existing OCP cluster |
+| **Phase 1b** | Multi-instance monolith for HA, shared object storage, F5 VIP load balancing | 2-4 VMs + S3-compatible object storage (MinIO or cloud) + F5 LB |
+| **Phase 2** | PostgreSQL-backed SORs, v2 BOR functions, microservices mode on OCP | + PostgreSQL instance, OCP namespace |
 
 ---
 
@@ -81,8 +82,18 @@ costs. Full calculations in [what-is-pyroscope.md § 5](../what-is-pyroscope.md)
 | Host | Dedicated VM (RHEL 8/9, Docker) |
 | Resources | 2 CPU, 4 GB RAM, 100 GB disk |
 | Port | TCP 4040 (HTTP API, UI, agent ingestion) |
-| Storage | Docker named volume at `/data`, 24-hour default retention |
+| Storage | Docker named volume at `/data`, 30-day retention (`compactor.blocks_retention_period`) |
 | Capacity | Up to ~100 profiled services |
+
+### Phase 1b scale-up (multi-instance monolith)
+
+| Specification | Value |
+|--------------|-------|
+| Deployment mode | 2-4 monolith instances behind F5 VIP |
+| Storage backend | S3-compatible object storage (MinIO on-premise, AWS S3, GCS, or Azure Blob) |
+| Load balancer | F5 VIP with `/ready` health check |
+| HA | Active-active — any instance can ingest and query |
+| Migration from 1a | Server-side only — agents change URL from VM IP to VIP FQDN |
 
 ### Java agent
 
@@ -215,15 +226,15 @@ over HTTP.
 
 #### Option 3 — Pyroscope microservices on VM (Docker Compose)
 
-7 Pyroscope containers on a VM using Docker Compose with NFS shared storage.
+7 Pyroscope containers on a VM using Docker Compose with S3-compatible object storage.
 
 | Driver | Assessment |
 |--------|-----------|
-| D1 Time to value | 1-2 weeks (VM + NFS setup) |
-| D2 Complexity | 7 containers, NFS mount, Docker Compose |
-| D3 Infrastructure | 1 VM request + NFS share + firewall rules |
-| D4 Cost | $0 licensing |
-| D5 Data sovereignty | All data on-premise in NFS |
+| D1 Time to value | 1-2 weeks (VM + object storage setup) |
+| D2 Complexity | 7 containers, object storage config, Docker Compose |
+| D3 Infrastructure | 1 VM request + S3-compatible storage (MinIO or cloud) + firewall rules |
+| D4 Cost | $0 licensing + object storage costs |
+| D5 Data sovereignty | All data on-premise (MinIO) or in cloud S3 |
 | D6 Agent overhead | Same agent — 3-8% CPU, 20-40 MB memory |
 | D7 Scalability | 100+ services |
 | D8 HA | No — VM failure takes everything down |
@@ -280,11 +291,13 @@ OTel profiling signal (currently in development/experimental status).
 ### 4d. Decision outcome
 
 Deploy **Pyroscope in monolith mode on a VM** (Option 1) with the Java agent on OCP pods.
+Start with Phase 1a (single monolith, local filesystem), scale to Phase 1b (multi-instance
+monolith with S3-compatible object storage and F5 VIP) when HA is required.
 
 **Reasoning:**
 
 1. **Simplest path to value.** A monolith can be deployed in hours, not weeks. We prove
-   the concept with real production profiling data before investing in microservices
+   the concept with real production profiling data before investing in HA or microservices
    infrastructure.
 
 2. **Sufficient capacity.** We are starting with < 20 Java services. Monolith mode
@@ -292,7 +305,7 @@ Deploy **Pyroscope in monolith mode on a VM** (Option 1) with the Java agent on 
 
 3. **Minimal approvals.** A single VM provisioning request and one firewall rule
    (OCP → VM port 4040) is all that's needed. No OCP namespace, no storage class
-   provisioning, no NFS setup.
+   provisioning, no object storage setup for Phase 1a.
 
 4. **Data sovereignty.** All profiling data stays on-premise. Options 4 and 5 (Datadog,
    Dynatrace) fail the data sovereignty requirement or require expensive managed
@@ -301,15 +314,20 @@ Deploy **Pyroscope in monolith mode on a VM** (Option 1) with the Java agent on 
 5. **Zero licensing cost.** Options 4 and 5 cost $7,200-24,000/year at current scale.
    Pyroscope is free.
 
-6. **Reversible.** Migration from monolith to microservices is server-side only — the
-   Java agents do not change. The agent pushes to a URL; we change what's behind that URL.
+6. **Incremental HA path.** Phase 1b adds 2-4 monolith instances behind an F5 VIP with
+   shared object storage (MinIO or cloud S3). Agents only change the target URL from
+   VM IP to VIP FQDN — no code or agent config changes beyond the URL.
 
-7. **OTel future-proof.** When OpenTelemetry profiling matures, Pyroscope supports OTel
+7. **Reversible.** Migration from monolith to microservices (Phase 2) is server-side
+   only — the Java agents do not change. The agent pushes to a URL; we change what's
+   behind that URL.
+
+8. **OTel future-proof.** When OpenTelemetry profiling matures, Pyroscope supports OTel
    ingestion natively. We swap the agent, not the backend.
 
 **Options rejected:**
 - **Option 2 (microservices on OCP):** Overkill for < 20 services. Reserved for Phase 2.
-- **Option 3 (microservices on VM):** Complexity of microservices without orchestration benefits.
+- **Option 3 (microservices on VM):** Complexity of microservices without orchestration benefits. Phase 1b (multi-instance monolith) provides HA without microservices complexity.
 - **Option 4 (Datadog):** Fails data sovereignty. Annual cost unjustified for POC.
 - **Option 5 (Dynatrace):** Fails data sovereignty (SaaS default). Annual cost unjustified.
 - **Option 6 (OpenTelemetry):** Not production-ready. Pyroscope is the future backend for OTel profiling.
@@ -338,7 +356,7 @@ Deploy **Pyroscope in monolith mode on a VM** (Option 1) with the Java agent on 
 | No HA / disaster recovery | Low | Pyroscope is a non-critical observability tool. Profiling gaps during outages are acceptable. Persistent Docker volume survives container restarts. | Phase 2, if profiling becomes a critical-path dependency |
 | No FIPS-compliant build | Low | Pyroscope supports `GOEXPERIMENT=boringcrypto` and Red Hat Go Toolset builds. TLS termination at load balancer also satisfies FIPS. | When FIPS certification is required by compliance team |
 | Manual container management (no orchestrator) | Low | systemd unit or Docker restart policy handles auto-restart. Single container is simple to manage. | Phase 2, when moving to OCP microservices |
-| 24-hour default data retention | Low | Configurable. 100 GB disk supports ~20 services at 1-5 GB/service/month. | Increase disk or enable object storage when retention requirements grow |
+| 30-day data retention (configurable) | Low | Set via `compactor.blocks_retention_period`. 100 GB disk supports ~20 services at 1-5 GB/service/month. | Increase disk or enable object storage when retention requirements grow |
 
 ---
 
