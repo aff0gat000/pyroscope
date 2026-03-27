@@ -10,6 +10,7 @@
 # Usage:
 #   bash scripts/export-to-confluence.sh                    # All docs
 #   bash scripts/export-to-confluence.sh docs/runbook.md    # Single file
+#   bash scripts/export-to-confluence.sh --enterprise       # Enterprise docs only (from manifest)
 #   bash scripts/export-to-confluence.sh --list             # List available docs
 #   bash scripts/export-to-confluence.sh --output-dir /tmp  # Custom output dir
 #
@@ -30,12 +31,15 @@ DOCS_DIR="${REPO_ROOT}/docs"
 OUTPUT_DIR="${REPO_ROOT}/confluence-export"
 SINGLE_FILE=""
 LIST_ONLY=false
+ENTERPRISE_ONLY=false
+MANIFEST_FILE="${DOCS_DIR}/confluence-manifest.txt"
 
 # --- Parse arguments ---
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --output-dir) OUTPUT_DIR="$2"; shift 2 ;;
-        --list)       LIST_ONLY=true; shift ;;
+        --output-dir)   OUTPUT_DIR="$2"; shift 2 ;;
+        --list)         LIST_ONLY=true; shift ;;
+        --enterprise)   ENTERPRISE_ONLY=true; shift ;;
         --help|-h)
             sed -n '/^# Usage:/,/^# ====/p' "$0" | grep '^#' | sed 's/^# \?//'
             exit 0 ;;
@@ -287,6 +291,28 @@ echo ""
 
 if [[ -n "$SINGLE_FILE" ]]; then
     process_file "$SINGLE_FILE"
+elif [[ "$ENTERPRISE_ONLY" == true ]]; then
+    # Process only docs listed in the enterprise manifest
+    if [[ ! -f "$MANIFEST_FILE" ]]; then
+        echo "Error: Manifest not found: ${MANIFEST_FILE}" >&2
+        echo "Expected docs/confluence-manifest.txt with list of enterprise docs." >&2
+        exit 1
+    fi
+    count=0
+    while IFS= read -r line; do
+        # Strip comments and whitespace
+        entry=$(echo "$line" | sed 's/#.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+        [[ -z "$entry" ]] && continue
+        filepath="${DOCS_DIR}/${entry}"
+        if [[ -f "$filepath" ]]; then
+            process_file "$filepath"
+            count=$((count + 1))
+        else
+            echo "  WARNING: ${entry} not found, skipping" >&2
+        fi
+    done < "$MANIFEST_FILE"
+    echo ""
+    echo "Exported ${count} enterprise docs (from confluence-manifest.txt)"
 else
     # Process all docs
     find "${DOCS_DIR}" -name '*.md' -maxdepth 1 -type f | sort | while read -r f; do

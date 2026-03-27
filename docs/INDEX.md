@@ -1,7 +1,10 @@
 # Documentation Index
 
-36 documents organized by the [Diataxis framework](https://diataxis.fr/) — the same
-documentation standard used by Kubernetes, Django, Grafana, and other CNCF projects.
+Enterprise documentation organized by the [Diataxis framework](https://diataxis.fr/) — the same
+standard used by Kubernetes, Django, Grafana, and other CNCF projects.
+
+**26 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
+Development and demo resources remain in-repo only.
 
 ---
 
@@ -87,12 +90,24 @@ flows, slide structures, objection handling, and tips. Quick reference:
 ### Exporting to Confluence
 
 ```bash
-bash scripts/export-to-confluence.sh                    # Export all docs
-bash scripts/export-to-confluence.sh docs/runbook.md    # Single file
-bash scripts/export-to-confluence.sh --list             # List available docs
+# Export enterprise docs only (26 docs from confluence-manifest.txt)
+bash scripts/export-to-confluence.sh --enterprise
+
+# Upload to Confluence Server/DC with PAT
+export CONFLUENCE_URL=https://wiki.company.com
+export CONFLUENCE_SPACE_KEY=PYRO
+export CONFLUENCE_TOKEN=your-personal-access-token
+bash scripts/upload-to-confluence.sh --enterprise
+
+# Dry run first (validates without uploading)
+CONFLUENCE_DRY_RUN=true bash scripts/upload-to-confluence.sh --enterprise
+
+# Export/upload a single file
+bash scripts/export-to-confluence.sh docs/runbook.md
 ```
 
-Output goes to `confluence-export/`. Paste into Confluence → Edit → Insert → Markup → Confluence Wiki.
+Pages are auto-nested under a "Pyroscope Documentation" parent page in the space sidebar.
+The space landing page is never overwritten.
 
 ---
 
@@ -126,7 +141,12 @@ Every document falls into one of four categories:
 
 ---
 
-## Tutorials (learning-oriented)
+## Enterprise Documentation (published to Confluence)
+
+These 26 docs are the enterprise documentation set. They are exported and uploaded
+to Confluence via `scripts/upload-to-confluence.sh --enterprise`.
+
+### Tutorials (learning-oriented)
 
 Start here if you are new to Pyroscope or continuous profiling.
 
@@ -134,12 +154,8 @@ Start here if you are new to Pyroscope or continuous profiling.
 |----------|-------------|
 | [getting-started.md](getting-started.md) | Day-one orientation — glossary, environment setup, reading path by role, team contacts |
 | [reading-flame-graphs.md](reading-flame-graphs.md) | How to read flame graphs — axes, width, color, self vs total time |
-| [demo-runbook.md](demo-runbook.md) | Step-by-step demo agenda with commands and talking points (20-25 min) |
-| [profiling-scenarios.md](profiling-scenarios.md) | 6 hands-on scenarios with quick reference of all bottlenecks by service |
 
----
-
-## How-to guides (task-oriented)
+### How-to guides (task-oriented)
 
 Follow these when you have a specific goal.
 
@@ -154,12 +170,9 @@ Follow these when you have a specific goal.
 | [tls-setup.md](tls-setup.md) | TLS setup — F5 VIP, native TLS, Nginx/Envoy proxy, certificate strategies, agent trust |
 | [runbook.md](runbook.md) | Operations and incident response — demo and production procedures, playbooks |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — epics, stories, timeline, effort estimates |
-| [workflow.md](workflow.md) | Development workflow — issues, PRs, async communication, incremental adoption |
 | [presentation-guide.md](presentation-guide.md) | How to present Pyroscope to leadership, architects, developers, SREs, and security |
 
----
-
-## Explanation (understanding-oriented)
+### Explanation (understanding-oriented)
 
 Read these to deepen your understanding of Pyroscope internals and architecture.
 
@@ -169,11 +182,9 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 | [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
 | [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
 | [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — two-tier labeling (automatic + LabeledFuture), async limitations |
-| [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint |
+| [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
 
----
-
-## Reference (information-oriented)
+### Reference (information-oriented)
 
 Look up specific facts while working.
 
@@ -182,17 +193,31 @@ Look up specific facts while working.
 | [configuration-reference.md](configuration-reference.md) | All configuration keys — agent properties, pyroscope.yaml, deploy.sh flags, Ansible, Helm |
 | [agent-configuration-reference.md](agent-configuration-reference.md) | Java agent deep dive — profile types, thread context, Vert.x edge cases, OpenTelemetry integration |
 | [capacity-planning.md](capacity-planning.md) | Sizing (Phase 1a single monolith, Phase 1b multi-instance monolith, Phase 2 OCP microservices), networking, firewall rules, enterprise scoping |
-| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Expert reference — internals, competitive analysis, talking points by audience |
 | [sla-slo.md](sla-slo.md) | SLO definitions — data availability, query latency, RPO/RTO, error budget, escalation matrix |
-| [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
-| [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search, Phase 1/2 |
-| [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |
-| [endpoint-reference.md](endpoint-reference.md) | Complete endpoint list with curl examples for all 9 services |
-| [sample-queries.md](sample-queries.md) | Copy-paste queries for Pyroscope, Prometheus, and Grafana |
-| [dashboard-guide.md](dashboard-guide.md) | Panel-by-panel reference for all 6 Grafana dashboards |
-| [faas-server.md](faas-server.md) | FaaS runtime — function deploy/undeploy lifecycle profiling |
 | [production-questionnaire-phase1.md](production-questionnaire-phase1.md) | Production onboarding questionnaire — Phase 1 volume estimates, deployment config |
 | [production-questionnaire-phase2.md](production-questionnaire-phase2.md) | Phase 2 questionnaire — PostgreSQL SORs, upgrade path, test coverage |
+
+---
+
+## Development & Demo Resources (repo only — not published to Confluence)
+
+These docs support the demo banking app, internal development workflow, and
+competitive analysis. They are useful for the team but not appropriate for
+the enterprise Confluence space.
+
+| Document | Description | Why repo-only |
+|----------|-------------|---------------|
+| [demo-runbook.md](demo-runbook.md) | Step-by-step demo agenda with commands and talking points (20-25 min) | References demo docker-compose app |
+| [profiling-scenarios.md](profiling-scenarios.md) | 6 hands-on scenarios with quick reference of all bottlenecks by service | Demo app bottlenecks (Fibonacci, SHA-256) |
+| [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint | Maps demo app source to flame graphs |
+| [sample-queries.md](sample-queries.md) | Copy-paste queries for Pyroscope, Prometheus, and Grafana | Queries reference demo service names |
+| [dashboard-guide.md](dashboard-guide.md) | Panel-by-panel reference for all 6 Grafana dashboards | Demo dashboard panels |
+| [endpoint-reference.md](endpoint-reference.md) | Complete endpoint list with curl examples for all 9 services | Demo app endpoints |
+| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Expert reference — internals, competitive analysis, talking points | Internal talking points, competitive intel |
+| [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search | Developer-only, BOR/SOR internals |
+| [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build | Developer-only, build system |
+| [faas-server.md](faas-server.md) | FaaS runtime — function deploy/undeploy lifecycle profiling | Developer-only, FaaS internals |
+| [workflow.md](workflow.md) | Development workflow — issues, PRs, async communication | Team process notes |
 
 ---
 
@@ -318,5 +343,7 @@ Immutable records of key technical decisions and the reasoning behind them.
 
 | Tool | Description |
 |------|-------------|
+| [scripts/export-to-confluence.sh](../scripts/export-to-confluence.sh) | Export Markdown docs to Confluence wiki markup (`--enterprise` for manifest docs only) |
+| [scripts/upload-to-confluence.sh](../scripts/upload-to-confluence.sh) | Upload exported docs to Confluence via PAT auth (`--enterprise` for manifest docs only) |
 | [scripts/mermaid-to-svg.sh](../scripts/mermaid-to-svg.sh) | Convert Mermaid diagrams in docs to SVG images |
-| [scripts/export-to-confluence.sh](../scripts/export-to-confluence.sh) | Export Markdown docs to Confluence wiki markup for pasting into Confluence pages |
+| [docs/confluence-manifest.txt](confluence-manifest.txt) | Enterprise docs manifest — controls which docs are exported/uploaded to Confluence |
