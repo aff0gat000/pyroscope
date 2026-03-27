@@ -231,10 +231,14 @@ convert_to_confluence() {
             s = pre "*" mid "*" post
         }
         # Inline code: `text` -> {{text}}
+        # Escape inner { and } to prevent Confluence macro parsing
         while (match(s, /`[^`]+`/)) {
             pre = substr(s, 1, RSTART-1)
             mid = substr(s, RSTART+1, RLENGTH-2)
             post = substr(s, RSTART+RLENGTH)
+            # Escape curly braces inside inline code to prevent macro parsing
+            gsub(/[{]/, "\\{", mid)
+            gsub(/[}]/, "\\}", mid)
             s = pre "{{" mid "}}" post
         }
         # Links: [text](url) -> [text|url]
