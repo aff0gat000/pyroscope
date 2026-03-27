@@ -234,6 +234,7 @@ convert_to_confluence() {
             s = pre "{{" mid "}}" post
         }
         # Links: [text](url) -> [text|url]
+        # Cross-doc .md links are converted to Confluence page titles
         while (match(s, /\[[^\]]+\]\([^)]+\)/)) {
             pre = substr(s, 1, RSTART-1)
             full = substr(s, RSTART, RLENGTH)
@@ -246,6 +247,22 @@ convert_to_confluence() {
             ustart = index(full, "(") + 1
             uend = index(full, ")")
             link_url = substr(full, ustart, uend - ustart)
+            # Convert .md cross-references to Confluence page links
+            if (match(link_url, /\.md(#|$)/)) {
+                # Split into filename and optional anchor
+                md_file = link_url
+                anchor = ""
+                if (index(md_file, "#") > 0) {
+                    anchor_pos = index(md_file, "#")
+                    anchor = substr(md_file, anchor_pos)
+                    md_file = substr(md_file, 1, anchor_pos - 1)
+                }
+                # Strip path prefix and .md extension
+                gsub(/.*\//, "", md_file)
+                gsub(/\.md$/, "", md_file)
+                # Build Confluence page link: [text|PageTitle#anchor]
+                link_url = ENVIRON["CONFLUENCE_PREFIX"] md_file anchor
+            }
             s = pre "[" link_text "|" link_url "]" post
         }
         return s

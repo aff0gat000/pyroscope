@@ -672,7 +672,7 @@ for the full init container pattern.
 - [deployment-guide.md Section 7c-7d](deployment-guide.md#7c-https-with-self-signed-cert) — Manual TLS setup
 - [deployment-guide.md Section 15c-15d](deployment-guide.md#15c-https-with-ca-cert) — Agent HTTPS configuration
 - [deployment-guide.md Section 16](deployment-guide.md#16-tls-architecture) — TLS architecture diagrams
-- [deployment-guide.md Section 17b](deployment-guide.md#17b-monolith-https) — Firewall rules for HTTPS
+- [deployment-guide.md Section 17b](deployment-guide.md#17b-firewall-rules-monolith-on-vm-https-with-nginx) — Firewall rules for HTTPS
 - [security-model.md](security-model.md) — Encryption in transit overview
 - [configuration-reference.md](configuration-reference.md) — Agent TLS-related properties
 - `deploy.sh --tls` / `--tls-cert` / `--tls-key` — Full TLS automation via script

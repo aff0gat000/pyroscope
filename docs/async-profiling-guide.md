@@ -567,6 +567,6 @@ recognizes standard profiling tools are insufficient for reactive code.
 ## Cross-references
 
 - [configuration-reference.md](configuration-reference.md) — Agent properties and environment variables
-- [deployment-guide.md Section 15](deployment-guide.md#15-java-agent-configuration-ocp-pods) — Agent configuration on OCP pods
+- [deployment-guide.md Section 15](deployment-guide.md#15-agent-instrumentation) — Agent configuration on OCP pods
 - [tls-setup.md](tls-setup.md) — Agent HTTPS trust configuration
 - [code-to-profiling-guide.md](code-to-profiling-guide.md) — Source code to flame graph mapping
