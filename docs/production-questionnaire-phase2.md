@@ -194,7 +194,7 @@ All require PostgreSQL. Same JAR as Phase 1's Profile Data SOR — different `FU
 
 ### Test Coverage
 
-All functions are provided in two Java versions (Java 11 and Java 17). Each version has its own test suite.
+All functions are provided in two Java versions (Java 11 and Java 21). Each version has its own test suite.
 
 | Project | Unit Tests | Integration Tests | Total |
 |---------|-----------|-------------------|-------|
