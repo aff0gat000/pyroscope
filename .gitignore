@@ -17,5 +17,8 @@ config-snapshots/
 # Confluence export output
 confluence-export/
 
+# Confluence credentials (contains PAT — never commit)
+.env.confluence
+
 # IDE / tool config
 .claude/
