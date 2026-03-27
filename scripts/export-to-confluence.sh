@@ -45,11 +45,13 @@ fi
 CONFLUENCE_PREFIX="${CONFLUENCE_PREFIX:-Pyroscope - }"
 MERMAID_LIVE_URL="${MERMAID_LIVE_URL:-}"
 
-# --- Detect mermaid-cli ---
-if command -v mmdc &>/dev/null; then
-    HAS_MMDC=true
-    # Build mmdc args — use puppeteer config if present, otherwise let mmdc
-    # use its own cached Chrome (installed via: npx puppeteer browsers install chrome)
+# --- Detect mermaid renderer (Docker preferred, local mmdc as fallback) ---
+MERMAID_MODE="none"
+if command -v docker &>/dev/null && docker info &>/dev/null; then
+    MERMAID_MODE="docker"
+    echo "Mermaid renderer: Docker (minlag/mermaid-cli)"
+elif command -v mmdc &>/dev/null; then
+    MERMAID_MODE="local"
     MMDC_ARGS=(-b white)
     if [[ -f "${REPO_ROOT}/.puppeteerrc.json" ]]; then
         MMDC_ARGS+=(-p "${REPO_ROOT}/.puppeteerrc.json")
@@ -60,9 +62,9 @@ if command -v mmdc &>/dev/null; then
     elif [[ -f "${HOME}/puppeteer-config.json" ]]; then
         MMDC_ARGS+=(-p "${HOME}/puppeteer-config.json")
     fi
+    echo "Mermaid renderer: local mmdc"
 else
-    HAS_MMDC=false
-    MMDC_ARGS=()
+    echo "Mermaid renderer: none (install Docker or mmdc to render diagrams)"
 fi
 
 # --- Parse arguments ---
@@ -101,6 +103,27 @@ fi
 
 mkdir -p "${OUTPUT_DIR}"
 
+# --- Render a single .mmd file to .png ---
+render_mermaid_png() {
+    local mmd_file="$1"
+    local png_file="$2"
+
+    if [[ "$MERMAID_MODE" == "docker" ]]; then
+        local mmd_dir mmd_name png_name
+        mmd_dir=$(dirname "$mmd_file")
+        mmd_name=$(basename "$mmd_file")
+        png_name=$(basename "$png_file")
+        docker run --rm -v "${mmd_dir}:/data" minlag/mermaid-cli \
+            -i "/data/${mmd_name}" -o "/data/${png_name}" -b white 2>&1
+        # Docker outputs to the same dir as input; move if needed
+        if [[ -f "${mmd_dir}/${png_name}" && "${mmd_dir}/${png_name}" != "$png_file" ]]; then
+            mv "${mmd_dir}/${png_name}" "$png_file"
+        fi
+    elif [[ "$MERMAID_MODE" == "local" ]]; then
+        mmdc -i "$mmd_file" -o "$png_file" "${MMDC_ARGS[@]}" 2>&1
+    fi
+}
+
 # --- Pre-extract and render Mermaid diagrams to PNG ---
 extract_and_render_mermaid() {
     local input_file="$1"
@@ -127,12 +150,10 @@ extract_and_render_mermaid() {
         local num
         num=$(basename "$mmd" | grep -o 'mermaid-[0-9]*' | grep -o '[0-9]*')
         local png="${OUTPUT_DIR}/${basename}-mermaid-${num}.png"
-        # Try rendering — show errors to help diagnose failures
-        if mmdc -i "$mmd" -o "$png" "${MMDC_ARGS[@]}" 2>&1; then
+        if render_mermaid_png "$mmd" "$png"; then
             echo "    Rendered: $(basename "$png")"
         else
-            echo "    WARNING: Failed to render mermaid diagram ${num} (see mmdc errors above)" >&2
-            echo "    Tip: ensure Chromium/Puppeteer is installed: npx puppeteer browsers install chrome" >&2
+            echo "    WARNING: Failed to render mermaid diagram ${num}" >&2
         fi
     done
 }
@@ -144,7 +165,7 @@ convert_to_confluence() {
     local page_basename="$3"
 
     PAGE_BASENAME="$page_basename" \
-    HAS_MMDC="$HAS_MMDC" \
+    MERMAID_MODE="$MERMAID_MODE" \
     MERMAID_LIVE_URL="$MERMAID_LIVE_URL" \
     CONFLUENCE_PREFIX="$CONFLUENCE_PREFIX" \
     awk '
@@ -169,7 +190,7 @@ convert_to_confluence() {
     in_mermaid && (/^```$/ || /^ *```$/) {
         in_mermaid = 0
         png_name = ENVIRON["PAGE_BASENAME"] "-mermaid-" mermaid_count ".png"
-        if (ENVIRON["HAS_MMDC"] == "true") {
+        if (ENVIRON["MERMAID_MODE"] != "none") {
             print "!" png_name "!"
             print ""
         }
@@ -383,8 +404,8 @@ process_file() {
     basename=$(basename "$input_file" .md)
     local output_file="${OUTPUT_DIR}/${basename}.confluence.txt"
 
-    # Pre-render mermaid diagrams to PNG if mmdc is available
-    if [[ "$HAS_MMDC" == "true" ]]; then
+    # Pre-render mermaid diagrams to PNG if a renderer is available
+    if [[ "$MERMAID_MODE" != "none" ]]; then
         extract_and_render_mermaid "$input_file" "$basename"
     fi
 
