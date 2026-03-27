@@ -92,7 +92,7 @@ All functions are human-triggered. A human can realistically invoke one action e
 
 ## BOR Functions
 
-All BOR functions are stateless HTTP GET endpoints. Java 11 and Java 17 versions provided. No database.
+All BOR functions are stateless HTTP GET endpoints. Java 11 and Java 21 versions provided. No database.
 
 ### 1. Triage — `ReadPyroscopeTriageAssessment.v1`
 
@@ -161,7 +161,7 @@ Engineer → Fleet Search BOR ──→ Profile Data SOR ──→ Pyroscope
 
 ### Test Coverage
 
-All functions are provided in two Java versions (Java 11 and Java 17). Each version has its own test suite.
+All functions are provided in two Java versions (Java 11 and Java 21). Each version has its own test suite.
 
 | Project | Unit Tests | Integration Tests | Total |
 |---------|-----------|-------------------|-------|

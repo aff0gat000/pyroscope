@@ -68,7 +68,7 @@ See [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) f
 | Tool | Version | Purpose |
 |------|---------|---------|
 | Docker | 20.10+ | Container runtime for Pyroscope server and workloads |
-| Java (JDK) | 17 | Build and test FaaS functions (services/ directory) |
+| Java (JDK) | 21 | Build and test FaaS functions (services/ directory). Java 11 modules compile with JDK 11 or 21 |
 | Gradle | 7.6.4 | Build tool (wrapper included at `services/gradlew`) |
 | curl | Any | Health checks and API verification |
 | jq | Any | JSON output formatting (optional but recommended) |
