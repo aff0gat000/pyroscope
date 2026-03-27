@@ -1,0 +1,49 @@
+# Enterprise documentation manifest for Confluence upload
+# These docs are exported and uploaded to Confluence for enterprise stakeholders.
+# One file per line, relative to docs/ directory.
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# Usage:
+#   bash scripts/export-to-confluence.sh --enterprise
+#   bash scripts/upload-to-confluence.sh --enterprise
+#
+# Diataxis category markers:
+#   [T] Tutorial    [H] How-to    [E] Explanation    [R] Reference
+
+# --- Explanation (understanding-oriented) ---
+what-is-pyroscope.md                    # [E] Executive overview, business case, TCO
+architecture.md                         # [E] Component internals, topology, data flow
+security-model.md                       # [E] Data classification, auth, compliance
+async-profiling-guide.md                # [E] Async framework profiling, labeling strategy
+faq.md                                  # [E] Frequently asked questions
+
+# --- Tutorials (learning-oriented) ---
+getting-started.md                      # [T] Day-one orientation, glossary, reading paths
+reading-flame-graphs.md                 # [T] How to read flame graphs
+
+# --- How-to guides (task-oriented) ---
+deployment-guide.md                     # [H] Deploy Pyroscope — decision trees, step-by-step
+continuous-profiling-runbook.md         # [H] End-to-end implementation guide
+grafana-setup.md                        # [H] Connect Grafana to Pyroscope
+monitoring-guide.md                     # [H] Monitor Pyroscope server health
+upgrade-guide.md                        # [H] Upgrade and rollback procedures
+troubleshooting.md                      # [H] Diagnose common issues
+tls-setup.md                            # [H] TLS strategies, F5 VIP, Nginx, Envoy, certs
+runbook.md                              # [H] Operations and incident response
+project-plan-phase1.md                  # [H] Phase 1 project plan, timeline, effort
+presentation-guide.md                   # [H] Present to leadership, architects, devs, SREs
+
+# --- Reference (information-oriented) ---
+configuration-reference.md              # [R] All config keys — agent, server, deploy, Helm
+agent-configuration-reference.md        # [R] Java agent deep dive — profile types, Vert.x
+capacity-planning.md                    # [R] Sizing, networking, firewall, enterprise scoping
+sla-slo.md                              # [R] SLO definitions, RPO/RTO, error budget
+production-questionnaire-phase1.md      # [R] Phase 1 production onboarding questionnaire
+production-questionnaire-phase2.md      # [R] Phase 2 onboarding questionnaire
+
+# --- Architecture Decision Records ---
+adr/ADR-001-continuous-profiling.md     # [E] ADR: Pyroscope monolith on VM
+
+# --- Templates ---
+templates/change-request.md             # [R] CAB change request template
+templates/rollback-plan.md              # [R] Rollback plan template

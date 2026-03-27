@@ -283,7 +283,7 @@ docker inspect pyroscope | grep -i oom  # check for OOM kill
 Common causes:
 - **OOM killed:** Increase memory limit to 2 GB
 - **Port conflict:** `ss -tlnp | grep 4040`
-- **Storage full:** `docker exec pyroscope df -h /data`
+- **Storage full:** `docker run --rm -v pyroscope-data:/data:ro alpine df -h /data`
 - **Config error:** Check pyroscope.yaml syntax
 
 ### OCP pod

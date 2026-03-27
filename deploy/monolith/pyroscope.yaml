@@ -9,6 +9,12 @@ storage:
 server:
   http_listen_port: 4040
 
+# Retention policy — how long profile data is kept before the compactor deletes it.
+# Default is unlimited (no deletion). Set a duration to control disk usage.
+# Examples: 24h, 7d, 30d, 90d
+compactor:
+  blocks_retention_period: 30d
+
 # Self-profiling for Pyroscope itself (optional)
 self_profiling:
   disable_push: true
