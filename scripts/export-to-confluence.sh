@@ -85,7 +85,7 @@ convert_to_confluence() {
     }
 
     # --- Code blocks ---
-    /^```mermaid/ {
+    /^```mermaid/ || /^ *```mermaid/ {
         flush_quote()
         in_mermaid = 1
         in_code = 1
@@ -95,11 +95,11 @@ convert_to_confluence() {
         print "{code:language=none|title=Mermaid Diagram Source}"
         next
     }
-    /^```[a-zA-Z]/ && !in_code {
+    (/^```[a-zA-Z]/ || /^ *```[a-zA-Z]/) && !in_code {
         flush_quote()
         in_code = 1
         code_lang = $0
-        gsub(/^```/, "", code_lang)
+        gsub(/^ *```/, "", code_lang)
         if (code_lang == "bash" || code_lang == "sh" || code_lang == "shell") code_lang = "bash"
         else if (code_lang == "yaml" || code_lang == "yml") code_lang = "yaml"
         else if (code_lang == "json") code_lang = "javascript"
@@ -112,13 +112,13 @@ convert_to_confluence() {
         print "{code:language=" code_lang "}"
         next
     }
-    /^```$/ && in_code {
+    (/^```$/ || /^ *```$/) && in_code {
         in_code = 0
         in_mermaid = 0
         print "{code}"
         next
     }
-    /^```/ && !in_code {
+    (/^```/ || /^ *```/) && !in_code {
         flush_quote()
         in_code = 1
         print "{code:language=none}"
