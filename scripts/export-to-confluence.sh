@@ -44,14 +44,26 @@ fi
 # --- Confluence settings (used for cross-doc link conversion) ---
 CONFLUENCE_PREFIX="${CONFLUENCE_PREFIX:-Pyroscope - }"
 
-# --- Detect Docker for mermaid rendering ---
-HAS_DOCKER=false
+# --- Detect mermaid rendering backend ---
+# Priority: Docker (best quality) > mermaid.ink API (no install needed)
+MERMAID_RENDERER="none"
 if command -v docker &>/dev/null && docker info &>/dev/null; then
-    HAS_DOCKER=true
+    MERMAID_RENDERER="docker"
     echo "Mermaid renderer: Docker (minlag/mermaid-cli)"
+elif command -v curl &>/dev/null; then
+    # Test mermaid.ink availability with a simple diagram
+    if curl -sf --max-time 5 "https://mermaid.ink/img/$(echo 'graph LR; A-->B' | base64 -w0 2>/dev/null || echo 'graph LR; A-->B' | base64 2>/dev/null)" -o /dev/null 2>/dev/null; then
+        MERMAID_RENDERER="mermaid_ink"
+        echo "Mermaid renderer: mermaid.ink API (no Docker needed)"
+    else
+        echo "Mermaid renderer: none (install Docker or ensure mermaid.ink is reachable)"
+    fi
 else
     echo "Mermaid renderer: none (install Docker to render diagrams as PNG)"
 fi
+# Backwards compat for awk
+HAS_DOCKER=false
+[[ "$MERMAID_RENDERER" != "none" ]] && HAS_DOCKER=true
 
 # --- Parse arguments ---
 while [[ $# -gt 0 ]]; do
@@ -90,7 +102,7 @@ fi
 mkdir -p "${OUTPUT_DIR}"
 
 # --- Render a single .mmd file to .png via Docker ---
-render_mermaid_png() {
+render_mermaid_docker() {
     local mmd_file="$1"
     local png_file="$2"
     local mmd_dir mmd_name png_name
@@ -102,6 +114,31 @@ render_mermaid_png() {
     # Docker outputs to the same dir as input; move if needed
     if [[ -f "${mmd_dir}/${png_name}" && "${mmd_dir}/${png_name}" != "$png_file" ]]; then
         mv "${mmd_dir}/${png_name}" "$png_file"
+    fi
+}
+
+# --- Render a single .mmd file to .png via mermaid.ink API ---
+render_mermaid_ink() {
+    local mmd_file="$1"
+    local png_file="$2"
+    local mmd_content
+    mmd_content=$(cat "$mmd_file")
+    # mermaid.ink expects base64-encoded diagram
+    local encoded
+    encoded=$(echo "$mmd_content" | base64 -w0 2>/dev/null || echo "$mmd_content" | base64 2>/dev/null)
+    curl -sf --max-time 30 "https://mermaid.ink/img/${encoded}" -o "$png_file" 2>/dev/null
+}
+
+# --- Render a single .mmd file to .png using available renderer ---
+render_mermaid_png() {
+    local mmd_file="$1"
+    local png_file="$2"
+    if [[ "$MERMAID_RENDERER" == "docker" ]]; then
+        render_mermaid_docker "$mmd_file" "$png_file"
+    elif [[ "$MERMAID_RENDERER" == "mermaid_ink" ]]; then
+        render_mermaid_ink "$mmd_file" "$png_file"
+    else
+        return 1
     fi
 }
 
@@ -380,8 +417,8 @@ process_file() {
     basename=$(basename "$input_file" .md)
     local output_file="${OUTPUT_DIR}/${basename}.confluence.txt"
 
-    # Pre-render mermaid diagrams to PNG via Docker
-    if [[ "$HAS_DOCKER" == "true" ]]; then
+    # Pre-render mermaid diagrams to PNG (Docker or mermaid.ink)
+    if [[ "$MERMAID_RENDERER" != "none" ]]; then
         extract_and_render_mermaid "$input_file" "$basename"
     fi
 

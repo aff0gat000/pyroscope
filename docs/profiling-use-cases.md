@@ -206,7 +206,7 @@ function's CPU, memory, or thread signature deviates from its learned baseline.
 Feed flame graph diffs to a large language model to generate human-readable diagnosis:
 
 - Input: flame graph diff (before/after deploy)
-- Output: "GC pause increased 40% because `processPayment()` switched from primitive
+- Output: "GC pause increased 40% because `submitOrder()` switched from primitive
   arrays to ArrayList, causing 3x more heap allocations. The additional GC pressure
   adds ~15ms to p99 latency."
 

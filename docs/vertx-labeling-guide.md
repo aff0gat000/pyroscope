@@ -121,6 +121,56 @@ graph TB
 - **Function repos:** Teams write function code, build JARs, deploy as verticles onto the shared server
 - **Shared infrastructure:** Database clients, cache clients, message queue clients, HTTP clients, health checks, and metrics are shared across all functions
 
+### Typical enterprise function patterns
+
+Enterprise functions on a shared Vert.x server follow common integration patterns.
+Each pattern has different CPU characteristics in the flame graph:
+
+```mermaid
+graph TB
+    subgraph "Common Enterprise Function Patterns"
+        subgraph "CRUD Function"
+            CRUD["OrderService.v1"] --> DB_VALIDATE["Validate input"]
+            CRUD --> DB_QUERY["SQL query via<br/>Reactive PG Client"]
+            CRUD --> DB_MAP["Map ResultSet<br/>to JsonObject"]
+        end
+
+        subgraph "Cache-Aside Function"
+            CACHE["InventoryLookup.v1"] --> C_CHECK["Check Redis cache"]
+            C_CHECK -->|miss| C_DB["Query database"]
+            C_DB --> C_PUT["Write to Redis cache"]
+            C_CHECK -->|hit| C_RETURN["Return cached data"]
+        end
+
+        subgraph "Event Publisher Function"
+            MQ["SubmitOrder.v1"] --> MQ_VALIDATE["Validate order"]
+            MQ_VALIDATE --> MQ_PERSIST["Persist to DB"]
+            MQ_PERSIST --> MQ_PUB["Publish to Kafka topic"]
+        end
+
+        subgraph "Orchestrator Function"
+            ORCH["TransferFunds.v1"] --> O_DEBIT["Call DebitAccount API"]
+            ORCH --> O_CREDIT["Call CreditAccount API"]
+            ORCH --> O_NOTIFY["Call NotificationService API"]
+            ORCH --> O_AUDIT["Publish audit event to MQ"]
+        end
+    end
+```
+
+### CPU distribution by pattern
+
+Where CPU time is spent varies by function pattern. This determines how much value
+the profiling label provides:
+
+| Pattern | Synchronous CPU (labeled) | Async CPU (unlabeled) | Label value |
+|---------|:-------------------------:|:---------------------:|:-----------:|
+| **CRUD** (DB read/write) | 70-90% — validation, query construction, result mapping | 10-30% — response parsing | High |
+| **Cache-aside** (Redis + DB) | 60-80% — cache key construction, query build, serialization | 20-40% — cache/DB response parsing | High |
+| **Event publisher** (Kafka/MQ) | 80-95% — validation, persistence, message construction | 5-20% — publish acknowledgment | Very high |
+| **Orchestrator** (fan-out API calls) | 40-60% — request construction for each downstream call | 40-60% — response parsing from each call | Medium (Tier 2 needed) |
+| **Compute-heavy** (in-memory processing) | 90-100% — algorithm runs synchronously on event loop | 0-10% | Very high |
+| **Gateway/proxy** (pass-through) | 20-40% — header manipulation, routing | 60-80% — response forwarding | Low (Tier 2 needed) |
+
 ### Function deployment model
 
 ```mermaid
@@ -281,6 +331,58 @@ sequenceDiagram
     end
 ```
 
+### Label coverage for a typical CRUD function
+
+This sequence diagram shows a realistic enterprise function (order lookup with
+cache and database) and exactly where the label is active vs inactive:
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant EL as Event Loop
+    participant LH as Label Handler
+    participant FN as OrderLookup.v1
+    participant Redis as Redis Cache
+    participant PG as PostgreSQL
+
+    Client->>EL: GET /orders/12345
+
+    rect rgb(200, 230, 200)
+        Note over EL,FN: LABELED — synchronous on event loop
+        EL->>LH: Set label: function=OrderLookup.v1
+        LH->>FN: Parse orderId, validate input
+        FN->>FN: Build cache key: "order:12345"
+        FN->>Redis: redis.get("order:12345")
+    end
+
+    Note over EL: Event loop FREE (I/O wait)
+
+    Redis-->>FN: Cache MISS
+
+    rect rgb(255, 230, 220)
+        Note over FN: UNLABELED — async callback
+        FN->>FN: Build SQL: SELECT * FROM orders WHERE id=$1
+        FN->>PG: pgClient.preparedQuery(sql)
+    end
+
+    Note over EL: Event loop FREE (I/O wait)
+
+    PG-->>FN: ResultSet (1 row)
+
+    rect rgb(255, 230, 220)
+        Note over FN: UNLABELED — async callback
+        FN->>FN: Map Row → JsonObject
+        FN->>Redis: redis.set("order:12345", json, TTL=300)
+        FN->>Client: 200 OK + JSON body
+    end
+```
+
+In this example, the labeled portion captures input validation, cache key
+construction, and the initial cache lookup — typically the most CPU-intensive
+synchronous work. The async callbacks (DB result mapping, cache write) are
+unlabeled but usually lightweight. If profiling shows significant unlabeled CPU
+in callbacks, Tier 2 propagation can be added.
+
 ### Where CPU work happens
 
 Even in a fully reactive framework, real CPU work runs **synchronously on the event
@@ -304,6 +406,47 @@ a request. The async callback portion is unlabeled unless Tier 2 propagation is 
 
 ---
 
+## 4b. Shared event loop — why attribution is hard
+
+Multiple functions with different dependency patterns share the same event loop
+threads. Without labels, their CPU samples are indistinguishable:
+
+```mermaid
+graph TB
+    subgraph "Single Event Loop Thread"
+        EL["vert.x-eventloop-thread-0"]
+
+        EL --> R1["OrderLookup.v1<br/>Redis + PostgreSQL"]
+        EL --> R2["SubmitPayment.v1<br/>PostgreSQL + Kafka"]
+        EL --> R3["GetInventory.v1<br/>Redis only"]
+        EL --> R4["TransferFunds.v1<br/>3 API calls + MQ"]
+        EL --> R5["... 200+ more functions"]
+    end
+
+    R1 --> REDIS[("Redis")]
+    R1 --> PG[("PostgreSQL")]
+    R2 --> PG
+    R2 --> KAFKA[("Kafka")]
+    R3 --> REDIS
+    R4 --> API1["Account Service"]
+    R4 --> API2["Notification Service"]
+    R4 --> KAFKA
+
+    style EL fill:#fff3cd,stroke:#856404,color:#000
+    style R1 fill:#d4edda,stroke:#155724,color:#000
+    style R2 fill:#d4edda,stroke:#155724,color:#000
+    style R3 fill:#d4edda,stroke:#155724,color:#000
+    style R4 fill:#d4edda,stroke:#155724,color:#000
+    style R5 fill:#f8d7da,stroke:#721c24,color:#000
+```
+
+The flame graph for this event loop thread shows `JsonObject.encode()`, `PgClient.query()`,
+`RedisAPI.get()`, and `KafkaProducer.send()` all merged into one stack — no way to tell
+which function triggered which call. The `function` label solves this: filter by
+`{function="SubmitPayment.v1"}` and only that function's DB + Kafka CPU is visible.
+
+---
+
 ## 5. Why labels are required
 
 ### Without labels
@@ -324,22 +467,25 @@ identify which of the 1000+ functions is responsible.
 
 ### With labels
 
-Filter by `{function="ProcessPaymentTransfer.v1"}` and the flame graph shows
+Filter by `{function="SubmitPayment.v1"}` and the flame graph shows
 only that function's CPU:
 
 ```mermaid
 graph TB
     subgraph "Flame Graph — Filtered by function label"
-        FN["function=ProcessPaymentTransfer.v1<br/>320ms CPU"]
-        FN --> PARSE["parseRequest<br/>45ms"]
-        FN --> VALIDATE["validateTransaction<br/>180ms ← bottleneck"]
-        FN --> BUILD["buildWebClientRequest<br/>25ms"]
-        FN --> SERIAL["serializeResponse<br/>70ms"]
+        FN["function=SubmitPayment.v1<br/>320ms CPU"]
+        FN --> PARSE["parseRequest / JsonObject<br/>45ms"]
+        FN --> VALIDATE["validatePayment<br/>30ms"]
+        FN --> SQL["PgClient.preparedQuery<br/>25ms (query construction)"]
+        FN --> KAFKA["KafkaProducer.send<br/>15ms (message construction)"]
+        FN --> JACKSON["Jackson serialization<br/>180ms ← bottleneck"]
+        FN --> RESP["ctx.response().end()<br/>25ms"]
     end
 ```
 
-**Now actionable.** The payment function is spending 56% of its CPU in validation —
-the team can investigate and optimize.
+**Now actionable.** The payment function is spending 56% of its CPU in Jackson
+serialization — the team can investigate switching to a more efficient format
+or caching serialized responses.
 
 ---
 
@@ -349,7 +495,7 @@ the team can investigate and optimize.
 
 | Label | Source | Example value | Purpose |
 |-------|--------|---------------|---------|
-| `function` | Resolved at request time from the matched verticle/route | `ProcessPaymentTransfer.v1` | Identify which function is consuming CPU |
+| `function` | Resolved at request time from the matched verticle/route | `SubmitPayment.v1` | Identify which function is consuming CPU |
 
 ### Why one label
 
@@ -637,10 +783,10 @@ functions, cardinality is the primary concern.
 
 | Convention | Example | Why |
 |------------|---------|-----|
-| Use the function's canonical name | `ProcessPaymentTransfer.v1` | Matches what teams already use to identify functions |
+| Use the function's canonical name | `SubmitPayment.v1` | Matches what teams already use to identify functions |
 | Include version if relevant | `.v1`, `.v2` | Enables before/after comparison across versions |
-| Use dot-separated names | `Payment.ProcessTransfer` | Consistent with Java package naming |
-| Avoid spaces, special characters | `payment-transfer` not `Payment Transfer!` | Label values are used in query syntax |
+| Use dot-separated names | `Orders.SubmitPayment` | Consistent with Java package naming |
+| Avoid spaces, special characters | `submit-payment` not `Submit Payment!` | Label values are used in query syntax |
 
 ### What NOT to label
 
