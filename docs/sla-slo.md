@@ -87,15 +87,24 @@ Key signals:
 
 ---
 
-## Phase 2 SLO Targets
+## Phase 2 and Phase 3 SLO Targets
 
-When migrating to microservices mode with HA:
+### Phase 2 (Multi-VM monolith with block storage)
 
-| Slo | Phase 1 | Phase 2 |
+| SLO | Phase 1 | Phase 2 |
 |-----|---------|---------|
-| Data availability | 95% | 99.5% |
+| Data availability | 95% | 99% |
+| Query latency (p95) | < 5s | < 5s |
+| RPO | ~2 minutes | ~2 minutes (shared block storage) |
+| RTO | < 5 minutes | < 2 minutes (VIP failover to standby VM) |
+
+### Phase 3 (Microservices on OpenShift)
+
+| SLO | Phase 2 | Phase 3 |
+|-----|---------|---------|
+| Data availability | 99% | 99.5% |
 | Query latency (p95) | < 5s | < 2s |
 | RPO | ~2 minutes | ~30 seconds (replicated ingesters) |
-| RTO | < 5 minutes | < 1 minute (pod rescheduling) |
+| RTO | < 2 minutes | < 1 minute (pod rescheduling) |
 
-Cross-ref: [project-plan-phase1.md](project-plan-phase1.md) for Phase 2 scope.
+Cross-ref: [project-plan-phase2.md](project-plan-phase2.md) and [project-plan-phase3.md](project-plan-phase3.md) for scope.

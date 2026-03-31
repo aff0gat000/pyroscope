@@ -143,13 +143,19 @@ Connect Pyroscope to existing monitoring infrastructure.
 | Story | Size | Hands-on | Wait | Depends on | Deliverable |
 |-------|:----:|:--------:|:----:|------------|-------------|
 | 4.1 Add Pyroscope datasource to Grafana | S | 1h | — | Epic 2, P9 | Datasource health check green |
-| 4.2 Import Pyroscope dashboards into Grafana | M | 2h | — | 4.1 | 6 dashboards available |
-| 4.3 Verify flame graph panel renders with real data | S | 30m | — | 4.2, Epic 3 | Flame graphs visible |
-| 4.4 Add Pyroscope scrape target to Prometheus | S | 1h | — | Epic 2, P10 | Pyroscope metrics in Prometheus |
-| 4.5 Verify Pyroscope server health metrics in Prometheus | S | 30m | — | 4.4 | `pyroscope_ingestion_*` metrics present |
+| 4.2 Import Pyroscope server health dashboard | M | 2h | — | 4.1 | Ingestion rate, query latency, storage usage panels |
+| 4.3 Import function CPU overview dashboard | M | 2h | — | 4.1 | Top functions by CPU, filterable by label |
+| 4.4 Import thread overview dashboard | M | 2h | — | 4.1 | Thread count by pool, thread states, event loop utilization |
+| 4.5 Import thread leak detection dashboard | M | 2h | — | 4.1 | Thread creation rate, long-lived alerts, stuck thread detection |
+| 4.6 Import function comparison (diff) dashboard | M | 2h | — | 4.1 | Side-by-side flame graphs for before/after deploy |
+| 4.7 Import profiling overhead dashboard | S | 1h | — | 4.1 | Agent CPU/memory impact, push success rate |
+| 4.8 Verify flame graph panel renders with real data | S | 30m | — | 4.2, Epic 3 | Flame graphs visible |
+| 4.9 Add Pyroscope scrape target to Prometheus | S | 1h | — | Epic 2, P10 | Pyroscope metrics in Prometheus |
+| 4.10 Verify Pyroscope server health metrics in Prometheus | S | 30m | — | 4.9 | `pyroscope_ingestion_*` metrics present |
 
 > **Reference:** [grafana-setup.md](grafana-setup.md) for datasource provisioning.
-> dashboard-guide.md (available in the repo at docs/dashboard-guide.md) for panel-by-panel reference.
+> [dashboard-guide.md](dashboard-guide.md) for panel-by-panel reference.
+> [profiling-use-cases.md](profiling-use-cases.md) for dashboard backlog and enterprise customization guide.
 
 ---
 
@@ -207,14 +213,16 @@ Confirm everything works end-to-end and prepare for ongoing operations.
 Realistic timeline accounting for enterprise approval cycles. Assumes a single engineer
 with access to submit requests on day 1.
 
+> **Note:** Dates in this Gantt chart are relative placeholders (Week 1, Week 2, etc.), not a committed schedule. Actual dates depend on when prerequisites are approved.
+
 ```mermaid
 gantt
     title Phase 1 — Continuous Profiling Platform
     dateFormat  YYYY-MM-DD
-    axisFormat  %b %d
+    axisFormat  Week %W
 
     section Infrastructure
-    Submit VM + firewall + DNS requests     :p1, 2026-03-02, 1d
+    Submit VM + firewall + DNS requests     :p1, 2025-01-06, 1d
     Wait for approvals                      :crit, wait1, after p1, 14d
     Verify VM + connectivity                :v1, after wait1, 2d
 
@@ -237,7 +245,7 @@ gantt
     Verify integration                      :gp3, after gp1, 1d
 
     section BOR/SOR Functions
-    Dev environment setup                   :f0, 2026-03-02, 1d
+    Dev environment setup                   :f0, 2025-01-06, 1d
     Profile Data SOR (build + test)         :f1, after f0, 5d
     Triage BOR (build + test)               :f2, after f0, 5d
     Diff Report BOR (build + test)          :f3, after f0, 5d

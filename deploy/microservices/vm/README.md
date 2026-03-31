@@ -1,6 +1,6 @@
 # Pyroscope Microservices — VM / Docker Compose
 
-Runs Pyroscope as separate, independently scalable components on VMs using NFS-backed filesystem storage. Suitable for private enterprise environments where NFS is already available.
+Runs Pyroscope as separate, independently scalable components on VMs using block storage-backed filesystem storage. Suitable for private enterprise environments where SAN/iSCSI block storage is available.
 
 ## Architecture
 

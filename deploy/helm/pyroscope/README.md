@@ -18,7 +18,7 @@ helm upgrade --install pyroscope deploy/helm/pyroscope/ \
     -n pyroscope --create-namespace \
     -f deploy/helm/pyroscope/examples/monolith-dedicated-namespace.yaml
 
-# Microservices HA — OpenShift (requires RWX/NFS storage)
+# Microservices HA — OpenShift (requires RWX block storage)
 helm upgrade --install pyroscope deploy/helm/pyroscope/ \
     -n pyroscope --create-namespace \
     -f deploy/helm/pyroscope/examples/microservices-openshift.yaml

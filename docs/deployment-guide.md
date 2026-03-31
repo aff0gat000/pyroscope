@@ -44,9 +44,9 @@ graph TD
 
 ```mermaid
 graph TD
-    A{How many apps<br/>sending profiles?} -->|"< 100 apps<br/>simpler setup"| B["<b>Phase 1a: Single Monolith</b><br/>One VM, one process"]
-    A -->|"50-200 apps<br/>need HA"| D["<b>Phase 1b: Multi-Instance Monolith</b><br/>Multiple VMs, object storage, F5"]
-    A -->|"> 200 apps<br/>need per-component scaling"| C["<b>Phase 2: Microservices</b><br/>9 distributed components on OCP"]
+    A{How many apps<br/>sending profiles?} -->|"< 100 apps<br/>simpler setup"| B["<b>Phase 1: Single Monolith</b><br/>One VM, one process"]
+    A -->|"50-200 apps<br/>need HA"| D["<b>Phase 2: Multi-VM Monolith</b><br/>Multiple VMs, block storage, F5"]
+    A -->|"> 200 apps<br/>need per-component scaling"| C["<b>Phase 3: Microservices</b><br/>9 distributed components on OCP<br/>Needs RWX block storage"]
 
     B -->|"Need HA later?"| D
     D -->|"Need per-component<br/>scaling later?"| C
@@ -54,9 +54,9 @@ graph TD
 
 | Outcome | Go to |
 |---------|-------|
-| Phase 1a: Single monolith — one VM, simple operations | Sections [7](#7-monolith-manual-vm-deployment) - [11](#11-monolith-local-docker-compose) |
-| Phase 1b: Multi-instance monolith — multiple VMs, object storage, F5 LB | [capacity-planning.md § Deployment Type A2](capacity-planning.md#deployment-type-a2-vm-multi-instance-monolith-shared-storage--phase-1b) |
-| Phase 2: Microservices — 9 components on OCP, HA, per-component scaling | [Section 12: Microservices mode](#12-microservices-mode) |
+| Phase 1: Single monolith — one VM, simple operations | Sections [7](#7-monolith-manual-vm-deployment) - [11](#11-monolith-local-docker-compose) |
+| Phase 2: Multi-VM monolith — multiple VMs, block storage, F5 LB | [capacity-planning.md § Deployment Type A2](capacity-planning.md#deployment-type-a2-vm-multi-instance-monolith-shared-storage--phase-2) |
+| Phase 3: Microservices — 9 components on OCP, HA, block storage required | [Section 12: Microservices mode](#12-microservices-mode) |
 
 ---
 
@@ -259,7 +259,7 @@ graph TD
     E -->|Yes| G["Edit allowedNamespaces in values file<br/>helm upgrade --install ... -f monolith-dedicated-namespace.yaml<br/>Section 10b"]
 
     C -->|Yes| H["helm upgrade --install pyroscope deploy/helm/pyroscope/<br/>-n pyroscope --create-namespace<br/>-f examples/microservices-openshift.yaml<br/>Section 12c"]
-    C -->|No| I["Set up S3-compatible object storage first<br/>(MinIO, AWS S3, GCS, or Azure Blob)<br/>then return here"]
+    C -->|No| I["Set up block storage provisioner first<br/>then return here"]
 ```
 
 | Scenario | Example values file | Agent target URL |
@@ -1435,8 +1435,12 @@ bash deploy.sh clean --target local
 
 ## 12. Microservices mode
 
-Runs Pyroscope as 9 separate, independently scalable components. Requires S3-compatible
-object storage (MinIO, AWS S3, GCS, Azure Blob) shared by all components.
+Runs Pyroscope as 9 separate, independently scalable components. Requires block storage-backed
+shared storage (ReadWriteMany). All storage is filesystem-based — no MinIO or S3.
+
+> **Scaling path:** Phase 1 (single VM monolith) → Phase 2 (multi-VM monolith with block
+> storage for HA) → Phase 3 (microservices on OCP for horizontal scaling). See
+> [project-plan-phase2.md](project-plan-phase2.md) and [project-plan-phase3.md](project-plan-phase3.md).
 
 ### Architecture
 
@@ -1460,17 +1464,17 @@ graph TB
     SG[Store Gateway]
     C[Compactor]
 
-    subgraph Object Storage
-        S3[("S3-compatible storage<br/>(MinIO / AWS S3 / GCS / Azure Blob)")]
+    subgraph Shared Storage
+        BS[("Block Storage / RWX PVC")]
     end
 
-    ING1 -->|flush| S3
-    ING2 -->|flush| S3
-    ING3 -->|flush| S3
+    ING1 -->|flush| BS
+    ING2 -->|flush| BS
+    ING3 -->|flush| BS
     Q1 -->|read| SG
     Q2 -->|read| SG
-    SG -->|read blocks| S3
-    C -->|compact blocks| S3
+    SG -->|read blocks| BS
+    C -->|compact blocks| BS
 ```
 
 **Components:**
@@ -1487,7 +1491,7 @@ graph TB
 
 ### 12a. VM with Docker Compose
 
-**Prerequisites:** S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) accessible from all VMs.
+**Prerequisites:** Block storage volume mounted at `/data/pyroscope` shared across all VMs.
 
 ```bash
 cd deploy/microservices/vm
@@ -1510,7 +1514,7 @@ bash deploy.sh clean
 
 ### 12b. Kubernetes
 
-**Prerequisites:** S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob Storage).
+**Prerequisites:** ReadWriteMany (RWX) storage provisioner (block storage backed, e.g., ODF/OCS).
 
 ```bash
 # Install with Helm

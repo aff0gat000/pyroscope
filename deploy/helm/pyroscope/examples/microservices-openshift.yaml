@@ -1,4 +1,4 @@
-# Full HA microservices on OpenShift with RWX NFS storage.
+# Full HA microservices on OpenShift with RWX block storage.
 #
 # Usage:
 #   helm upgrade --install pyroscope deploy/helm/pyroscope/ \
@@ -6,7 +6,7 @@
 #       -f deploy/helm/pyroscope/examples/microservices-openshift.yaml
 #
 # Prerequisites:
-#   - ReadWriteMany storage provisioner (NFS, CephFS, OCS)
+#   - ReadWriteMany storage provisioner (block storage backed: ODF/OCS, CephFS on block devices)
 #
 # Agent target: http://pyroscope-distributor.pyroscope.svc:4040
 
@@ -17,7 +17,7 @@ image:
 
 storage:
   accessMode: ReadWriteMany
-  storageClassName: nfs-client   # Adjust to your cluster's RWX storage class
+  storageClassName: ocs-storagecluster-cephfs   # Adjust to your cluster's RWX storage class (block storage backed)
   size: 50Gi
 
 distributor:

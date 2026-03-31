@@ -11,8 +11,8 @@ Target audience: architects, security reviewers, platform engineers.
 
 - [1. Pyroscope Components](#1-pyroscope-components)
 - [2. Deployment Mode Comparison](#2-deployment-mode-comparison)
-- [3. Topology Diagrams](#3-topology-diagrams) -- [3a. VM Single Monolith](#3a-vm-single-monolith-with-nginx-tls-phase-1a) | [3a-ii. VM Multi-Instance Monolith](#3a-ii-vm-multi-instance-monolith-with-shared-storage-phase-1b) | [3b. OCP Monolith](#3b-ocp-monolith-helm-chart) | [3c. VM Microservices](#3c-vm-microservices-docker-compose) | [3d. OCP Microservices](#3d-ocp-microservices-helm-chart-phase-2) | [3e. Hybrid](#3e-hybrid-vm-pyroscope-nginx-tls--ocp-agents)
-- [4. Data Flow Diagrams](#4-data-flow-diagrams) -- [4a. Write Path](#4a-write-path-agent-to-storage) | [4b. Read Path](#4b-read-path-query-to-response) | [4c. Agent Push Flow](#4c-agent-push-flow)
+- [3. Topology Diagrams](#3-topology-diagrams) -- [3a. VM Monolith](#3a-vm-monolith-phase-1--current-deployment) | [3b. Multi-VM Monolith](#3b-multi-vm-monolith-with-block-storage-phase-2) | [3c. OCP Monolith](#3c-ocp-monolith-helm-chart) | [3d. VM Microservices](#3d-vm-microservices-docker-compose) | [3e. OCP Microservices](#3e-ocp-microservices-helm-chart) | [3f. Hybrid](#3f-hybrid-vm-pyroscope--ocp-agents)
+- [4. Data Flow Diagrams](#4-data-flow-diagrams) -- [4a. Write Path](#4a-write-path-agent--storage) | [4b. Read Path](#4b-read-path-query--response) | [4c. Agent Push Flow](#4c-agent-push-flow)
 - [5. Network Boundaries](#5-network-boundaries)
 - [6. Storage Architecture](#6-storage-architecture)
 - [7. Port Matrix Summary](#7-port-matrix-summary)
@@ -83,17 +83,18 @@ graph TB
 
 ## 2. Deployment Mode Comparison
 
-| Dimension | Single Monolith | Multi-Instance Monolith | Microservices |
-|-----------|-----------------|------------------------|---------------|
-| **Components** | All 9 components in a single process | All 9 components in a single process × N instances | Each component is an independent container/pod |
-| **Scaling** | Vertical only (add CPU/RAM to the single instance) | Horizontal — add instances behind F5. Each instance runs all 9 components | Horizontal per component (scale ingesters and queriers independently) |
-| **Storage** | Local filesystem at `/data` inside the container | S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) shared by all instances | S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) shared by all components |
-| **High availability** | No built-in HA; single point of failure | Yes — F5 health checks remove unhealthy instances. Shared storage means any instance can serve queries | Yes — replicated ingesters, multiple queriers, hash ring rebalancing |
-| **Memberlist** | Not used (all components are in-process) | Not used — each instance is independent. F5 distributes traffic | Required — ingesters form a hash ring via memberlist gossip on port 7946 |
-| **Complexity** | Low — single container, single config file | Medium — multiple VMs, object storage, F5 pool configuration | Higher — 9 containers, object storage provisioning, network policies |
-| **Object storage** | Optional (S3/GCS for long-term) | Required (shared S3/MinIO for cross-instance data access) | Optional (S3/GCS for long-term) |
-| **When to use** | Fewer than ~100 profiled applications, dev/staging, PoC, single-team use | 50-200 profiled applications, need HA without microservices complexity | 100+ profiled applications, production HA requirement, multi-team shared platform |
-| **Minimum resources** | 2 CPU, 4 GB RAM, 50 GB disk | 2× (4 CPU, 8 GB RAM) VMs + object storage | 8 CPU, 16 GB RAM + S3-compatible object storage |
+| Dimension | Monolith (Phase 1) | Multi-VM Monolith (Phase 2) | Microservices (Phase 3) |
+|-----------|----------|---------------------------|---------------|
+| **Components** | All 7 in a single process | All 7 in a single process per VM | Each component is an independent container/pod |
+| **Scaling** | Vertical only | Vertical (per VM) | Horizontal per component |
+| **Storage** | Local filesystem at `/data` | Shared block storage (SAN/iSCSI) at `/data/pyroscope` | RWX PVC backed by block storage or S3-compatible object storage |
+| **High availability** | No -- single point of failure | Yes -- VIP failover between VMs | Yes -- replicated ingesters, pod rescheduling |
+| **Load balancer** | None | F5 VIP with health check | OCP Service / Route |
+| **Memberlist** | Not used | Not used | Required -- ingesters form hash ring on port 7946 |
+| **Complexity** | Low -- single container | Low-medium -- 2 VMs, block storage, VIP | Higher -- 7+ containers, storage, network policies |
+| **Object storage** | Optional (S3/GCS) | Optional (S3/GCS) | Optional (S3/GCS) |
+| **When to use** | < 100 apps, PoC, single-team | < 100 apps, need HA, enterprise | 100+ apps, horizontal scaling, multi-team |
+| **Minimum resources** | 2 CPU, 4 GB RAM, 50 GB disk | 2x (2 CPU, 4 GB RAM), shared block storage | 8 CPU, 16 GB RAM, 100 GB RWX storage |
 
 ---
 
@@ -285,7 +286,60 @@ storage:
 
 ---
 
-### 3b. OCP Monolith (Helm chart)
+### 3b. Multi-VM Monolith with Block Storage (Phase 2)
+
+Two Pyroscope monolith instances on separate VMs, each mounting the same block storage
+volume (SAN/iSCSI). A load balancer (F5 VIP) distributes traffic and provides failover.
+
+```mermaid
+graph TB
+    subgraph "OCP 4.12 Cluster"
+        FaaS1["Vert.x FaaS Pod 1<br/>java agent"]
+        FaaS2["Vert.x FaaS Pod N<br/>java agent"]
+    end
+
+    subgraph "Load Balancer"
+        VIP["F5 VIP<br/>pyroscope.corp.example.com:443"]
+    end
+
+    subgraph "Pyroscope VM 1"
+        Pyro1["Pyroscope :4040<br/>monolith mode"]
+    end
+
+    subgraph "Pyroscope VM 2 (standby)"
+        Pyro2["Pyroscope :4040<br/>monolith mode"]
+    end
+
+    subgraph "Block Storage (SAN)"
+        BS[("Shared Block Volume<br/>/data/pyroscope")]
+    end
+
+    subgraph "Grafana VM"
+        Grafana["Grafana :3000"]
+    end
+
+    FaaS1 -->|"HTTPS POST /ingest"| VIP
+    FaaS2 -->|"HTTPS POST /ingest"| VIP
+
+    VIP -->|"TCP 4040"| Pyro1
+    VIP -.->|"failover"| Pyro2
+
+    Pyro1 --- BS
+    Pyro2 --- BS
+
+    Grafana -->|"HTTPS query"| VIP
+```
+
+**Key characteristics:**
+- Both VMs mount the same block storage volume (SAN/iSCSI) at `/data/pyroscope`
+- F5 VIP provides load balancing and health-check failover (`GET /ready`)
+- Active-passive recommended: only one VM writes at a time to avoid block-level conflicts
+- Agents push to VIP; transparent failover if active VM goes down
+- No architecture change to Pyroscope itself — same monolith binary, shared data directory
+
+---
+
+### 3c. OCP Monolith (Helm chart)
 
 Pyroscope runs as a pod inside the OCP cluster. App pods push profiles over the cluster
 SDN. External access via OCP Route.
@@ -329,10 +383,10 @@ graph TB
 
 ---
 
-### 3c. VM Microservices (Docker Compose)
+### 3d. VM Microservices (Docker Compose)
 
 All 7 Pyroscope components run as separate containers on a single VM (or spread across
-VMs with S3-compatible object storage). Memberlist gossip coordinates the hash ring.
+VMs with shared block storage or S3-compatible object storage). Memberlist gossip coordinates the hash ring.
 
 ```mermaid
 graph TB
@@ -365,29 +419,29 @@ graph TB
         ING3 <-.->|"gossip :7946"| ING1
     end
 
-    subgraph "Object Storage"
-        S3[("S3-compatible storage<br/>(MinIO / AWS S3 / GCS / Azure Blob)")]
+    subgraph "Shared Storage"
+        BS[("Block Storage Volume<br/>/data/pyroscope")]
     end
 
     Agent -->|"TCP 4040"| DIST
     Grafana -->|"TCP 4041"| QF
 
-    ING1 -->|"flush"| S3
-    ING2 -->|"flush"| S3
-    ING3 -->|"flush"| S3
-    SG -->|"read blocks"| S3
-    C -->|"compact + retention"| S3
+    ING1 -->|"flush"| BS
+    ING2 -->|"flush"| BS
+    ING3 -->|"flush"| BS
+    SG -->|"read blocks"| BS
+    C -->|"compact + retention"| BS
 ```
 
 **Key characteristics:**
 - Distributor on port 4040 (agent push), query-frontend on port 4041 (Grafana queries)
 - Memberlist gossip on TCP+UDP 7946 between ingesters (container network only)
-- S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) shared by all containers
+- Block storage mount at `/data/pyroscope` shared by all containers (or S3-compatible object storage)
 - Compactor runs continuously in the background
 
 ---
 
-### 3d. OCP Microservices (Helm chart — Phase 2)
+### 3e. OCP Microservices (Helm chart — Phase 3)
 
 Full distributed deployment on OpenShift. Each component is a separate Deployment with
 its own Service. Headless service for memberlist discovery.
@@ -454,12 +508,12 @@ graph TB
 - Agents push to `pyroscope-distributor.pyroscope.svc:4040`
 - Grafana queries `pyroscope-query-frontend.pyroscope.svc:4040`
 - Headless service enables memberlist peer discovery via DNS SRV records
-- S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) required for shared data
+- PVC must be RWX (ReadWriteMany) -- block storage backed (ODF/OCS, CephFS on block devices) or S3-compatible object storage
 - NetworkPolicy can restrict inter-namespace traffic
 
 ---
 
-### 3e. Hybrid: VM Pyroscope (Nginx TLS) + OCP Agents
+### 3f. Hybrid: VM Pyroscope (Nginx TLS) + OCP Agents
 
 The current production topology. Pyroscope and Nginx run as Docker containers on a
 dedicated VM. Nginx terminates TLS on :4040. OCP-hosted application pods push
@@ -712,30 +766,28 @@ Pyroscope container
 - **Sizing:** ~1 GB per 10 profiled JVMs per day (varies with profile frequency and cardinality)
 - **Backup:** Snapshot the Docker volume or `/data` directory
 
-### Multi-instance monolith mode (Phase 1b)
+### Multi-VM monolith (Phase 2 — block storage)
 
 ```
-S3-compatible object storage (MinIO / AWS S3 / GCS / Azure Blob)
-├── Instance 1 writes here ─┐
-├── Instance 2 writes here ──┼── All instances read/write the same bucket
-└── Instance N writes here ─┘
-
-  S3 / MinIO bucket: pyroscope-profiles
-  └── All instances configured with same bucket, endpoint, credentials
-  └── Pyroscope handles concurrent access internally
-  └── Ingesters flush blocks to local disk, then upload to object store
-  └── Compactor merges blocks in the bucket for query efficiency
+Shared Block Storage (SAN/iSCSI)
+└── /data/pyroscope/                <- Mounted on both VMs
+    ├── head/                       <- Both VMs read/write (active-passive)
+    │   └── <tenant>/<block-id>/
+    ├── local/                      <- Compacted blocks (shared reads)
+    │   └── <tenant>/<block-id>/
+    └── wal/                        <- Write-ahead log
 ```
 
-- **Object storage is required** for multi-instance deployments. This is the only shared storage backend supported by Grafana Pyroscope. No file locking issues, scales well with concurrent writers, built-in replication
-- **Each instance runs its own compactor** — configure `compactor.compaction_interval` to stagger compaction across instances to avoid contention
-- **Sizing:** Same per-JVM estimate as single monolith. Aggregate across all instances
+- **Volume:** Shared block storage (SAN LUN, iSCSI target) with clustered filesystem (GFS2) or enterprise SAN with shared LUN
+- **Access:** Both VMs mount the same volume at `/data/pyroscope`
+- **Mode:** Active-passive recommended to avoid write conflicts
+- **Sizing:** Same per-JVM estimate as monolith; shared across VMs
 
-### Microservices mode
+### Microservices mode (Phase 3)
 
 ```
-S3-compatible object storage (MinIO / AWS S3 / GCS / Azure Blob)
-└── <bucket>/                       ← Shared by all ingesters, store-gateway, compactor
+Block Storage / RWX PVC (or S3-compatible object storage)
+└── /data/pyroscope/                <- Mounted by all ingesters, store-gateway, compactor
     ├── head/                       ← Each ingester writes to its own subdirectory
     │   ├── ingester-0/<block-id>/
     │   ├── ingester-1/<block-id>/
@@ -745,8 +797,8 @@ S3-compatible object storage (MinIO / AWS S3 / GCS / Azure Blob)
     └── wal/                        ← Per-ingester WAL directories (local disk)
 ```
 
-- **Storage backend:** S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob)
-- **Local disk:** Each ingester uses local disk for WAL; blocks are flushed to object storage
+- **Volume:** Block storage mount at `/data/pyroscope` (VM) or RWX PVC (K8s/OCP), or S3-compatible object storage
+- **Storage class:** Must support ReadWriteMany if using block storage (ODF/OCS with CephFS on block devices); alternatively use S3-compatible object storage
 - **Sizing:** Same per-JVM estimate; scale with number of ingesters
 
 ### Object storage (optional)

@@ -451,7 +451,7 @@ EOF
    Mimir handles billions of active time series at Grafana Labs. Pyroscope inherits the same block-based storage, hash ring distribution, and query-frontend architecture.
 
 2. **"Monolith mode handles up to ~100 services on a single VM."**
-   A 2 GB RAM, 2 core VM is sufficient. No distributed coordination, no object storage, no NFS — a single Docker container.
+   A 2 GB RAM, 2 core VM is sufficient. No distributed coordination, no object storage, no shared storage — a single Docker container.
 
 3. **"Microservices mode scales horizontally — add ingesters for more ingestion, queriers for more queries."**
    Each component scales independently. Ingestion bottleneck? Add ingesters. Query bottleneck? Add queriers. Storage bottleneck? Switch to object storage.

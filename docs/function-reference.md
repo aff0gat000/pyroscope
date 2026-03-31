@@ -1,11 +1,11 @@
 # Pyroscope BOR/SOR Function Reference
 
 Three BOR functions (triage, diff report, fleet search) and up to 5 SOR functions for data access.
-Deployed in two phases: Phase 1 requires only Pyroscope; Phase 2 adds PostgreSQL.
+Deployed in phases: Phase 1 requires only Pyroscope; Phase 3 adds PostgreSQL.
 
 ## Deployment Phases
 
-| Capability | Phase 1 (No Database) | Phase 2 (PostgreSQL) |
+| Capability | Phase 1 (No Database) | Phase 3 (PostgreSQL) |
 |-----------|:---------------------:|:--------------------:|
 | Profile diagnosis (triage) | v1 | v2 (+ baseline comparison) |
 | Deploy comparison (diff report) | v1 | v2 (+ threshold context) |
@@ -17,8 +17,8 @@ Deployed in two phases: Phase 1 requires only Pyroscope; Phase 2 adds PostgreSQL
 | **Functions** | 3 BOR + 1 SOR | 3 BOR (v2) + 5 SOR |
 | **Infrastructure** | Pyroscope only | Pyroscope + PostgreSQL |
 
-**Start with Phase 1.** It requires no database and covers the core use cases. Add Phase 2
-when you need baselines, audit trails, or service ownership enrichment.
+**Start with Phase 1.** It requires no database and covers the core use cases. Add Phase 3
+functions when you need baselines, audit trails, or service ownership enrichment.
 
 ---
 
@@ -746,7 +746,7 @@ PROFILE_DATA_URL=http://profile-data-sor:8082
 PORT=8080
 ```
 
-### Phase 2 — With PostgreSQL (3 BOR + 5 SOR)
+### Phase 3 — With PostgreSQL (3 BOR + 5 SOR)
 
 Add database-backed SORs, then upgrade BOR functions from v1 → v2 by setting the additional SOR URLs. No code changes — config only.
 

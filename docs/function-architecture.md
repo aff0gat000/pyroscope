@@ -43,7 +43,7 @@ graph TB
         FV[FleetSearchVerticle v1]
     end
 
-    subgraph "BOR Layer — Phase 2 (v2, full features)"
+    subgraph "BOR Layer — Phase 3 (v2, full features)"
         TVF[TriageFullVerticle v2]
         DVF[DiffReportFullVerticle v2]
         FVF[FleetSearchFullVerticle v2]
@@ -60,7 +60,7 @@ graph TB
         PD[ProfileDataVerticle]
     end
 
-    subgraph "SOR Layer — Phase 2 (PostgreSQL)"
+    subgraph "SOR Layer — Phase 3 (PostgreSQL)"
         BL[BaselineVerticle]
         TH[TriageHistoryVerticle]
         SR[ServiceRegistryVerticle]
@@ -92,9 +92,9 @@ graph TB
     FVF --> SC
 
     SC -->|HTTP| PD
-    SC -.->|HTTP, Phase 2| BL
-    SC -.->|HTTP, Phase 2| TH
-    SC -.->|HTTP, Phase 2| SR
+    SC -.->|HTTP, Phase 3| BL
+    SC -.->|HTTP, Phase 3| TH
+    SC -.->|HTTP, Phase 3| SR
 
     PD --> PC
     PC --> PY
@@ -143,7 +143,7 @@ graph TD
     style PYRO fill:#fff3e0,stroke:#ff9800
 ```
 
-### Phase 2 — With PostgreSQL (8 functions)
+### Phase 3 — With PostgreSQL (8 functions)
 
 Add database-backed SORs for baseline thresholds, audit trails, service ownership, and alert rules. Upgrade BOR functions from v1 to v2 (full) by setting additional SOR URLs in config — no code changes needed.
 
@@ -158,11 +158,11 @@ Add database-backed SORs for baseline thresholds, audit trails, service ownershi
 | Diff Report | BOR | `ReadPyroscopeDiffReport.v2` | Profile Data + Baseline + History | — |
 | Fleet Search | BOR | `ReadPyroscopeFleetSearch.v2` | Profile Data + Registry | — |
 
-The full BOR variants (v2) handle missing SOR URLs gracefully — if `BASELINE_URL`, `HISTORY_URL`, or `REGISTRY_URL` is unset, those features are silently disabled. This means Phase 1 → Phase 2 is incremental: add SORs one at a time, set the URL, and the BOR picks it up.
+The full BOR variants (v2) handle missing SOR URLs gracefully — if `BASELINE_URL`, `HISTORY_URL`, or `REGISTRY_URL` is unset, those features are silently disabled. This means Phase 1 → Phase 3 is incremental: add SORs one at a time, set the URL, and the BOR picks it up.
 
 ### What Each Phase Adds
 
-| Capability | Phase 1 | Phase 2 |
+| Capability | Phase 1 | Phase 3 |
 |-----------|:-------:|:-------:|
 | Profile diagnosis | Yes | Yes |
 | Deploy comparison | Yes | Yes |
@@ -566,7 +566,7 @@ Unit tests hit the extracted business logic directly — no Vert.x, no HTTP, no 
 | `PORT` | No | HTTP listen port (default: 8080) |
 | `PYROSCOPE_URL` | Yes | Pyroscope server URL (e.g., `http://pyroscope:4040`) |
 
-**SOR verticles — PostgreSQL-backed (Phase 2):**
+**SOR verticles — PostgreSQL-backed (Phase 3):**
 
 | Variable | Required | Description |
 |----------|:--------:|-------------|

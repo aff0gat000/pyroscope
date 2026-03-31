@@ -26,7 +26,7 @@ storage:
   # ReadWriteOnce for monolith (single writer).
   # Override to ReadWriteMany for microservices (7 components share one PVC).
   accessMode: ReadWriteOnce
-  # Empty = cluster default storage class. Set explicitly for NFS, e.g. "nfs-client".
+  # Empty = cluster default storage class. Set explicitly for block storage, e.g. "ocs-storagecluster-cephfs".
   storageClassName: ""
   size: 10Gi
 

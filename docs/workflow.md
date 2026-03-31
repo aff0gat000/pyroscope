@@ -28,7 +28,7 @@ decided and why — they replace meetings and Slack threads that get lost.
 | **Feature** | New capability | "Add Triage BOR function" |
 | **Bug** | Something is broken | "Pyroscope agent not pushing profiles on OCP" |
 | **Task** | Operational or infrastructure work | "Open firewall rule for port 4040" |
-| **Question** | Need a decision before proceeding | "Should Phase 2 use OCP or raw K8s?" |
+| **Question** | Need a decision before proceeding | "Should Phase 3 use OCP or raw K8s?" |
 
 **What goes in an issue:**
 - Clear title (imperative: "Add X", "Fix Y", not "X doesn't work")
@@ -46,7 +46,8 @@ decided and why — they replace meetings and Slack threads that get lost.
 |-----------|-------|
 | **Phase 1 — POC** | Pyroscope on VM, profiling workload validated, initial docs |
 | **Phase 1 — Production** | Java agent on OCP, BOR/SOR deployed, Grafana integrated |
-| **Phase 2** | PostgreSQL SORs, v2 BORs, optional microservices mode |
+| **Phase 2** | Multi-VM monolith with block storage, HA via load balancer |
+| **Phase 3** | PostgreSQL SORs, v2 BORs, microservices mode on OpenShift |
 
 Assign every issue to a milestone. This gives a natural burndown view.
 
@@ -84,7 +85,8 @@ Start with a minimal set. Add more only when you need to filter.
 | Label | Color | Purpose |
 |-------|-------|---------|
 | `phase-1` | blue | Phase 1 scope |
-| `phase-2` | purple | Phase 2 scope |
+| `phase-2` | purple | Phase 2 scope (multi-VM) |
+| `phase-3` | red | Phase 3 scope (microservices on OCP) |
 | `bug` | red | Something is broken |
 | `feature` | green | New capability |
 | `infra` | orange | VM, OCP, networking, firewall |

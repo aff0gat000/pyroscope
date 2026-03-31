@@ -6,7 +6,7 @@
 #       -f deploy/helm/pyroscope/examples/microservices-kubernetes.yaml
 #
 # Prerequisites:
-#   - ReadWriteMany storage provisioner (NFS, CephFS)
+#   - ReadWriteMany storage provisioner (block storage backed: CephFS, GFS2)
 #   - nginx ingress controller
 #
 # Agent target: http://pyroscope-distributor.pyroscope.svc:4040
@@ -18,7 +18,7 @@ image:
 
 storage:
   accessMode: ReadWriteMany
-  storageClassName: nfs-client   # Adjust to your cluster's RWX storage class
+  storageClassName: ocs-storagecluster-cephfs   # Adjust to your cluster's RWX storage class (block storage backed)
   size: 50Gi
 
 distributor:

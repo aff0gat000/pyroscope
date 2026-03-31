@@ -28,12 +28,12 @@ pyroscope/
 │   │   ├── deploy.sh            Multi-target deployer (VM, K8s, OCP, air-gapped)
 │   │   └── ansible/             Ansible role for enterprise VMs (TLS, Grafana, idempotent)
 │   ├── helm/pyroscope/          Helm chart for Kubernetes and OpenShift (monolith + microservices)
-│   ├── microservices/vm/        Docker Compose with NFS for multi-component VM deployment
+│   ├── microservices/vm/        Docker Compose with block storage for multi-component VM deployment
 │   └── grafana/                 Standalone Grafana image build with Pyroscope plugin baked in
 │
 ├── services/                    APPLICATION — FaaS BOR/SOR analysis functions
 │   ├── faas-jvm11/              Phase 1: Java 11 (triage, diff report, fleet search)
-│   └── faas-jvm21/              Phase 2: Java 21 (records, switch expressions)
+│   └── faas-jvm21/              Phase 3: Java 21 (records, switch expressions)
 │
 ├── config/                      BOTH — Configuration files used by demo AND production
 │   ├── pyroscope/pyroscope.properties   Java agent config (demo values, production-grade comments)
@@ -171,7 +171,10 @@ Follow these when you have a specific goal.
 | [troubleshooting.md](troubleshooting.md) | Diagnose common issues — no data, empty flame graphs, connectivity, overhead |
 | [tls-setup.md](tls-setup.md) | TLS setup — F5 VIP, native TLS, Nginx/Envoy proxy, certificate strategies, agent trust |
 | [runbook.md](runbook.md) | Operations and incident response — demo and production procedures, playbooks |
-| [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — epics, stories, timeline, effort estimates |
+| [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — single VM monolith, epics, stories, timeline |
+| [project-plan-phase2.md](project-plan-phase2.md) | Phase 2 project plan — multi-VM monolith with block storage, HA |
+| [project-plan-phase3.md](project-plan-phase3.md) | Phase 3 project plan — microservices on OpenShift, PostgreSQL, v2 functions |
+| [workflow.md](workflow.md) | Development workflow — issues, PRs, async communication, incremental adoption |
 | [presentation-guide.md](presentation-guide.md) | How to present Pyroscope to leadership, architects, developers, SREs, and security |
 
 ### Explanation (understanding-oriented)
@@ -182,6 +185,8 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 |----------|-------------|
 | [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview — what continuous profiling is, business case, cost, adoption phases |
 | [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
+| [vertx-labeling-guide.md](vertx-labeling-guide.md) | Vert.x component reference, profiling label strategy, implementation approaches |
+| [profiling-use-cases.md](profiling-use-cases.md) | Enterprise use cases, AI/ML initiatives, always-on rationale, dashboard strategy |
 | [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
 | [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — two-tier labeling (automatic + LabeledFuture), async limitations |
 | [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
@@ -196,8 +201,14 @@ Look up specific facts while working.
 | [agent-configuration-reference.md](agent-configuration-reference.md) | Java agent deep dive — profile types, thread context, Vert.x edge cases, OpenTelemetry integration |
 | [capacity-planning.md](capacity-planning.md) | Sizing (Phase 1a single monolith, Phase 1b multi-instance monolith, Phase 2 OCP microservices), networking, firewall rules, enterprise scoping |
 | [sla-slo.md](sla-slo.md) | SLO definitions — data availability, query latency, RPO/RTO, error budget, escalation matrix |
+| [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search, Phase 1/3 |
+| [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |
+| [endpoint-reference.md](endpoint-reference.md) | Complete endpoint list with curl examples for all 9 services |
+| [sample-queries.md](sample-queries.md) | Copy-paste queries for Pyroscope, Prometheus, and Grafana |
+| [dashboard-guide.md](dashboard-guide.md) | Panel-by-panel reference for all 6 Grafana dashboards |
+| [faas-server.md](faas-server.md) | FaaS runtime — function deploy/undeploy lifecycle profiling |
 | [production-questionnaire-phase1.md](production-questionnaire-phase1.md) | Production onboarding questionnaire — Phase 1 volume estimates, deployment config |
-| [production-questionnaire-phase2.md](production-questionnaire-phase2.md) | Phase 2 questionnaire — PostgreSQL SORs, upgrade path, test coverage |
+| [production-questionnaire-phase2.md](production-questionnaire-phase2.md) | Phase 3 questionnaire — PostgreSQL SORs, upgrade path, test coverage |
 
 ---
 
@@ -233,7 +244,7 @@ Infrastructure-level READMEs for operators. These are **production code**, not d
 | [deploy/monolith/DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) | Production | Pyroscope image build and push to internal registry (air-gapped) |
 | [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Production | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
 | [deploy/microservices/README.md](../deploy/microservices/README.md) | Production | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
-| [deploy/microservices/vm/README.md](../deploy/microservices/vm/README.md) | Production | Microservices on VM — NFS-backed Docker Compose |
+| [deploy/microservices/vm/README.md](../deploy/microservices/vm/README.md) | Production | Microservices on VM — block storage backed Docker Compose |
 | [deploy/helm/pyroscope/](../deploy/helm/pyroscope/) | Production | Unified Helm chart — monolith and microservices, OCP and K8s |
 | [deploy/profiling-workload/README.md](../deploy/profiling-workload/README.md) | Testing | Profiling workload — validates Pyroscope on VM (no OCP needed) |
 | [deploy/grafana/README.md](../deploy/grafana/README.md) | Production | Standalone Grafana image build |
@@ -249,6 +260,7 @@ Fill-in templates for change management and governance.
 |----------|-------------|
 | [templates/change-request.md](templates/change-request.md) | CAB change request template — risk assessment, test evidence, approval signatures |
 | [templates/rollback-plan.md](templates/rollback-plan.md) | Rollback plan template — trigger criteria, steps, verification, communication |
+| [labeling-analysis-prompt.md](labeling-analysis-prompt.md) | AI copilot prompt for analyzing Vert.x server codebase for profiling label strategy |
 
 ---
 
@@ -269,8 +281,12 @@ Fill-in templates for change management and governance.
 
 1. [what-is-pyroscope.md](what-is-pyroscope.md) — business case, cost, risk assessment
 2. [capacity-planning.md § Value Proposition](capacity-planning.md#why-pyroscope-enterprise-value-proposition) — quantified benefits
-3. [project-plan-phase1.md](project-plan-phase1.md) — project plan, timeline, effort estimates
-4. [presentation-guide.md § Leadership](presentation-guide.md#presentation-1-leadership--funding-15-minutes) — how to present to executives
+3. [project-plan-phase1.md](project-plan-phase1.md) — Phase 1 plan, timeline, effort estimates
+4. [project-plan-phase2.md](project-plan-phase2.md) — Phase 2 plan (multi-VM HA)
+5. [project-plan-phase3.md](project-plan-phase3.md) — Phase 3 plan (microservices on OCP)
+6. [presentation-guide.md § Leadership](presentation-guide.md#presentation-1-leadership--funding-15-minutes) — how to present to executives
+7. [pyroscope-reference-guide.md § Talking Points](pyroscope-reference-guide.md) — funding justification and competitive analysis
+8. [continuous-profiling-runbook.md](continuous-profiling-runbook.md) — MTTR reduction data
 
 ### Architects / tech leads
 
@@ -315,7 +331,7 @@ Fill-in templates for change management and governance.
 
 > "How do I build profiling analysis functions?"
 
-1. [function-reference.md](function-reference.md) — understand the 3 BOR functions and Phase 1/2
+1. [function-reference.md](function-reference.md) — understand the 3 BOR functions and Phase 1/3
 2. [function-architecture.md](function-architecture.md) — learn the project structure
 3. [production-questionnaire-phase1.md](production-questionnaire-phase1.md) — production onboarding
 

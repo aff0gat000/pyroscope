@@ -50,7 +50,7 @@ This is the most critical security gap to address in any deployment.
 |----------|----------------|--------|-------------|
 | Network isolation | Firewall rules limiting port 4040 to trusted subnets (OCP workers, Grafana VM, admin workstations) | Low | Phase 1 (default) |
 | Reverse proxy auth | Envoy or nginx with basic auth or OIDC in front of Pyroscope | Medium | When multiple teams share the Pyroscope instance |
-| OCP Route auth | OpenShift Route with OAuth proxy sidecar | Medium | OCP-native deployments (Phase 2) |
+| OCP Route auth | OpenShift Route with OAuth proxy sidecar | Medium | OCP-native deployments (Phase 3) |
 | Helm NetworkPolicy | Set `networkPolicy.enabled: true` in Helm values | Low | K8s/OCP deployments |
 | Multi-tenancy | `X-Scope-OrgID` header for tenant isolation | Low | When isolating teams' profiling data |
 
@@ -64,7 +64,7 @@ Pyroscope has no role-based access control (RBAC) in default mode. All clients w
 access have full read/write access. Multi-tenancy via the `X-Scope-OrgID` HTTP header provides
 tenant-level data isolation but not fine-grained permissions.
 
-Phase 2 consideration: If deploying on OCP with multiple teams, use the OAuth proxy sidecar
+Phase 3 consideration: If deploying on OCP with multiple teams, use the OAuth proxy sidecar
 pattern for per-user authentication and namespace-level NetworkPolicy for pod-level isolation.
 
 ---

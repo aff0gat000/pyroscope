@@ -569,4 +569,6 @@ recognizes standard profiling tools are insufficient for reactive code.
 - [configuration-reference.md](configuration-reference.md) — Agent properties and environment variables
 - [deployment-guide.md Section 15](deployment-guide.md#15-agent-instrumentation) — Agent configuration on OCP pods
 - [tls-setup.md](tls-setup.md) — Agent HTTPS trust configuration
-- code-to-profiling-guide.md (available in the repo at docs/code-to-profiling-guide.md) — Source code to flame graph mapping
+- [code-to-profiling-guide.md](code-to-profiling-guide.md) — Source code to flame graph mapping
+- [vertx-labeling-guide.md](vertx-labeling-guide.md) — Vert.x component reference, labeling strategy, and implementation approaches
+- [labeling-analysis-prompt.md](labeling-analysis-prompt.md) — AI copilot prompt for Vert.x server codebase analysis

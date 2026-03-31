@@ -193,15 +193,33 @@ Best practice: Pin versions in production. Use `grafana/pyroscope:1.18.0`, not `
 
 ---
 
-## Phase 1 to Phase 2 Migration
+## Phase 1 to Phase 2 Migration (Single VM → Multi-VM)
 
-The migration from monolith to microservices is **server-side only** — Java agents
-do not change. The agent pushes to a URL; you change what is behind that URL.
+The migration adds a second Pyroscope VM behind a load balancer, with shared block
+storage (SAN/iSCSI). Java agents are updated to push to the VIP instead of the
+direct VM address.
 
 Steps:
-1. Deploy microservices Pyroscope (new namespace or new VM)
-2. Migrate DNS or update agent `pyroscope.server.address` to point to the new endpoint
-3. Decommission monolith after verification
+1. Provision second VM and shared block storage volume
+2. Migrate Pyroscope data directory to block storage on both VMs
+3. Configure F5 VIP with health check (`GET /ready`)
+4. Update agent `pyroscope.server.address` to point to VIP
+5. Validate failover by stopping one VM
 
-Cross-ref: [project-plan-phase1.md](project-plan-phase1.md) for Phase 2 scope.
+Cross-ref: [project-plan-phase2.md](project-plan-phase2.md) for Phase 2 scope.
+
+---
+
+## Phase 2 to Phase 3 Migration (Multi-VM → Microservices on OCP)
+
+The migration from multi-VM monolith to microservices is **server-side only** — Java
+agents do not change. The agent pushes to a URL; you change what is behind that URL.
+
+Steps:
+1. Deploy microservices Pyroscope on OCP (new namespace, block storage backed RWX PVC)
+2. Migrate DNS or update agent `pyroscope.server.address` to point to the OCP distributor
+3. Run parallel for a retention overlap period
+4. Decommission multi-VM monolith after verification
+
+Cross-ref: [project-plan-phase3.md](project-plan-phase3.md) for Phase 3 scope.
 Cross-ref: [production-questionnaire-phase2.md](production-questionnaire-phase2.md) for the upgrade path checklist.

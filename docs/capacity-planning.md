@@ -334,9 +334,51 @@ See [monitoring-guide.md](monitoring-guide.md) for Prometheus-based storage aler
 
 ---
 
-## Microservices Mode: Component Sizing
+## Phase 2: Multi-VM Monolith Sizing
 
-When monolith mode reaches its ceiling (~100 services), migrate to microservices mode.
+When HA is required but service count is still under ~100, deploy Phase 2 (multi-VM
+monolith with shared block storage).
+
+### Per-VM resource recommendations
+
+| Resource | Specification | Notes |
+|----------|---------------|-------|
+| CPU | Same as monolith sizing (2-8 cores) | Both VMs have identical specs |
+| Memory | Same as monolith sizing (4-16 GB) | Both VMs have identical specs |
+| Storage | Shared block storage (SAN/iSCSI) | Single volume mounted on both VMs |
+| Network | < 10 Mbps per VM | Same ingestion bandwidth as monolith |
+
+### Block storage requirements
+
+| Resource | Specification | Notes |
+|----------|---------------|-------|
+| Type | SAN LUN or iSCSI target | Enterprise block storage |
+| Filesystem | GFS2 (clustered) or single-writer with VIP | GFS2 for active-active, otherwise active-passive |
+| Size | Same as monolith disk sizing (100-500 GB) | Shared across VMs — not doubled |
+| Mount point | `/data/pyroscope` on both VMs | Identical path on each VM |
+| Access | Active-passive recommended | Only one VM writes at a time |
+
+### Network requirements (additional to Phase 1)
+
+| Source | Destination | Port | Protocol | Purpose |
+|--------|-------------|:----:|----------|---------|
+| F5 VIP | Both Pyroscope VMs | TCP 4040 | HTTP/HTTPS | VIP backend pool |
+| Both VMs | Block storage (SAN) | SAN fabric | FC / iSCSI | Shared data access |
+| Prometheus | Both VMs individually | TCP 4040 | HTTP | Per-VM metrics scrape |
+
+### Per-environment sizing guidance
+
+| Environment | CPU | Memory | Storage | Notes |
+|-------------|-----|--------|---------|-------|
+| **Dev** | Half of prod | Half of prod | 50 GB | Smaller for cost savings |
+| **Stage** | Same as prod | Same as prod | Same as prod | Realistic testing |
+| **Prod** | Per sizing table above | Per sizing table above | Per retention table | Production specifications |
+
+---
+
+## Phase 3: Microservices Mode — Component Sizing
+
+When monolith mode reaches its ceiling (~100 services), migrate to microservices mode on OCP.
 Each component runs as a separate pod/container and can be scaled independently.
 
 ### Per-component resource recommendations
@@ -361,9 +403,9 @@ Each component runs as a separate pod/container and can be scaled independently.
 
 ### Storage requirements
 
-| Type | Backend | Sizing | Notes |
-|------|---------|--------|-------|
-| Profile data | S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) | See retention table above | Ingesters flush blocks to local disk first, then upload to the object store |
+| Type | Mount | Access mode | Storage class | Sizing |
+|------|-------|:-----------:|---------------|--------|
+| Profile data | `/data/pyroscope` | ReadWriteMany (RWX) | Block storage backed (ODF/OCS with CephFS on block devices) or S3-compatible object storage (MinIO, AWS S3, GCS, Azure Blob) | See retention table above |
 
 > **Object storage is required.** Ingesters, store-gateway, and compactor all access the same
 > object storage bucket. NFS / shared filesystems are not a supported storage backend.
@@ -890,30 +932,29 @@ security teams. Hand the relevant section directly to each team.
 | **Monitoring** | Prometheus scrape target: `https://VM_IP:4040/metrics` | Days | Standard service discovery or static config |
 | **Grafana** | Pyroscope datasource | Days | URL: `https://pyroscope.company.com` |
 
-### Phase 1b: VM Multi-Instance Monolith with Object Storage
+### Phase 2: Multi-VM Monolith with Block Storage
 
 Everything from Phase 1a, plus:
 
 | Team | What to request | Lead time | Details |
 |------|----------------|:---------:|---------|
 | **VM / Infrastructure** | Additional RHEL VMs (2-4 total) — 4 CPU, 8 GB RAM each | 1-2 weeks | Same Docker image, same config as first VM |
-| **Storage** | S3-compatible object storage: MinIO cluster, AWS S3, GCS, or Azure Blob (250 GB - 1 TB) | 1-2 weeks | MinIO for on-premise; or use existing enterprise object storage |
+| **Storage** | Block storage volume (SAN/iSCSI) — 250 GB - 1 TB | 1-2 weeks | Mounted at `/data/pyroscope` on each VM |
 | **Network** | F5 pool: add additional VMs as pool members (TCP 4040) | Days | Same VIP, add members. Health check: `GET /ready` |
-| **Network** | Firewall rule: Pyroscope VMs → Object storage | 1-2 weeks | TCP 9000 (MinIO) or TCP 443 (AWS S3 / GCS / Azure) |
 | **Network** | Prometheus scrape targets: all Pyroscope VMs individually | Days | One scrape target per VM (not via VIP) |
 | **Security / PKI** | Same TLS cert on all VMs (or wildcard cert) | Days | VIP FQDN cert — already issued in Phase 1a |
 
-### Phase 2: OCP Microservices
+### Phase 3: OCP Microservices
 
 | Team | What to request | Lead time | Details |
 |------|----------------|:---------:|---------|
 | **OCP Platform** | Dedicated namespace (`pyroscope`) | Days | Resource quota: 16 CPU, 24 Gi memory |
 | **OCP Platform** | RBAC: service account with Deployment/Service/PVC/ConfigMap permissions | Days | For Helm chart deployment |
 | **OCP Platform** | OCP Route with TLS edge termination | Days | Hostname: `pyroscope.apps.cluster.company.com` |
-| **Storage** | S3-compatible object storage — 100-500 Gi | 1-2 weeks | MinIO, AWS S3, GCS, or Azure Blob Storage. See object storage requirements above |
+| **Storage** | RWX PersistentVolume — 100-500 Gi | 1-2 weeks | StorageClass: block storage backed (ODF/OCS). Must be ReadWriteMany |
 | **Network** | NetworkPolicy: allow ingress from app namespaces → pyroscope namespace, TCP 4040 | Days | See NetworkPolicy YAML above |
 | **Network** | NetworkPolicy: allow TCP+UDP 7946 within pyroscope namespace | Days | Required for ingester memberlist gossip |
-| **Security** | Review: no PII in profile data | 1 week | Profiles contain function names and stack traces only — no request payloads, no secrets |
+| **Security** | Review: no PII in profile data, no secrets in labels | 1 week | Profiles contain function names and stack traces only — no request payloads, no secrets |
 | **Grafana** | Pyroscope datasource | Days | URL: `http://pyroscope-query-frontend.pyroscope.svc:4040` (in-cluster) or Route URL (external) |
 
 ### Agent Rollout (both modes)
@@ -970,9 +1011,59 @@ Everything from Phase 1a, plus:
 
 ---
 
+## Dashboard and Visualization Infrastructure
+
+### Grafana resource impact
+
+Profiling dashboards with flame graph panels are heavier than standard metric dashboards.
+Flame graph rendering requires fetching and merging profile data from Pyroscope, which
+can be CPU and memory intensive for wide time ranges.
+
+| Factor | Impact | Mitigation |
+|--------|--------|------------|
+| Flame graph queries | High memory on Grafana pod during rendering | Increase Grafana memory limit; use query-frontend caching |
+| Wide time range queries | Slow response (>10s for 24h+ ranges) | Pyroscope query-frontend splits wide queries automatically |
+| Many concurrent users | Grafana CPU scales with concurrent dashboard viewers | Scale Grafana replicas; use dashboard caching |
+| Dashboard JSON storage | Negligible (KB per dashboard) | No impact |
+
+### Profiling series impact on queries
+
+The `function` label creates one profiling series per unique function. At 1000+ functions,
+query performance depends on:
+
+| Scale | Series count | Query latency (p95) | Notes |
+|-------|:----------:|:-------------------:|-------|
+| 100 functions | 100 | < 2s | Single-function queries are fast |
+| 1,000 functions | 1,000 | < 5s | Fleet-wide queries may be slower |
+| 5,000 functions | 5,000 | 5-10s | Consider query-frontend caching |
+| 10,000+ functions | 10,000+ | > 10s | Consider reducing retention or adding querier replicas |
+
+### Dashboard deployment sizing
+
+| Component | Resource | Notes |
+|-----------|----------|-------|
+| Dashboard JSON files | < 1 MB total | Negligible storage |
+| Grafana provisioning | ConfigMap or volume mount | Standard Kubernetes pattern |
+| Grafana memory for profiling | +512 Mi above baseline | Flame graph rendering buffer |
+
+### Thread monitoring resource requirements
+
+Thread dashboards rely on JVM metrics from Prometheus (not Pyroscope). Ensure:
+
+| Metric source | Requirement |
+|---------------|-------------|
+| `jvm_threads_*` | JMX exporter or Micrometer on Vert.x pods |
+| `vertx_pool_*` | Vert.x Micrometer metrics enabled |
+| `vertx_eventloop_*` | Vert.x Micrometer metrics enabled |
+
+These are standard Prometheus scrape targets — no additional Pyroscope storage impact.
+
+---
+
 ## Cross-references
 
 - [architecture.md](architecture.md) — Component details, topology diagrams, data flow, port matrix
+- [profiling-use-cases.md](profiling-use-cases.md) — Dashboard backlog, use cases, always-on rationale
 - [deployment-guide.md Section 12](deployment-guide.md#12-microservices-mode) — Microservices deployment steps
 - [deployment-guide.md Sections 17a-17d](deployment-guide.md#17a-firewall-rules-monolith-on-vm-http) — Firewall rules per mode
 - [tls-setup.md](tls-setup.md) — TLS options (F5 VIP, Nginx, Envoy, native)

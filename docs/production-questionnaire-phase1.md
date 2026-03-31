@@ -1,13 +1,14 @@
 # Production Onboarding Questionnaire — Pyroscope BOR/SOR
 
-This initiative is submitted as two phases:
+This initiative is submitted in three phases:
 
-| Phase | Functions | Database | Questionnaire |
-|-------|-----------|----------|---------------|
-| **Phase 1** | 3 BOR + 1 SOR | No | This document |
-| **Phase 2** | 3 BOR (v2) + 5 SOR | PostgreSQL | [production-questionnaire-phase2.md](production-questionnaire-phase2.md) |
+| Phase | Functions | Infrastructure | Questionnaire |
+|-------|-----------|---------------|---------------|
+| **Phase 1** | 3 BOR + 1 SOR (no database) | Single VM monolith | This document |
+| **Phase 2** | Same as Phase 1 | Multi-VM monolith with block storage | [project-plan-phase2.md](project-plan-phase2.md) |
+| **Phase 3** | 3 BOR (v2) + 5 SOR (PostgreSQL) | Microservices on OpenShift | [production-questionnaire-phase2.md](production-questionnaire-phase2.md) |
 
-Phase 1 deploys first with no database dependency. Phase 2 builds on Phase 1 by adding 4 PostgreSQL-backed SORs and upgrading the BOR functions to include baseline comparison, audit trails, and ownership enrichment. The upgrade is incremental — v2 BORs gracefully handle missing SOR URLs.
+Phase 1 deploys first with no database dependency. Phase 2 adds HA via multi-VM monolith with shared block storage and load balancer. Phase 3 builds on Phase 2 by adding 4 PostgreSQL-backed SORs, upgrading BOR functions to v2, and migrating to microservices on OpenShift. The upgrade is incremental — v2 BORs gracefully handle missing SOR URLs.
 
 ---
 
@@ -211,9 +212,9 @@ make compile        # Compile all projects
 
 ---
 
-## Upgrade Path to Phase 2
+## Upgrade Path to Phase 3
 
-When PostgreSQL is approved, upgrade to Phase 2 by:
+When PostgreSQL is approved, upgrade to Phase 3 by:
 1. Deploying 4 new PostgreSQL-backed SORs (Baseline, History, Registry, AlertRule)
 2. Switching BOR `FUNCTION` values from v1 to v2
 3. Setting additional SOR URL environment variables (`BASELINE_URL`, `HISTORY_URL`, `REGISTRY_URL`)

@@ -1,4 +1,4 @@
-# Pyroscope shared configuration — microservices mode (NFS filesystem storage)
+# Pyroscope shared configuration — microservices mode (block storage filesystem)
 # Docs: https://grafana.com/docs/pyroscope/latest/configure-server/
 
 server:
@@ -7,7 +7,7 @@ server:
 storage:
   backend: filesystem
   filesystem:
-    dir: /mnt/pyroscope-data
+    dir: /data/pyroscope
 
 memberlist:
   join_members:

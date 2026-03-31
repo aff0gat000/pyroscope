@@ -113,23 +113,24 @@ Custom analysis functions built on top of Pyroscope:
   an application), Diff Report (compare pre/post deploy), Fleet Search (find hotspots across
   all services).
 - **SOR (System of Record)** — data access layer. Wraps the Pyroscope API (Phase 1) and
-  adds PostgreSQL persistence (Phase 2).
+  adds PostgreSQL persistence (Phase 3).
 
 BORs call SORs. BORs never talk to Pyroscope or databases directly.
 
 > **API reference:** [function-reference.md](function-reference.md)
 > **Architecture:** [function-architecture.md](function-architecture.md)
 
-### What is Phase 1 vs Phase 2?
+### What are Phase 1, Phase 2, and Phase 3?
 
-| Aspect | Phase 1 | Phase 2 |
-|--------|---------|---------|
-| Pyroscope server | Monolith on VM | Optionally microservices on OCP |
-| Functions | 3 BOR + 1 SOR | 3 BOR (v2) + 5 SOR |
-| Database | None | PostgreSQL |
-| Features | Triage, diff report, fleet search | + baselines, audit trails, ownership, alerts |
+| Aspect | Phase 1 | Phase 2 | Phase 3 |
+|--------|---------|---------|---------|
+| Pyroscope server | Single VM monolith | Multi-VM monolith with block storage | Microservices on OpenShift |
+| Functions | 3 BOR + 1 SOR | Same as Phase 1 | 3 BOR (v2) + 5 SOR |
+| Database | None | None | PostgreSQL |
+| HA | No | Yes (VIP failover) | Yes (replicated ingesters) |
+| Features | Triage, diff report, fleet search | Same + HA failover | + baselines, audit trails, ownership, alerts |
 
-> **Project plan:** [project-plan-phase1.md](project-plan-phase1.md)
+> **Project plans:** [Phase 1](project-plan-phase1.md) | [Phase 2](project-plan-phase2.md) | [Phase 3](project-plan-phase3.md)
 
 ---
 

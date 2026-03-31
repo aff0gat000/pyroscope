@@ -346,7 +346,9 @@ See [docs/INDEX.md](docs/INDEX.md) for a full documentation map with learning pa
 | [docs/function-reference.md](docs/function-reference.md) | Engineers | BOR function API reference (triage, diff report, fleet search) |
 | [docs/function-architecture.md](docs/function-architecture.md) | Engineers | Project structure, design patterns, and Gradle build setup |
 | [docs/production-questionnaire-phase1.md](docs/production-questionnaire-phase1.md) | Architects | Production onboarding questionnaire — Phase 1 |
-| [docs/production-questionnaire-phase2.md](docs/production-questionnaire-phase2.md) | Architects | Production onboarding questionnaire — Phase 2 |
+| [docs/production-questionnaire-phase2.md](docs/production-questionnaire-phase2.md) | Architects | Production onboarding questionnaire — Phase 3 |
+| [docs/project-plan-phase2.md](docs/project-plan-phase2.md) | Architects | Phase 2 project plan — multi-VM monolith with block storage |
+| [docs/project-plan-phase3.md](docs/project-plan-phase3.md) | Architects | Phase 3 project plan — microservices on OpenShift |
 
 ### Deployment and Operations
 
@@ -402,7 +404,7 @@ pyroscope/
 │   │       ├── src/                 # Java 11 source + Testcontainers tests
 │   │       ├── build.gradle         # Adds pg-client + testcontainers deps
 │   │       └── Dockerfile           # eclipse-temurin:11
-│   └── faas-jvm21/            # JVM 21 target (Phase 2)
+│   └── faas-jvm21/            # JVM 21 target (Phase 3)
 │       ├── bor/                     # Same functions, Java 17+ features (records, switch expressions)
 │       └── sor/                     # Same functions, Java 17+ features
 │
@@ -424,7 +426,7 @@ pyroscope/
 │   ├── grafana/                     # Standalone Grafana image build
 │   ├── helm/pyroscope/              # Unified Helm chart (monolith + microservices, K8s + OCP)
 │   └── microservices/               # Distributed Pyroscope deployment
-│       └── vm/                      # Docker Compose + NFS (for VMs/EC2)
+│       └── vm/                      # Docker Compose + block storage (for VMs)
 │
 ├── docs/                            # see docs/INDEX.md
 │

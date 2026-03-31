@@ -1,6 +1,6 @@
 # Pyroscope Microservices Deployment
 
-Runs Pyroscope as separate, independently scalable components for high-availability production workloads. All storage uses NFS-backed filesystems — no MinIO or S3 required.
+Runs Pyroscope as separate, independently scalable components for high-availability production workloads. All storage uses block storage-backed filesystems (SAN/iSCSI) — no MinIO or S3 required.
 
 ## Architecture
 

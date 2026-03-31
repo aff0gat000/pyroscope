@@ -1,13 +1,17 @@
-# Production Onboarding Questionnaire — Phase 2 (With PostgreSQL)
+# Production Onboarding Questionnaire — Phase 3 (With PostgreSQL)
 
-Builds on [Phase 1](production-questionnaire-phase1.md). Adds 4 PostgreSQL-backed SORs and upgrades 3 BOR functions from v1 to v2.
+> **Note:** This was previously called "Phase 2" before the introduction of Phase 2
+> (multi-VM monolith with block storage). The PostgreSQL-backed SOR and v2 BOR work
+> is now Phase 3.
+
+Builds on [Phase 1](production-questionnaire-phase1.md) and [Phase 2](project-plan-phase2.md). Adds 4 PostgreSQL-backed SORs and upgrades 3 BOR functions from v1 to v2.
 
 ## Initiative Summary
 
 | Field | Answer |
 |-------|--------|
-| Initiative | Continuous profiling analysis functions for Pyroscope — Phase 2 |
-| MVP / Use Case | Phase 2 adds baseline threshold comparison, triage audit trails, service ownership enrichment, and alerting rules on top of the Phase 1 automated diagnosis, diff reporting, and fleet search capabilities. |
+| Initiative | Continuous profiling analysis functions for Pyroscope — Phase 3 |
+| MVP / Use Case | Phase 3 adds baseline threshold comparison, triage audit trails, service ownership enrichment, and alerting rules on top of the Phase 1 automated diagnosis, diff reporting, and fleet search capabilities. |
 | Business Benefit | Enables data-driven threshold enforcement ("GC is at 34% which exceeds the approved baseline of 15%"), provides an audit trail for compliance and post-mortem reviews, enriches fleet search results with team ownership for direct routing, and lays the foundation for automated profiling-based alerts. |
 | BOR functions | 3 (Triage v2, Diff Report v2, Fleet Search v2 — replace Phase 1 v1 variants) |
 | SOR functions | 5 total: 1 stateless (Profile Data, unchanged), 4 PostgreSQL-backed (Baseline, History, Registry, AlertRule) |
@@ -25,11 +29,11 @@ All functions are HTTP request/response only. No file upload/download, cron trig
 
 ## Volume and TPS Estimates
 
-Phase 2 adds 4 PostgreSQL-backed SORs and upgrades the 3 BOR functions to v2. The usage pattern remains on-demand and human-triggered — no background polling, scheduled execution, or automated triggering.
+Phase 3 adds 4 PostgreSQL-backed SORs and upgrades the 3 BOR functions to v2. The usage pattern remains on-demand and human-triggered — no background polling, scheduled execution, or automated triggering.
 
 ### BOR vs SOR volume relationship
 
-Phase 2 increases the fan-out per BOR request because v2 BOR functions call additional SORs (Baseline, History, Registry) alongside the Profile Data SOR.
+Phase 3 increases the fan-out per BOR request because v2 BOR functions call additional SORs (Baseline, History, Registry) alongside the Profile Data SOR.
 
 ```
 1 Triage v2 request       → 2 Profile Data calls + 1 Baseline call + 1 History write = 4 SOR calls
@@ -54,7 +58,7 @@ Phase 2 increases the fan-out per BOR request because v2 BOR functions call addi
 
 See [Phase 1 questionnaire](production-questionnaire-phase1.md#how-tps-estimates-were-calculated) for the full methodology. TPS is derived from: **(concurrent users) x (requests per user action) x (fan-out multiplier)**.
 
-Phase 2 BOR TPS is unchanged from Phase 1 — the same human-triggered usage patterns apply. The additional SOR TPS comes from the increased fan-out per BOR request.
+Phase 3 BOR TPS is unchanged from Phase 1 — the same human-triggered usage patterns apply. The additional SOR TPS comes from the increased fan-out per BOR request.
 
 **SOR TPS (internal calls from v2 BOR functions):**
 
@@ -69,7 +73,7 @@ Phase 2 BOR TPS is unchanged from Phase 1 — the same human-triggered usage pat
 - Baseline SOR: 8 TPS peak, rounds to "under 10" — but typical is under 1 because incidents and deploys rarely overlap
 - History SOR: 8 TPS peak, rounds to "under 10" — write-only during BOR requests, reads are rare post-mortem queries
 - Registry SOR: 2 TPS peak, rounds to "under 5" — one lookup per Fleet Search request
-- Alert Rule SOR: Under 1 TPS — admin-only CRUD, not called by any BOR function in Phase 2
+- Alert Rule SOR: Under 1 TPS — admin-only CRUD, not called by any BOR function in Phase 3
 
 All estimates are peak concurrent scenarios. The PostgreSQL-backed SORs handle small reference data and audit trail records — total database storage is expected to stay under 1 GB. No function exceeds the 100 TPS threshold.
 
