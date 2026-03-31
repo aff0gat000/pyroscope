@@ -683,7 +683,7 @@ Shorter retention dramatically reduces storage. See
 | Document | Relevance |
 |----------|-----------|
 | [async-profiling-guide.md](async-profiling-guide.md) | Labeling implementation details, LabeledFuture (Tier 2), two-tier architecture |
-| [vertx-labeling-analysis-prompt.md](vertx-labeling-analysis-prompt.md) | AI copilot prompt for analyzing the Vert.x server codebase |
+| [labeling-analysis-prompt.md](labeling-analysis-prompt.md) | AI copilot prompt for analyzing the Vert.x server codebase |
 | [configuration-reference.md](configuration-reference.md) | Pyroscope agent properties and environment variables |
 | [capacity-planning.md](capacity-planning.md) | Storage sizing and series count impact |
 | [architecture.md](architecture.md) | Deployment topology diagrams |

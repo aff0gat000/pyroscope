@@ -278,7 +278,9 @@ print(json.dumps(content), end='')
 find_page_id() {
     local title="$1"
     local encoded_title
-    encoded_title=$(python3 -c "import urllib.parse; print(urllib.parse.quote('$title'))" 2>/dev/null || echo "$title")
+    # Use python3 for proper URL encoding; fallback to sed-based encoding for spaces
+    encoded_title=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$title" 2>/dev/null \
+        || echo "$title" | sed 's/ /%20/g; s/&/%26/g; s/+/%2B/g')
 
     local response
     response=$(curl "${CURL_OPTS[@]}" "${AUTH_ARGS[@]}" \
@@ -704,11 +706,67 @@ ENDJSON
                 upload_attachments "$page_id" "$basename"
             fi
         else
-            echo "  FAILED:  ${title} (HTTP ${http_code})" >&2
+            # If create failed because page already exists, retry as update
+            local error_msg=""
             if [[ "$HAS_JQ" == "true" ]]; then
-                echo "$response" | head -1 | jq -r '.message // empty' 2>/dev/null | sed 's/^/           /' >&2
+                error_msg=$(echo "$response" | head -1 | jq -r '.message // empty' 2>/dev/null)
             fi
-            return 1
+            if echo "$error_msg" | grep -qi "title already exists"; then
+                echo "  Page exists but wasn't found by search — retrying as update..."
+                local retry_id
+                retry_id=$(find_page_id "$title" 2>/dev/null) || true
+                if [[ -z "$retry_id" ]]; then
+                    # Search by title without prefix as last resort
+                    echo "  FAILED:  ${title} — page exists but cannot be found by API search" >&2
+                    echo "           Delete the existing page in Confluence or rename it, then retry." >&2
+                    return 1
+                fi
+                local version
+                version=$(get_page_version "$retry_id" 2>/dev/null) || version=0
+                local new_version=$((version + 1))
+                local update_payload
+                update_payload=$(cat <<ENDJSON
+{
+    "id": "${retry_id}",
+    "type": "page",
+    "title": "${title}",
+    "space": {"key": "${CONFLUENCE_SPACE_KEY}"},
+    ${ancestors}
+    "version": {"number": ${new_version}},
+    "body": {
+        "wiki": {
+            "value": ${wiki_body},
+            "representation": "wiki"
+        }
+    },
+    "metadata": {
+        "labels": [{"name": "${CONFLUENCE_LABEL}", "prefix": "global"}]
+    }
+}
+ENDJSON
+)
+                local retry_response
+                retry_response=$(curl "${CURL_OPTS[@]}" "${AUTH_ARGS[@]}" -w "\n%{http_code}" \
+                    -X PUT \
+                    -H "Content-Type: application/json" \
+                    -d "$update_payload" \
+                    "${API_BASE}/${retry_id}" 2>/dev/null) || true
+                local retry_code
+                retry_code=$(echo "$retry_response" | tail -1)
+                if [[ "$retry_code" == "200" ]]; then
+                    echo "  UPDATED: ${title} (id=${retry_id}, v${new_version}) [retry]"
+                    upload_attachments "$retry_id" "$basename"
+                else
+                    echo "  FAILED:  ${title} (HTTP ${retry_code} on retry)" >&2
+                    return 1
+                fi
+            else
+                echo "  FAILED:  ${title} (HTTP ${http_code})" >&2
+                if [[ -n "$error_msg" ]]; then
+                    echo "           ${error_msg}" >&2
+                fi
+                return 1
+            fi
         fi
     fi
 }

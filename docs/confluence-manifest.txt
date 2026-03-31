@@ -47,7 +47,7 @@ capacity-planning.md                    # [R] Sizing, networking, firewall, ente
 sla-slo.md                              # [R] SLO definitions, RPO/RTO, error budget
 production-questionnaire-phase1.md      # [R] Phase 1 production onboarding questionnaire
 production-questionnaire-phase2.md      # [R] Phase 2 onboarding questionnaire
-vertx-labeling-analysis-prompt.md             # [R] AI copilot prompt for Vert.x codebase analysis
+labeling-analysis-prompt.md             # [R] AI copilot prompt for Vert.x codebase analysis
 
 # --- Architecture Decision Records ---
 adr/ADR-001-continuous-profiling.md     # [E] ADR: Pyroscope monolith on VM

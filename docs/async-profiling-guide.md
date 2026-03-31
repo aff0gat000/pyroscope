@@ -571,4 +571,4 @@ recognizes standard profiling tools are insufficient for reactive code.
 - [tls-setup.md](tls-setup.md) — Agent HTTPS trust configuration
 - [code-to-profiling-guide.md](code-to-profiling-guide.md) — Source code to flame graph mapping
 - [vertx-labeling-guide.md](vertx-labeling-guide.md) — Vert.x component reference, labeling strategy, and implementation approaches
-- [vertx-labeling-analysis-prompt.md](vertx-labeling-analysis-prompt.md) — AI copilot prompt for Vert.x server codebase analysis
+- [labeling-analysis-prompt.md](labeling-analysis-prompt.md) — AI copilot prompt for Vert.x server codebase analysis
