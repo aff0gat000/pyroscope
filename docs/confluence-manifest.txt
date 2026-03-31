@@ -17,6 +17,7 @@ function-architecture.md                # [E] BOR/SOR project structure, design 
 security-model.md                       # [E] Data classification, auth, compliance
 async-profiling-guide.md                # [E] Async framework profiling, labeling strategy
 faq.md                                  # [E] Frequently asked questions
+profiling-use-cases.md                  # [E] Enterprise use cases, AI/ML, dashboards, always-on
 
 # --- Tutorials (learning-oriented) ---
 getting-started.md                      # [T] Day-one orientation, glossary, reading paths
@@ -32,6 +33,9 @@ troubleshooting.md                      # [H] Diagnose common issues
 tls-setup.md                            # [H] TLS strategies, F5 VIP, Nginx, Envoy, certs
 runbook.md                              # [H] Operations and incident response
 project-plan-phase1.md                  # [H] Phase 1 project plan, timeline, effort
+project-plan-phase2.md                  # [H] Phase 2 project plan — multi-VM monolith, HA
+project-plan-phase3.md                  # [H] Phase 3 project plan — microservices on OCP
+vertx-labeling-guide.md                 # [H] Vert.x labeling strategy, implementation approaches
 presentation-guide.md                   # [H] Present to leadership, architects, devs, SREs
 
 # --- Reference (information-oriented) ---
@@ -42,6 +46,7 @@ capacity-planning.md                    # [R] Sizing, networking, firewall, ente
 sla-slo.md                              # [R] SLO definitions, RPO/RTO, error budget
 production-questionnaire-phase1.md      # [R] Phase 1 production onboarding questionnaire
 production-questionnaire-phase2.md      # [R] Phase 2 onboarding questionnaire
+labeling-analysis-prompt.md             # [R] AI copilot prompt for Vert.x codebase analysis
 
 # --- Architecture Decision Records ---
 adr/ADR-001-continuous-profiling.md     # [E] ADR: Pyroscope monolith on VM
