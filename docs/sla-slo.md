@@ -89,13 +89,13 @@ Key signals:
 
 ## Phase 2 and Phase 3 SLO Targets
 
-### Phase 2 (Multi-VM monolith with block storage)
+### Phase 2 (Multi-VM monolith with S3-compatible object storage)
 
 | SLO | Phase 1 | Phase 2 |
 |-----|---------|---------|
 | Data availability | 95% | 99% |
 | Query latency (p95) | < 5s | < 5s |
-| RPO | ~2 minutes | ~2 minutes (shared block storage) |
+| RPO | ~2 minutes | ~2 minutes (S3-compatible object storage) |
 | RTO | < 5 minutes | < 2 minutes (VIP failover to standby VM) |
 
 ### Phase 3 (Microservices on OpenShift)

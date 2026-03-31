@@ -1,4 +1,4 @@
-# Full HA microservices on OpenShift with RWX block storage.
+# Full HA microservices on OpenShift with S3-compatible object storage.
 #
 # Usage:
 #   helm upgrade --install pyroscope deploy/helm/pyroscope/ \
@@ -6,7 +6,7 @@
 #       -f deploy/helm/pyroscope/examples/microservices-openshift.yaml
 #
 # Prerequisites:
-#   - ReadWriteMany storage provisioner (block storage backed: ODF/OCS, CephFS on block devices)
+#   - S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob)
 #
 # Agent target: http://pyroscope-distributor.pyroscope.svc:4040
 
@@ -16,9 +16,14 @@ image:
   tag: "1.18.0"
 
 storage:
-  accessMode: ReadWriteMany
-  storageClassName: ocs-storagecluster-cephfs   # Adjust to your cluster's RWX storage class (block storage backed)
-  size: 50Gi
+  accessMode: ReadWriteOnce
+  size: 10Gi    # PVC for ingester WAL only; profile data lives in S3
+  s3:
+    endpoint: "http://minio.minio.svc:9000"    # Adjust to your S3-compatible endpoint
+    bucketName: pyroscope
+    accessKeyId: pyroscope
+    secretAccessKey: supersecret
+    insecure: true                              # Set false for TLS endpoints (AWS S3, etc.)
 
 distributor:
   replicas: 1

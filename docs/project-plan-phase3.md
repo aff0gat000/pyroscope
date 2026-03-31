@@ -28,8 +28,8 @@ Simultaneously, BOR/SOR functions are upgraded to v2 with PostgreSQL persistence
 
 | Layer | Phase 2 scope | Phase 3 scope |
 |-------|---------------|---------------|
-| **Server architecture** | Multi-VM monolith with block storage | Microservices on OCP (7 components) |
-| **Storage** | Shared block storage (SAN/iSCSI) | RWX PVC backed by block storage (ODF/OCS) |
+| **Server architecture** | Multi-VM monolith with S3-compatible object storage | Microservices on OCP (7 components) |
+| **Storage** | S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob) | S3-compatible object storage (same backend, OCP-managed configuration) |
 | **High availability** | Active-passive via VIP | Replicated ingesters, pod rescheduling |
 | **Function deployment** | 3 BOR + 1 SOR, no database | 3 BOR (v2) + 5 SOR, PostgreSQL |
 | **JVM target** | faas-jvm11 | faas-jvm21 (Java 21 features) |
@@ -38,7 +38,7 @@ Simultaneously, BOR/SOR functions are upgraded to v2 with PostgreSQL persistence
 ### In scope
 
 - Pyroscope microservices (7 components) deployed via Helm chart on OCP
-- RWX PersistentVolumeClaim backed by block storage (ODF/OCS with CephFS on block devices)
+- S3-compatible object storage (same backend as Phase 2, reconfigured for OCP microservices)
 - OCP Routes with TLS edge termination for external Grafana access
 - NetworkPolicy for namespace isolation
 - PostgreSQL instance for SOR persistence
@@ -53,7 +53,7 @@ Simultaneously, BOR/SOR functions are upgraded to v2 with PostgreSQL persistence
 
 - FIPS-compliant builds
 - Multi-cluster deployment
-- Object storage backend (S3/GCS) — can be added post-Phase 3
+- Multi-region S3 replication — can be added post-Phase 3
 - Automated triage triggers (future enhancement)
 
 ---
@@ -66,7 +66,7 @@ Complete these before starting Epic 1. Phase 2 must be complete and stable.
 |---|-------------|----------|-----------|--------|
 | P1 | Phase 2 complete and stable (all D1-D10 criteria met) | Project owner | — | |
 | P2 | OCP namespace provisioned (`pyroscope`) with resource quota (24 CPU, 40 Gi memory) | OCP platform team | 1-2 weeks | |
-| P3 | RWX StorageClass available (block storage backed, e.g., ODF/OCS) | Storage / OCP platform team | 1-2 weeks | |
+| P3 | S3-compatible object storage accessible from OCP (MinIO, AWS S3, GCS, or Azure Blob) | Storage / OCP platform team | 1-2 weeks | |
 | P4 | PostgreSQL instance provisioned (dev, stage, prod) | DBA team | 2-4 weeks | |
 | P5 | Container registry access for Pyroscope and FaaS images | Container platform team | 3-5 days | |
 | P6 | Helm 3 available on deployment workstation | Engineering team | — | |
@@ -76,7 +76,7 @@ Complete these before starting Epic 1. Phase 2 must be complete and stable.
 | P10 | JDK 21 available on build servers for faas-jvm21 | Build infrastructure team | 1 week | |
 
 > **Tip:** Submit P2-P5 and P7-P10 in parallel on day 1. The critical path is
-> typically P4 (PostgreSQL provisioning) and P3 (RWX StorageClass).
+> typically P4 (PostgreSQL provisioning) and P3 (S3-compatible object storage).
 
 ---
 
@@ -87,7 +87,7 @@ Complete these before starting Epic 1. Phase 2 must be complete and stable.
 | Story | Size | Hands-on | Wait | Depends on | Env | Deliverable |
 |-------|:----:|:--------:|:----:|------------|:---:|-------------|
 | 1.1 Request OCP namespace with resource quota | S | 1h | 1-2 weeks | P1 | all | `pyroscope` namespace created |
-| 1.2 Request RWX StorageClass (block storage backed) | S | 1h | 1-2 weeks | — | all | StorageClass available |
+| 1.2 Verify S3-compatible object storage accessible from OCP | S | 1h | 1-2 weeks | — | all | S3 bucket accessible |
 | 1.3 Request PostgreSQL instances (dev, stage, prod) | S | 1h | 2-4 weeks | — | all | PostgreSQL accessible |
 | 1.4 Request container registry access | S | 30m | 3-5 days | — | all | Can push/pull images |
 | 1.5 Configure RBAC / service account | S | 1h | 3-5 days | 1.1 | all | Service account ready |
@@ -121,7 +121,7 @@ Deploy the 7 Pyroscope components via Helm chart on OCP.
 | Story | Size | Hands-on | Wait | Depends on | Env | Deliverable |
 |-------|:----:|:--------:|:----:|------------|:---:|-------------|
 | 3.1 Deploy Helm chart to dev namespace | M | 2h | — | 1.7 | dev | All 7 components healthy |
-| 3.2 Create RWX PVC (block storage backed) | S | 1h | — | 1.2 | dev | PVC bound |
+| 3.2 Configure S3-compatible object storage for microservices | S | 1h | — | 1.2 | dev | S3 bucket accessible from pods |
 | 3.3 Validate all components healthy (`/ready` endpoints) | S | 1h | — | 3.1, 3.2 | dev | All pods ready |
 | 3.4 Test ingestion (push test profiles to distributor) | M | 2h | — | 3.3 | dev | Profiles visible in query-frontend |
 | 3.5 Deploy Helm chart to stage namespace | M | 2h | — | 3.4 | stage | All 7 components healthy |
@@ -150,7 +150,7 @@ Migrate Java agents from Phase 2 VIP to OCP distributor service. This is the cut
 | 4.6 Submit change record for production agent migration | S | 1h | 1-2 weeks | 4.5 | — | Change approved |
 | 4.7 Rolling migration of production agents | L | 4h | — | 4.6 | prod | All agents pushing to OCP distributor |
 | 4.8 Parallel run: keep Phase 2 VMs running during overlap period | M | — | 1-2 weeks | 4.7 | prod | Both systems receiving data |
-| 4.9 Decommission Phase 2 VMs after retention overlap | M | 2h | — | 4.8 | prod | VMs shut down, block storage retained |
+| 4.9 Decommission Phase 2 VMs after retention overlap | M | 2h | — | 4.8 | prod | VMs shut down, S3 storage retained |
 
 > **Agent change is transparent.** Update `pyroscope.server.address` from VIP URL to
 > OCP distributor service URL. No code changes. Rolling restart of pods.
@@ -195,7 +195,7 @@ Deploy faas-jvm21 BOR and SOR functions with v2 capabilities.
 | Story | Size | Hands-on | Wait | Depends on | Env | Deliverable |
 |-------|:----:|:--------:|:----:|------------|:---:|-------------|
 | 7.1 End-to-end smoke test (all functions, all profile types) | M | 1 day | — | Epics 3-6 | prod | All endpoints return expected data |
-| 7.2 Validate data retention and storage consumption on OCP | S | 2h | — | 7.1 | prod | PVC usage within capacity plan |
+| 7.2 Validate data retention and storage consumption on OCP | S | 2h | — | 7.1 | prod | S3 bucket usage within capacity plan |
 | 7.3 Decommission Phase 2 VMs (after retention overlap) | M | 2h | — | 4.9 | prod | VMs shut down |
 | 7.4 Update operational runbook for OCP microservices | M | 1 day | — | 7.1 | — | Runbook covers pod restart, scaling, PVC expansion |
 | 7.5 Knowledge transfer with operations team | M | 2h | — | 7.4 | — | Ops team can operate OCP deployment |
@@ -284,7 +284,7 @@ gantt
 |----------|:--------:|-------|
 | Engineering labor | 4-6 weeks FTE | Includes deployment, testing, migration, documentation |
 | OCP namespace | 24 CPU, 40 Gi memory quota | Existing OCP cluster |
-| RWX storage | 100-500 Gi PVC | Existing ODF/OCS infrastructure |
+| Object storage | S3 bucket (100-500 GB) | Existing MinIO or cloud S3 infrastructure |
 | PostgreSQL | 1 instance (dev/stage/prod) | Existing DBA-managed infrastructure |
 | Software licensing | $0 | Pyroscope AGPL-3.0, Grafana OSS Apache 2.0 |
 
@@ -294,7 +294,7 @@ gantt
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|------|:----------:|:------:|------------|
-| R1 | RWX StorageClass not available on OCP | Medium | High — blocks microservices | Verify with OCP platform team early; ODF/OCS provides RWX |
+| R1 | S3-compatible object storage not accessible from OCP | Medium | High — blocks microservices | Verify with storage team early; MinIO or cloud S3 provides access |
 | R2 | PostgreSQL provisioning delayed | Medium | High — blocks SOR deployment | Submit request on day 1; can be done by DBA in parallel |
 | R3 | Agent migration causes ingestion gap | Low | Medium — brief profiling gap | Rolling migration with parallel run; agents retry on failure |
 | R4 | Microservices mode more complex to operate | Medium | Medium — ops learning curve | Knowledge transfer session, detailed runbook, Grafana dashboards |
@@ -308,7 +308,7 @@ gantt
 | Dependency | Owner | Required by |
 |------------|-------|-------------|
 | OCP namespace + RBAC | OCP platform team | Epic 1 |
-| RWX StorageClass (ODF/OCS) | Storage / OCP platform team | Epic 3 |
+| S3-compatible object storage | Storage / OCP platform team | Epic 3 |
 | PostgreSQL instances | DBA team | Epic 2 |
 | Helm 3 | Engineering team | Epic 3 |
 | JDK 21 on build servers | Build infrastructure team | Epic 5 |
@@ -323,15 +323,15 @@ Phase 3 is complete when all of the following are true:
 | # | Acceptance criteria | Verification |
 |---|--------------------|--------------|
 | D1 | All 7 Pyroscope components healthy on OCP | All pods show Ready, `curl /ready` returns 200 for each |
-| D2 | RWX PVC bound and accessible by ingesters, store-gateway, compactor | `kubectl get pvc` shows Bound, `df -h /data/pyroscope` shows expected size |
+| D2 | S3-compatible object storage accessible by ingesters, store-gateway, compactor | S3 connectivity verified, bucket exists and is writable |
 | D3 | Memberlist hash ring formed with 3 ingesters | `curl /memberlist` shows 3 members |
 | D4 | All Java agents pushing to OCP distributor service | Pyroscope UI shows all application names |
 | D5 | Grafana queries via OCP Route or Service URL | Flame graphs render with production data |
 | D6 | Prometheus scraping all 7 components | Per-component metrics available |
 | D7 | PostgreSQL SORs operational (Baseline, History, Registry, AlertRule) | All SOR endpoints return expected data |
 | D8 | v2 BOR functions operational with baseline comparison and audit trail | `GET /triage/<app>` returns diagnosis with baseline annotation |
-| D9 | Phase 2 VMs decommissioned (after retention overlap) | VMs shut down, block storage retained per policy |
-| D10 | Operational runbook updated for OCP microservices | Ops team can restart pods, scale components, expand PVC |
+| D9 | Phase 2 VMs decommissioned (after retention overlap) | VMs shut down, S3 storage retained per policy |
+| D10 | Operational runbook updated for OCP microservices | Ops team can restart pods, scale components, manage S3 storage |
 | D11 | Stakeholder demo completed and sign-off received | Phase 3 accepted |
 
 ---

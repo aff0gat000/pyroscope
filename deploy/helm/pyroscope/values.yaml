@@ -8,7 +8,7 @@ fullnameOverride: ""
 # Deployment mode
 # --------------------------------------------------------------------------
 # "monolith"      — single Deployment + single Service (< 100 apps, simpler ops)
-# "microservices" — 7 Deployments + 3 Services (> 100 apps, HA, requires RWX storage)
+# "microservices" — 7 Deployments + 3 Services (> 100 apps, HA, requires S3-compatible object storage)
 mode: monolith
 
 # --------------------------------------------------------------------------
@@ -23,12 +23,20 @@ image:
 # Storage
 # --------------------------------------------------------------------------
 storage:
-  # ReadWriteOnce for monolith (single writer).
-  # Override to ReadWriteMany for microservices (7 components share one PVC).
+  # Monolith uses a local PVC (ReadWriteOnce).
+  # Microservices use S3-compatible object storage — PVC is only used for ingester WAL.
   accessMode: ReadWriteOnce
-  # Empty = cluster default storage class. Set explicitly for block storage, e.g. "ocs-storagecluster-cephfs".
+  # Empty = cluster default storage class.
   storageClassName: ""
   size: 10Gi
+  # S3-compatible object storage backend (used in microservices mode).
+  # Supports MinIO, AWS S3, GCS, or Azure Blob.
+  s3:
+    endpoint: ""          # e.g. "http://minio.minio.svc:9000" or "s3.amazonaws.com"
+    bucketName: pyroscope
+    accessKeyId: ""
+    secretAccessKey: ""
+    insecure: false       # Set true for non-TLS endpoints (e.g. local MinIO)
 
 # --------------------------------------------------------------------------
 # Monolith settings (ignored when mode: microservices)

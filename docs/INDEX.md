@@ -28,7 +28,7 @@ pyroscope/
 │   │   ├── deploy.sh            Multi-target deployer (VM, K8s, OCP, air-gapped)
 │   │   └── ansible/             Ansible role for enterprise VMs (TLS, Grafana, idempotent)
 │   ├── helm/pyroscope/          Helm chart for Kubernetes and OpenShift (monolith + microservices)
-│   ├── microservices/vm/        Docker Compose with block storage for multi-component VM deployment
+│   ├── microservices/vm/        Docker Compose with S3-compatible object storage for multi-component VM deployment
 │   └── grafana/                 Standalone Grafana image build with Pyroscope plugin baked in
 │
 ├── services/                    APPLICATION — FaaS BOR/SOR analysis functions
@@ -172,7 +172,7 @@ Follow these when you have a specific goal.
 | [tls-setup.md](tls-setup.md) | TLS setup — F5 VIP, native TLS, Nginx/Envoy proxy, certificate strategies, agent trust |
 | [runbook.md](runbook.md) | Operations and incident response — demo and production procedures, playbooks |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — single VM monolith, epics, stories, timeline |
-| [project-plan-phase2.md](project-plan-phase2.md) | Phase 2 project plan — multi-VM monolith with block storage, HA |
+| [project-plan-phase2.md](project-plan-phase2.md) | Phase 2 project plan — multi-VM monolith with S3-compatible object storage, HA |
 | [project-plan-phase3.md](project-plan-phase3.md) | Phase 3 project plan — microservices on OpenShift, PostgreSQL, v2 functions |
 | [workflow.md](workflow.md) | Development workflow — issues, PRs, async communication, incremental adoption |
 | [presentation-guide.md](presentation-guide.md) | How to present Pyroscope to leadership, architects, developers, SREs, and security |
@@ -244,7 +244,7 @@ Infrastructure-level READMEs for operators. These are **production code**, not d
 | [deploy/monolith/DOCKER-BUILD.md](../deploy/monolith/DOCKER-BUILD.md) | Production | Pyroscope image build and push to internal registry (air-gapped) |
 | [deploy/monolith/ansible/README.md](../deploy/monolith/ansible/README.md) | Production | Ansible role for enterprise VMs (TLS, skip-grafana, image loading) |
 | [deploy/microservices/README.md](../deploy/microservices/README.md) | Production | Distributed Pyroscope deployment (VM, K8s, OpenShift) |
-| [deploy/microservices/vm/README.md](../deploy/microservices/vm/README.md) | Production | Microservices on VM — block storage backed Docker Compose |
+| [deploy/microservices/vm/README.md](../deploy/microservices/vm/README.md) | Production | Microservices on VM — S3-compatible object storage backed Docker Compose |
 | [deploy/helm/pyroscope/](../deploy/helm/pyroscope/) | Production | Unified Helm chart — monolith and microservices, OCP and K8s |
 | [deploy/profiling-workload/README.md](../deploy/profiling-workload/README.md) | Testing | Profiling workload — validates Pyroscope on VM (no OCP needed) |
 | [deploy/grafana/README.md](../deploy/grafana/README.md) | Production | Standalone Grafana image build |

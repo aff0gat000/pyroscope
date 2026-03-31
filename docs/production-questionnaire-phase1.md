@@ -5,10 +5,10 @@ This initiative is submitted in three phases:
 | Phase | Functions | Infrastructure | Questionnaire |
 |-------|-----------|---------------|---------------|
 | **Phase 1** | 3 BOR + 1 SOR (no database) | Single VM monolith | This document |
-| **Phase 2** | Same as Phase 1 | Multi-VM monolith with block storage | [project-plan-phase2.md](project-plan-phase2.md) |
+| **Phase 2** | Same as Phase 1 | Multi-VM monolith with S3-compatible object storage | [project-plan-phase2.md](project-plan-phase2.md) |
 | **Phase 3** | 3 BOR (v2) + 5 SOR (PostgreSQL) | Microservices on OpenShift | [production-questionnaire-phase2.md](production-questionnaire-phase2.md) |
 
-Phase 1 deploys first with no database dependency. Phase 2 adds HA via multi-VM monolith with shared block storage and load balancer. Phase 3 builds on Phase 2 by adding 4 PostgreSQL-backed SORs, upgrading BOR functions to v2, and migrating to microservices on OpenShift. The upgrade is incremental — v2 BORs gracefully handle missing SOR URLs.
+Phase 1 deploys first with no database dependency. Phase 2 adds HA via multi-VM monolith with S3-compatible object storage and load balancer. Phase 3 builds on Phase 2 by adding 4 PostgreSQL-backed SORs, upgrading BOR functions to v2, and migrating to microservices on OpenShift. The upgrade is incremental — v2 BORs gracefully handle missing SOR URLs.
 
 ---
 

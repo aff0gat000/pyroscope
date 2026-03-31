@@ -1,6 +1,6 @@
 # Pyroscope Microservices — VM / Docker Compose
 
-Runs Pyroscope as separate, independently scalable components on VMs using block storage-backed filesystem storage. Suitable for private enterprise environments where SAN/iSCSI block storage is available.
+Runs Pyroscope as separate, independently scalable components on VMs using S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob). Suitable for private enterprise environments.
 
 ## Architecture
 
@@ -29,20 +29,20 @@ graph TB
         SG[Store Gateway]
     end
 
-    subgraph NFS Share
-        NFS[("/mnt/pyroscope-data")]
+    subgraph Object Storage
+        S3[("S3 / MinIO")]
     end
 
     DIST --> ING1
     DIST --> ING2
     DIST --> ING3
-    ING1 -->|flush| NFS
-    ING2 -->|flush| NFS
-    ING3 -->|flush| NFS
+    ING1 -->|flush| S3
+    ING2 -->|flush| S3
+    ING3 -->|flush| S3
     Q1 -->|read| SG
     Q2 -->|read| SG
-    SG -->|read blocks| NFS
-    C -->|compact blocks| NFS
+    SG -->|read blocks| S3
+    C -->|compact blocks| S3
     QF --> QS
     QS --> Q1
     QS --> Q2
@@ -55,7 +55,7 @@ sequenceDiagram
     participant SDK as JVM Service
     participant D as Distributor
     participant I as Ingester (x3)
-    participant NFS as NFS Share
+    participant S3 as S3 Object Storage
     participant C as Compactor
     participant QF as Query Frontend
     participant QS as Query Scheduler
@@ -64,15 +64,15 @@ sequenceDiagram
 
     SDK->>D: POST /ingest (profiles)
     D->>I: Route to ingester (hash ring)
-    I->>NFS: Flush blocks to filesystem
-    C->>NFS: Compact small blocks
+    I->>S3: Flush blocks to object storage
+    C->>S3: Compact small blocks
 
     Note over QF,SG: Read path
     QF->>QS: Incoming query
     QS->>Q: Schedule query work
     Q->>I: Read recent data (in-memory)
     Q->>SG: Read historical data
-    SG->>NFS: Fetch blocks from filesystem
+    SG->>S3: Fetch blocks from object storage
     Q->>QF: Merged result
 ```
 
@@ -81,12 +81,13 @@ sequenceDiagram
 | Service | Replicas | Role |
 |---------|----------|------|
 | **distributor** | 1 | Routes incoming profiles to ingesters via consistent hash ring |
-| **ingester** | 3 | Buffers profiles in memory, flushes completed blocks to NFS |
+| **ingester** | 3 | Buffers profiles in memory, flushes completed blocks to S3 |
 | **compactor** | 1 | Merges and deduplicates stored blocks for query efficiency |
 | **query-frontend** | 1 | Entry point for reads; caches and parallelizes queries |
 | **query-scheduler** | 1 | Distributes query work across querier replicas |
 | **querier** | 2 | Reads and merges profile data from ingesters and store-gateway |
-| **store-gateway** | 1 | Serves historical blocks from NFS |
+| **store-gateway** | 1 | Serves historical blocks from S3 |
+| **minio** | 1 | S3-compatible object storage (dev/local use; replace with external S3 in production) |
 
 All Pyroscope components discover each other via **memberlist** (gossip on port 7946).
 
@@ -94,36 +95,26 @@ All Pyroscope components discover each other via **memberlist** (gossip on port 
 
 | File | Purpose |
 |------|---------|
-| `docker-compose.yaml` | Defines all services with NFS bind mounts |
-| `pyroscope.yaml` | Shared config: filesystem storage, memberlist ring, port 4040 |
-| `deploy.sh` | Lifecycle script with NFS pre-check (start/stop/restart/logs/status/clean) |
+| `docker-compose.yaml` | Defines all services with S3 configuration via environment variables |
+| `pyroscope.yaml` | Shared config: S3 object storage backend, memberlist ring, port 4040 |
+| `deploy.sh` | Lifecycle script (start/stop/restart/logs/status/clean) |
 
 ## Prerequisites
 
-1. An NFS share mounted on every VM at the same path (default: `/mnt/pyroscope-data`)
+1. S3-compatible object storage endpoint (MinIO for dev, AWS S3/GCS/Azure Blob for production)
 2. Docker and Docker Compose installed
 
-Example NFS mount:
-
-```bash
-sudo mkdir -p /mnt/pyroscope-data
-sudo mount -t nfs nfs-server:/export/pyroscope /mnt/pyroscope-data
-```
-
-Add to `/etc/fstab` for persistence:
-
-```
-nfs-server:/export/pyroscope  /mnt/pyroscope-data  nfs  defaults,rw  0 0
-```
+For local development, the included `docker-compose.yaml` starts a MinIO container automatically. For production, set the S3 environment variables to point to your external storage.
 
 ## Quick start
 
 ```bash
-bash deploy.sh          # Start all services
+bash deploy.sh          # Start all services (including local MinIO)
 ```
 
 - Push profiles to `http://localhost:4040` (distributor)
 - Query profiles at `http://localhost:4041` (query-frontend)
+- MinIO console at `http://localhost:9001` (user: `pyroscope`, password: `supersecret`)
 
 ## Usage
 
@@ -140,7 +131,10 @@ bash deploy.sh clean        # Stop services and remove all volumes
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PYROSCOPE_DATA_DIR` | `/mnt/pyroscope-data` | Host path to the NFS-backed shared storage directory |
+| `S3_ENDPOINT` | `http://minio:9000` | S3-compatible endpoint URL |
+| `S3_BUCKET` | `pyroscope` | S3 bucket name for profile data |
+| `S3_ACCESS_KEY_ID` | `pyroscope` | S3 access key |
+| `S3_SECRET_ACCESS_KEY` | `supersecret` | S3 secret key |
 | `PYROSCOPE_PUSH_PORT` | `4040` | Host port for the distributor (SDK push endpoint) |
 | `PYROSCOPE_QUERY_PORT` | `4041` | Host port for the query-frontend (Grafana data source) |
 
@@ -150,5 +144,7 @@ bash deploy.sh clean        # Stop services and remove all volumes
 |------|---------|---------|
 | `:4040` | Distributor | SDK push endpoint (`/ingest`) |
 | `:4041` | Query Frontend | Query endpoint (configure as Grafana data source) |
+| `:9000` | MinIO | S3 API (local dev only) |
+| `:9001` | MinIO | Web console (local dev only) |
 
 For monolithic mode (single-node) deployments, see [`../../monolithic/`](../../monolithic/).

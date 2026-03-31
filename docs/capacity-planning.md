@@ -337,7 +337,7 @@ See [monitoring-guide.md](monitoring-guide.md) for Prometheus-based storage aler
 ## Phase 2: Multi-VM Monolith Sizing
 
 When HA is required but service count is still under ~100, deploy Phase 2 (multi-VM
-monolith with shared block storage).
+monolith with S3-compatible object storage).
 
 ### Per-VM resource recommendations
 
@@ -345,25 +345,25 @@ monolith with shared block storage).
 |----------|---------------|-------|
 | CPU | Same as monolith sizing (2-8 cores) | Both VMs have identical specs |
 | Memory | Same as monolith sizing (4-16 GB) | Both VMs have identical specs |
-| Storage | Shared block storage (SAN/iSCSI) | Single volume mounted on both VMs |
+| Storage | S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob) | All instances read/write the same bucket |
 | Network | < 10 Mbps per VM | Same ingestion bandwidth as monolith |
 
-### Block storage requirements
+### Object storage requirements
 
 | Resource | Specification | Notes |
 |----------|---------------|-------|
-| Type | SAN LUN or iSCSI target | Enterprise block storage |
-| Filesystem | GFS2 (clustered) or single-writer with VIP | GFS2 for active-active, otherwise active-passive |
-| Size | Same as monolith disk sizing (100-500 GB) | Shared across VMs — not doubled |
-| Mount point | `/data/pyroscope` on both VMs | Identical path on each VM |
-| Access | Active-passive recommended | Only one VM writes at a time |
+| Type | S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob) | S3 API required |
+| Bucket | One bucket per environment (e.g., `pyroscope-profiles-prod`) | All instances share the same bucket |
+| Size | Same as monolith disk sizing (100-500 GB) | Shared across instances — not doubled |
+| Endpoint | MinIO: `https://minio.company.com:9000` / Cloud: provider URL | Configured in `pyroscope.yaml` `storage.s3` block |
+| Access | All instances read/write concurrently | Object storage handles concurrent access natively |
 
 ### Network requirements (additional to Phase 1)
 
 | Source | Destination | Port | Protocol | Purpose |
 |--------|-------------|:----:|----------|---------|
 | F5 VIP | Both Pyroscope VMs | TCP 4040 | HTTP/HTTPS | VIP backend pool |
-| Both VMs | Block storage (SAN) | SAN fabric | FC / iSCSI | Shared data access |
+| Both VMs | Object storage (MinIO / S3) | TCP 9000 (MinIO) or TCP 443 (cloud) | HTTPS | Profile data read/write |
 | Prometheus | Both VMs individually | TCP 4040 | HTTP | Per-VM metrics scrape |
 
 ### Per-environment sizing guidance
@@ -932,15 +932,16 @@ security teams. Hand the relevant section directly to each team.
 | **Monitoring** | Prometheus scrape target: `https://VM_IP:4040/metrics` | Days | Standard service discovery or static config |
 | **Grafana** | Pyroscope datasource | Days | URL: `https://pyroscope.company.com` |
 
-### Phase 2: Multi-VM Monolith with Block Storage
+### Phase 2: Multi-VM Monolith with S3-Compatible Object Storage
 
 Everything from Phase 1a, plus:
 
 | Team | What to request | Lead time | Details |
 |------|----------------|:---------:|---------|
 | **VM / Infrastructure** | Additional RHEL VMs (2-4 total) — 4 CPU, 8 GB RAM each | 1-2 weeks | Same Docker image, same config as first VM |
-| **Storage** | Block storage volume (SAN/iSCSI) — 250 GB - 1 TB | 1-2 weeks | Mounted at `/data/pyroscope` on each VM |
+| **Storage** | S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob) — 250 GB - 1 TB | 1-2 weeks | S3 bucket shared by all instances. MinIO endpoint: `https://minio.company.com:9000` |
 | **Network** | F5 pool: add additional VMs as pool members (TCP 4040) | Days | Same VIP, add members. Health check: `GET /ready` |
+| **Network** | Firewall rule: Pyroscope VMs → object storage endpoint, TCP 9000 (MinIO) or TCP 443 (cloud) | 1-2 weeks | HTTPS (S3 API for profile data read/write) |
 | **Network** | Prometheus scrape targets: all Pyroscope VMs individually | Days | One scrape target per VM (not via VIP) |
 | **Security / PKI** | Same TLS cert on all VMs (or wildcard cert) | Days | VIP FQDN cert — already issued in Phase 1a |
 
@@ -951,7 +952,7 @@ Everything from Phase 1a, plus:
 | **OCP Platform** | Dedicated namespace (`pyroscope`) | Days | Resource quota: 16 CPU, 24 Gi memory |
 | **OCP Platform** | RBAC: service account with Deployment/Service/PVC/ConfigMap permissions | Days | For Helm chart deployment |
 | **OCP Platform** | OCP Route with TLS edge termination | Days | Hostname: `pyroscope.apps.cluster.company.com` |
-| **Storage** | RWX PersistentVolume — 100-500 Gi | 1-2 weeks | StorageClass: block storage backed (ODF/OCS). Must be ReadWriteMany |
+| **Storage** | S3-compatible object storage — 100-500 Gi | 1-2 weeks | MinIO, AWS S3, GCS, or Azure Blob. Ingesters, store-gateway, and compactor all access the same bucket |
 | **Network** | NetworkPolicy: allow ingress from app namespaces → pyroscope namespace, TCP 4040 | Days | See NetworkPolicy YAML above |
 | **Network** | NetworkPolicy: allow TCP+UDP 7946 within pyroscope namespace | Days | Required for ingester memberlist gossip |
 | **Security** | Review: no PII in profile data, no secrets in labels | 1 week | Profiles contain function names and stack traces only — no request payloads, no secrets |

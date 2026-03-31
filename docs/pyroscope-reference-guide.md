@@ -185,9 +185,9 @@ graph TD
 | Component | Role | Port |
 |-----------|------|------|
 | **Distributor** | Receives profiles, routes to ingesters via hash ring | 4040 |
-| **Ingester** | Writes profiles to local block storage, registers on ring | 4040 |
+| **Ingester** | Writes profiles to local storage, registers on ring | 4040 |
 | **Compactor** | Merges blocks, applies retention | 4040 |
-| **Store-gateway** | Serves queries from long-term block storage | 4040 |
+| **Store-gateway** | Serves queries from long-term object storage | 4040 |
 | **Querier** | Executes queries, merges results from ingesters + store-gateway | 4040 |
 | **Query-frontend** | Request queue, splitting, caching for queries | 4040 |
 | **Query-scheduler** | Distributes queries across querier pool | 4040 |

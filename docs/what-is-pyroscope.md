@@ -313,15 +313,16 @@ variables. This covers the majority of use cases and provides immediate value.
 - **Capacity:** Up to ~100 services sending profiles
 - **Time to deploy:** 1-2 hours (server) + 5 minutes per JVM (agent)
 
-### Phase 2: Multi-VM Monolith with Block Storage
+### Phase 2: Multi-VM Monolith with S3-Compatible Object Storage
 
-Add HA without rearchitecting. Two Pyroscope VMs share block storage (SAN/iSCSI) behind
-a load balancer (F5 VIP). Automatic failover when one VM goes down.
+Add HA without rearchitecting. Two Pyroscope VMs use S3-compatible object storage
+(MinIO, AWS S3, GCS, or Azure Blob) behind a load balancer (F5 VIP). Automatic failover
+when one VM goes down.
 
 - **VMs:** 2 VMs, same specs as Phase 1
-- **Storage:** Shared block storage (SAN LUN or iSCSI) mounted on both VMs
+- **Storage:** S3-compatible object storage (MinIO on-premise, AWS S3, GCS, or Azure Blob)
 - **Load balancer:** F5 VIP with health check (`GET /ready`)
-- **HA:** Active-passive with VIP failover (RTO < 2 min)
+- **HA:** Active-active with VIP failover (RTO < 2 min)
 - **Capacity:** Same as Phase 1 (~100 services)
 
 ### Phase 3: Microservices on OCP
@@ -330,7 +331,7 @@ When ingestion volume exceeds single-node capacity (>100 services) or you need
 horizontal scaling, migrate to microservices mode with 7 distributed components.
 
 - **Components:** distributor, ingester (x3), compactor, store-gateway, query-frontend, query-scheduler, querier
-- **Storage:** RWX PVC backed by block storage (ODF/OCS) or S3-compatible object storage
+- **Storage:** S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob)
 - **HA:** Replicated ingesters, pod rescheduling, independent scaling
 - **Capacity:** Hundreds to thousands of services
 
@@ -345,7 +346,7 @@ graph LR
     end
 
     subgraph "Phase 2 — HA"
-        MultiVM["Multi-VM Monolith<br/>2 VMs + block storage<br/>VIP failover"]
+        MultiVM["Multi-VM Monolith<br/>2 VMs + S3 object storage<br/>VIP failover"]
         Agent2["JVM Agents<br/>20-100 services"]
         Agent2 -->|profiles| MultiVM
     end
@@ -366,7 +367,7 @@ graph LR
 
 **Recommendation:** Start with Phase 1. A monolith deployment proves value within days
 and requires no Kubernetes knowledge. Phase 2 adds HA with minimal effort (second VM +
-block storage). Phase 3 is only needed when you exceed ~100 services or need horizontal
+S3-compatible object storage). Phase 3 is only needed when you exceed ~100 services or need horizontal
 scaling. Agent configuration is identical across all phases — migration is server-side only.
 
 ---

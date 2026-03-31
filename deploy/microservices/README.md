@@ -1,6 +1,6 @@
 # Pyroscope Microservices Deployment
 
-Runs Pyroscope as separate, independently scalable components for high-availability production workloads. All storage uses block storage-backed filesystems (SAN/iSCSI) — no MinIO or S3 required.
+Runs Pyroscope as separate, independently scalable components for high-availability production workloads. All storage uses S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob).
 
 ## Architecture
 
@@ -24,27 +24,27 @@ graph TB
     SG[Store Gateway]
     C[Compactor]
 
-    subgraph Shared Storage
-        NFS[("NFS / RWX PVC")]
+    subgraph Object Storage
+        S3[("S3 / MinIO")]
     end
 
-    ING1 -->|flush| NFS
-    ING2 -->|flush| NFS
-    ING3 -->|flush| NFS
+    ING1 -->|flush| S3
+    ING2 -->|flush| S3
+    ING3 -->|flush| S3
     Q1 -->|read| SG
     Q2 -->|read| SG
-    SG -->|read blocks| NFS
-    C -->|compact blocks| NFS
+    SG -->|read blocks| S3
+    C -->|compact blocks| S3
 ```
 
 ## Choose your environment
 
 | Environment | Path | How it works |
 |-------------|------|-------------|
-| **VM / Docker Compose** | [`vm/`](vm/) | Docker Compose on bare-metal or EC2; NFS bind-mounted into containers |
+| **VM / Docker Compose** | [`vm/`](vm/) | Docker Compose on bare-metal or EC2; includes local MinIO for dev, configurable for external S3 |
 | **Kubernetes / OpenShift** | [`../helm/pyroscope/`](../helm/pyroscope/) | Unified Helm chart supporting both monolith and microservices modes, OCP Routes and K8s Ingress |
 
-All environments use identical Pyroscope component topology (7 services) and NFS-backed filesystem storage.
+All environments use identical Pyroscope component topology (7 services) and S3-compatible object storage.
 
 For monolith mode (single-node) VM deployments, see [`../monolith/`](../monolith/).
 

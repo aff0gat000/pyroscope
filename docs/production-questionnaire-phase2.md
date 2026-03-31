@@ -1,7 +1,7 @@
 # Production Onboarding Questionnaire — Phase 3 (With PostgreSQL)
 
 > **Note:** This was previously called "Phase 2" before the introduction of Phase 2
-> (multi-VM monolith with block storage). The PostgreSQL-backed SOR and v2 BOR work
+> (multi-VM monolith with S3-compatible object storage). The PostgreSQL-backed SOR and v2 BOR work
 > is now Phase 3.
 
 Builds on [Phase 1](production-questionnaire-phase1.md) and [Phase 2](project-plan-phase2.md). Adds 4 PostgreSQL-backed SORs and upgrades 3 BOR functions from v1 to v2.

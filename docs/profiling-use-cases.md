@@ -394,7 +394,7 @@ and alerting thresholds.
 | Thread leak detection | P1 | Phase 1 | Thread creation rate, long-lived thread alerts, stuck thread detection, pool utilization |
 | Function comparison (diff) | P2 | Phase 1 | Side-by-side flame graphs for two time ranges (before/after deploy) |
 | Profiling overhead | P2 | Phase 1 | Agent CPU/memory impact on profiled pods, push success rate |
-| Multi-VM health | P2 | Phase 2 | Per-VM Pyroscope metrics, VIP health, block storage usage |
+| Multi-VM health | P2 | Phase 2 | Per-VM Pyroscope metrics, VIP health, S3 storage usage |
 | Fleet hotspots | P2 | Phase 3 | Top CPU/memory consumers across all functions (needs `function` label) |
 | Microservices component health | P3 | Phase 3 | Per-component (distributor, ingester, querier, etc.) health and performance |
 

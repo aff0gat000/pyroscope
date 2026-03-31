@@ -11,7 +11,7 @@ Target audience: architects, security reviewers, platform engineers.
 
 - [1. Pyroscope Components](#1-pyroscope-components)
 - [2. Deployment Mode Comparison](#2-deployment-mode-comparison)
-- [3. Topology Diagrams](#3-topology-diagrams) -- [3a. VM Monolith](#3a-vm-monolith-phase-1--current-deployment) | [3b. Multi-VM Monolith](#3b-multi-vm-monolith-with-block-storage-phase-2) | [3c. OCP Monolith](#3c-ocp-monolith-helm-chart) | [3d. VM Microservices](#3d-vm-microservices-docker-compose) | [3e. OCP Microservices](#3e-ocp-microservices-helm-chart) | [3f. Hybrid](#3f-hybrid-vm-pyroscope--ocp-agents)
+- [3. Topology Diagrams](#3-topology-diagrams) -- [3a. VM Monolith](#3a-vm-monolith-phase-1--current-deployment) | [3b. Multi-VM Monolith](#3b-multi-vm-monolith-with-s3-compatible-object-storage-phase-2) | [3c. OCP Monolith](#3c-ocp-monolith-helm-chart) | [3d. VM Microservices](#3d-vm-microservices-docker-compose) | [3e. OCP Microservices](#3e-ocp-microservices-helm-chart) | [3f. Hybrid](#3f-hybrid-vm-pyroscope--ocp-agents)
 - [4. Data Flow Diagrams](#4-data-flow-diagrams) -- [4a. Write Path](#4a-write-path-agent--storage) | [4b. Read Path](#4b-read-path-query--response) | [4c. Agent Push Flow](#4c-agent-push-flow)
 - [5. Network Boundaries](#5-network-boundaries)
 - [6. Storage Architecture](#6-storage-architecture)
@@ -87,14 +87,14 @@ graph TB
 |-----------|----------|---------------------------|---------------|
 | **Components** | All 7 in a single process | All 7 in a single process per VM | Each component is an independent container/pod |
 | **Scaling** | Vertical only | Vertical (per VM) | Horizontal per component |
-| **Storage** | Local filesystem at `/data` | Shared block storage (SAN/iSCSI) at `/data/pyroscope` | RWX PVC backed by block storage or S3-compatible object storage |
+| **Storage** | Local filesystem at `/data` | S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob) | S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob) |
 | **High availability** | No -- single point of failure | Yes -- VIP failover between VMs | Yes -- replicated ingesters, pod rescheduling |
 | **Load balancer** | None | F5 VIP with health check | OCP Service / Route |
 | **Memberlist** | Not used | Not used | Required -- ingesters form hash ring on port 7946 |
-| **Complexity** | Low -- single container | Low-medium -- 2 VMs, block storage, VIP | Higher -- 7+ containers, storage, network policies |
-| **Object storage** | Optional (S3/GCS) | Optional (S3/GCS) | Optional (S3/GCS) |
+| **Complexity** | Low -- single container | Low-medium -- 2 VMs, S3 object storage, VIP | Higher -- 7+ containers, storage, network policies |
+| **Object storage** | Optional (S3/GCS) | Required (S3-compatible: MinIO, AWS S3, GCS, Azure Blob) | Required (S3-compatible: MinIO, AWS S3, GCS, Azure Blob) |
 | **When to use** | < 100 apps, PoC, single-team | < 100 apps, need HA, enterprise | 100+ apps, horizontal scaling, multi-team |
-| **Minimum resources** | 2 CPU, 4 GB RAM, 50 GB disk | 2x (2 CPU, 4 GB RAM), shared block storage | 8 CPU, 16 GB RAM, 100 GB RWX storage |
+| **Minimum resources** | 2 CPU, 4 GB RAM, 50 GB disk | 2x (2 CPU, 4 GB RAM), S3-compatible object storage | 8 CPU, 16 GB RAM, S3-compatible object storage |
 
 ---
 
@@ -286,10 +286,10 @@ storage:
 
 ---
 
-### 3b. Multi-VM Monolith with Block Storage (Phase 2)
+### 3b. Multi-VM Monolith with S3-Compatible Object Storage (Phase 2)
 
-Two Pyroscope monolith instances on separate VMs, each mounting the same block storage
-volume (SAN/iSCSI). A load balancer (F5 VIP) distributes traffic and provides failover.
+Two Pyroscope monolith instances on separate VMs, each configured to use the same
+S3-compatible object storage backend (MinIO, AWS S3, GCS, or Azure Blob). A load balancer (F5 VIP) distributes traffic and provides failover.
 
 ```mermaid
 graph TB
@@ -310,8 +310,8 @@ graph TB
         Pyro2["Pyroscope :4040<br/>monolith mode"]
     end
 
-    subgraph "Block Storage (SAN)"
-        BS[("Shared Block Volume<br/>/data/pyroscope")]
+    subgraph "S3-Compatible Object Storage"
+        BS[("S3 Bucket<br/>pyroscope-profiles")]
     end
 
     subgraph "Grafana VM"
@@ -331,11 +331,11 @@ graph TB
 ```
 
 **Key characteristics:**
-- Both VMs mount the same block storage volume (SAN/iSCSI) at `/data/pyroscope`
+- Both VMs use the same S3-compatible object storage bucket (MinIO, AWS S3, GCS, or Azure Blob)
 - F5 VIP provides load balancing and health-check failover (`GET /ready`)
-- Active-passive recommended: only one VM writes at a time to avoid block-level conflicts
+- Active-active supported: both VMs can write concurrently since object storage handles concurrent access
 - Agents push to VIP; transparent failover if active VM goes down
-- No architecture change to Pyroscope itself — same monolith binary, shared data directory
+- No architecture change to Pyroscope itself — same monolith binary, shared S3 backend
 
 ---
 
@@ -386,7 +386,7 @@ graph TB
 ### 3d. VM Microservices (Docker Compose)
 
 All 7 Pyroscope components run as separate containers on a single VM (or spread across
-VMs with shared block storage or S3-compatible object storage). Memberlist gossip coordinates the hash ring.
+VMs with S3-compatible object storage). Memberlist gossip coordinates the hash ring.
 
 ```mermaid
 graph TB
@@ -420,7 +420,7 @@ graph TB
     end
 
     subgraph "Shared Storage"
-        BS[("Block Storage Volume<br/>/data/pyroscope")]
+        BS[("S3-Compatible<br/>Object Storage")]
     end
 
     Agent -->|"TCP 4040"| DIST
@@ -436,7 +436,7 @@ graph TB
 **Key characteristics:**
 - Distributor on port 4040 (agent push), query-frontend on port 4041 (Grafana queries)
 - Memberlist gossip on TCP+UDP 7946 between ingesters (container network only)
-- Block storage mount at `/data/pyroscope` shared by all containers (or S3-compatible object storage)
+- S3-compatible object storage shared by all containers (MinIO, AWS S3, GCS, or Azure Blob)
 - Compactor runs continuously in the background
 
 ---
@@ -508,7 +508,7 @@ graph TB
 - Agents push to `pyroscope-distributor.pyroscope.svc:4040`
 - Grafana queries `pyroscope-query-frontend.pyroscope.svc:4040`
 - Headless service enables memberlist peer discovery via DNS SRV records
-- PVC must be RWX (ReadWriteMany) -- block storage backed (ODF/OCS, CephFS on block devices) or S3-compatible object storage
+- Storage backend: S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob)
 - NetworkPolicy can restrict inter-namespace traffic
 
 ---
@@ -766,45 +766,60 @@ Pyroscope container
 - **Sizing:** ~1 GB per 10 profiled JVMs per day (varies with profile frequency and cardinality)
 - **Backup:** Snapshot the Docker volume or `/data` directory
 
-### Multi-VM monolith (Phase 2 — block storage)
+### Multi-VM monolith (Phase 2 — S3-compatible object storage)
 
 ```
-Shared Block Storage (SAN/iSCSI)
-└── /data/pyroscope/                <- Mounted on both VMs
-    ├── head/                       <- Both VMs read/write (active-passive)
-    │   └── <tenant>/<block-id>/
-    ├── local/                      <- Compacted blocks (shared reads)
-    │   └── <tenant>/<block-id>/
-    └── wal/                        <- Write-ahead log
+S3-Compatible Object Storage (MinIO / AWS S3 / GCS / Azure Blob)
+└── pyroscope-profiles/             <- S3 bucket shared by all VMs
+    ├── <tenant>/
+    │   ├── <block-id>/             <- Compacted blocks
+    │   └── <block-id>/
+    └── ...
 ```
 
-- **Volume:** Shared block storage (SAN LUN, iSCSI target) with clustered filesystem (GFS2) or enterprise SAN with shared LUN
-- **Access:** Both VMs mount the same volume at `/data/pyroscope`
-- **Mode:** Active-passive recommended to avoid write conflicts
-- **Sizing:** Same per-JVM estimate as monolith; shared across VMs
+Each VM also uses local disk for temporary head blocks and WAL:
+```
+Pyroscope VM (local disk)
+└── /data/                          ← Docker volume (local filesystem)
+    ├── head/                       ← In-memory blocks flushed to local disk before upload
+    │   └── <tenant>/<block-id>/
+    └── wal/                        ← Write-ahead log for crash recovery
+```
+
+- **Object storage:** S3-compatible bucket (MinIO, AWS S3, GCS, or Azure Blob) shared by all instances
+- **Local disk:** Each VM uses local storage for head blocks and WAL; compacted blocks are uploaded to S3
+- **Mode:** Active-active supported — object storage handles concurrent writes from multiple instances
+- **Sizing:** Same per-JVM estimate as monolith; object storage scales independently
 
 ### Microservices mode (Phase 3)
 
 ```
-Block Storage / RWX PVC (or S3-compatible object storage)
-└── /data/pyroscope/                <- Mounted by all ingesters, store-gateway, compactor
-    ├── head/                       ← Each ingester writes to its own subdirectory
-    │   ├── ingester-0/<block-id>/
-    │   ├── ingester-1/<block-id>/
-    │   └── ingester-2/<block-id>/
-    ├── local/                      ← Compacted blocks (shared reads)
-    │   └── <tenant>/<block-id>/
-    └── wal/                        ← Per-ingester WAL directories (local disk)
+S3-Compatible Object Storage (MinIO / AWS S3 / GCS / Azure Blob)
+└── pyroscope-profiles/             <- S3 bucket shared by all components
+    ├── <tenant>/
+    │   ├── <block-id>/             <- Compacted blocks (written by compactor, read by store-gateway)
+    │   └── <block-id>/
+    └── ...
 ```
 
-- **Volume:** Block storage mount at `/data/pyroscope` (VM) or RWX PVC (K8s/OCP), or S3-compatible object storage
-- **Storage class:** Must support ReadWriteMany if using block storage (ODF/OCS with CephFS on block devices); alternatively use S3-compatible object storage
+Each ingester also uses local disk (emptyDir or local PVC) for head blocks and WAL:
+```
+Ingester Pod (local disk)
+└── /data/
+    ├── head/                       ← In-memory blocks flushed to local disk before upload
+    │   └── <block-id>/
+    └── wal/                        ← Write-ahead log for crash recovery
+```
+
+- **Object storage:** S3-compatible bucket (MinIO, AWS S3, GCS, or Azure Blob) shared by ingesters, store-gateway, and compactor
+- **Local disk:** Each ingester uses local storage (emptyDir or RWO PVC) for head blocks and WAL
 - **Sizing:** Same per-JVM estimate; scale with number of ingesters
 
-### Object storage (optional)
+### Object storage configuration
 
-For long-term retention beyond local disk capacity, Pyroscope supports S3-compatible
-or GCS object storage. Compacted blocks are uploaded; the store-gateway serves reads.
+Object storage is **required** for Phase 2 (multi-VM) and Phase 3 (microservices), and
+**optional** for Phase 1 (single VM). Pyroscope supports S3-compatible (MinIO, AWS S3),
+GCS, and Azure Blob object storage. Compacted blocks are uploaded; the store-gateway serves reads.
 
 ```yaml
 # pyroscope.yaml snippet

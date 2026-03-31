@@ -18,7 +18,7 @@ helm upgrade --install pyroscope deploy/helm/pyroscope/ \
     -n pyroscope --create-namespace \
     -f deploy/helm/pyroscope/examples/monolith-dedicated-namespace.yaml
 
-# Microservices HA — OpenShift (requires RWX block storage)
+# Microservices HA — OpenShift (requires S3-compatible object storage)
 helm upgrade --install pyroscope deploy/helm/pyroscope/ \
     -n pyroscope --create-namespace \
     -f deploy/helm/pyroscope/examples/microservices-openshift.yaml
@@ -40,9 +40,14 @@ All values are in `values.yaml` with inline comments. Key settings:
 | `mode` | `monolith` | `monolith` (single pod) or `microservices` (7 pods, HA) |
 | `image.repository` | `grafana/pyroscope` | Container image |
 | `image.tag` | `"1.18.0"` | Image tag (quoted to prevent YAML float coercion) |
-| `storage.accessMode` | `ReadWriteOnce` | `ReadWriteOnce` for monolith, `ReadWriteMany` for microservices |
-| `storage.storageClassName` | `""` | Empty = cluster default; set to your RWX class for microservices |
-| `storage.size` | `10Gi` | PVC size |
+| `storage.accessMode` | `ReadWriteOnce` | `ReadWriteOnce` for monolith; microservices use S3 for shared data |
+| `storage.storageClassName` | `""` | Empty = cluster default |
+| `storage.size` | `10Gi` | PVC size (ingester WAL in microservices mode) |
+| `storage.s3.endpoint` | `""` | S3-compatible endpoint (required for microservices) |
+| `storage.s3.bucketName` | `pyroscope` | S3 bucket name |
+| `storage.s3.accessKeyId` | `""` | S3 access key |
+| `storage.s3.secretAccessKey` | `""` | S3 secret key |
+| `storage.s3.insecure` | `false` | Set true for non-TLS S3 endpoints |
 | `route.enabled` | `true` | Create OpenShift Route (set `false` on vanilla K8s) |
 | `ingress.enabled` | `false` | Create K8s Ingress (alternative to Route) |
 | `networkPolicy.enabled` | `false` | Create NetworkPolicy for cross-namespace access |
@@ -60,7 +65,9 @@ Override any value with `--set` or a custom values file:
 helm upgrade --install pyroscope deploy/helm/pyroscope/ \
     -n pyroscope --create-namespace \
     -f deploy/helm/pyroscope/examples/microservices-openshift.yaml \
-    --set storage.storageClassName=ocs-storagecluster-cephfs \
+    --set storage.s3.endpoint=http://minio.minio.svc:9000 \
+    --set storage.s3.accessKeyId=pyroscope \
+    --set storage.s3.secretAccessKey=supersecret \
     --set storage.size=100Gi \
     --set ingester.replicas=5
 ```
@@ -71,8 +78,8 @@ helm upgrade --install pyroscope deploy/helm/pyroscope/ \
 |------|----------|
 | `examples/monolith-same-namespace.yaml` | Monolith alongside existing apps — simplest starting point |
 | `examples/monolith-dedicated-namespace.yaml` | Monolith in own namespace with NetworkPolicy |
-| `examples/microservices-openshift.yaml` | Full HA on OCP with RWX/NFS and Route |
-| `examples/microservices-kubernetes.yaml` | Full HA on K8s with RWX/NFS and nginx Ingress |
+| `examples/microservices-openshift.yaml` | Full HA on OCP with S3 object storage and Route |
+| `examples/microservices-kubernetes.yaml` | Full HA on K8s with S3 object storage and nginx Ingress |
 
 ## Agent Configuration
 

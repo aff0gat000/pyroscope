@@ -124,7 +124,7 @@ BORs call SORs. BORs never talk to Pyroscope or databases directly.
 
 | Aspect | Phase 1 | Phase 2 | Phase 3 |
 |--------|---------|---------|---------|
-| Pyroscope server | Single VM monolith | Multi-VM monolith with block storage | Microservices on OpenShift |
+| Pyroscope server | Single VM monolith | Multi-VM monolith with S3-compatible object storage | Microservices on OpenShift |
 | Functions | 3 BOR + 1 SOR | Same as Phase 1 | 3 BOR (v2) + 5 SOR |
 | Database | None | None | PostgreSQL |
 | HA | No | Yes (VIP failover) | Yes (replicated ingesters) |

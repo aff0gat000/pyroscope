@@ -2,10 +2,10 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# deploy.sh — Deploy Pyroscope in microservices mode (docker compose + NFS)
+# deploy.sh — Deploy Pyroscope in microservices mode (docker compose + S3)
 #
-# Requires an NFS-mounted directory shared across all VMs. Set
-# PYROSCOPE_DATA_DIR to override the default path (/mnt/pyroscope-data).
+# Uses S3-compatible object storage (MinIO included for dev, or external S3).
+# Configure via S3_ENDPOINT, S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY.
 #
 # Usage:
 #   bash deploy.sh              # Start all services
@@ -19,9 +19,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yaml"
 PROJECT_NAME="pyroscope-microservices"
-
-PYROSCOPE_DATA_DIR="${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}"
-export PYROSCOPE_DATA_DIR
 
 DISTRIBUTOR_PORT="${PYROSCOPE_PUSH_PORT:-4040}"
 QUERY_PORT="${PYROSCOPE_QUERY_PORT:-4041}"
@@ -58,24 +55,13 @@ check_docker() {
     fi
 }
 
-check_nfs() {
-    info "Checking NFS data directory: ${PYROSCOPE_DATA_DIR}"
-
-    if [ ! -d "${PYROSCOPE_DATA_DIR}" ]; then
-        err "Data directory does not exist: ${PYROSCOPE_DATA_DIR}"
-        err "Mount your NFS share first, e.g.:"
-        err "  sudo mount -t nfs nfs-server:/export/pyroscope ${PYROSCOPE_DATA_DIR}"
-        exit 1
+check_s3_config() {
+    info "Checking S3 configuration..."
+    if [ -n "${S3_ENDPOINT:-}" ]; then
+        ok "S3 endpoint: ${S3_ENDPOINT}"
+    else
+        info "S3_ENDPOINT not set; using default (local MinIO at http://minio:9000)"
     fi
-
-    if ! touch "${PYROSCOPE_DATA_DIR}/.pyroscope-write-test" 2>/dev/null; then
-        err "Data directory is not writable: ${PYROSCOPE_DATA_DIR}"
-        err "Check NFS export permissions and mount options (rw)."
-        exit 1
-    fi
-    rm -f "${PYROSCOPE_DATA_DIR}/.pyroscope-write-test"
-
-    ok "Data directory is accessible and writable"
 }
 
 wait_healthy() {
@@ -101,7 +87,7 @@ wait_healthy() {
 # ---------------------------------------------------------------------------
 cmd_start() {
     check_docker
-    check_nfs
+    check_s3_config
 
     info "Starting Pyroscope microservices cluster..."
     compose up -d

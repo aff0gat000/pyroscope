@@ -1,13 +1,49 @@
-# Pyroscope microservices deployment (block storage filesystem)
+# Pyroscope microservices deployment (S3-compatible object storage)
 # Runs each Pyroscope component as a separate service for HA/scalability.
-# Requires PYROSCOPE_DATA_DIR (default: /data/pyroscope) to be a block storage mount
-# shared across all VMs (SAN/iSCSI with clustered filesystem).
+# Requires S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob).
+# A MinIO container is included for local/dev use; replace with your S3 endpoint in production.
 #
 # Usage:
 #   docker compose up -d
 #   docker compose down
 
+x-pyroscope-env: &pyroscope-env
+  S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+  S3_BUCKET: ${S3_BUCKET:-pyroscope}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-pyroscope}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-supersecret}
+
 services:
+
+  # -- Object storage (MinIO) — replace with external S3 in production ---------
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-pyroscope}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-supersecret}
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # MinIO console
+
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      sleep 3 &&
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER} $${MINIO_ROOT_PASSWORD} &&
+      mc mb --ignore-existing local/$${S3_BUCKET} &&
+      exit 0
+      "
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:-pyroscope}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:-supersecret}
+      S3_BUCKET: ${S3_BUCKET:-pyroscope}
 
   # -- Write path --------------------------------------------------------------
 
@@ -17,9 +53,11 @@ services:
       - -target=distributor
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
     ports:
       - "4040:4040"    # Push endpoint for SDKs
 
@@ -29,9 +67,11 @@ services:
       - -target=ingester
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-2:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
 
   ingester-2:
     image: grafana/pyroscope:latest
@@ -39,9 +79,11 @@ services:
       - -target=ingester
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
 
   ingester-3:
     image: grafana/pyroscope:latest
@@ -49,9 +91,11 @@ services:
       - -target=ingester
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
 
   # -- Read path ---------------------------------------------------------------
 
@@ -61,9 +105,11 @@ services:
       - -target=query-frontend
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
     ports:
       - "4041:4040"    # Query endpoint (Grafana data source)
 
@@ -73,9 +119,11 @@ services:
       - -target=query-scheduler
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
 
   querier-1:
     image: grafana/pyroscope:latest
@@ -83,9 +131,11 @@ services:
       - -target=querier
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
 
   querier-2:
     image: grafana/pyroscope:latest
@@ -93,9 +143,11 @@ services:
       - -target=querier
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
 
   # -- Background --------------------------------------------------------------
 
@@ -105,9 +157,11 @@ services:
       - -target=compactor
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
 
   store-gateway:
     image: grafana/pyroscope:latest
@@ -115,6 +169,11 @@ services:
       - -target=store-gateway
       - -config.file=/etc/pyroscope/config.yaml
       - -memberlist.join=ingester-1:7946
+    environment: *pyroscope-env
     volumes:
       - ./pyroscope.yaml:/etc/pyroscope/config.yaml:ro
-      - ${PYROSCOPE_DATA_DIR:-/mnt/pyroscope-data}:/mnt/pyroscope-data
+    depends_on:
+      - minio-init
+
+volumes:
+  minio-data:

@@ -1,7 +1,7 @@
-# Phase 2 Project Plan — Multi-VM Monolith with Block Storage
+# Phase 2 Project Plan — Multi-VM Monolith with S3-Compatible Object Storage
 
 High-level project plan for Phase 2 deployment. Adds high availability to the Pyroscope
-monolith by deploying multiple VMs sharing block storage behind a load balancer.
+monolith by deploying multiple VMs sharing S3-compatible object storage behind a load balancer.
 
 ---
 
@@ -23,14 +23,14 @@ monolith by deploying multiple VMs sharing block storage behind a load balancer.
 ### What "Phase 2" means
 
 Phase 2 adds HA to the Pyroscope monolith without rearchitecting. The same monolith
-binary runs on two or more VMs, each mounting the same block storage volume. A load
+binary runs on two or more VMs, each configured to use the same S3-compatible object storage bucket. A load
 balancer (F5 VIP) distributes traffic and provides automatic failover.
 
 | Layer | Phase 1 scope | Phase 2 scope | Phase 3 scope |
 |-------|---------------|---------------|---------------|
-| **Server architecture** | Single VM monolith | Multi-VM monolith with shared block storage | Microservices on OCP |
-| **Storage** | Local Docker volume | Shared block storage (SAN/iSCSI) | RWX PVC backed by block storage |
-| **High availability** | None (single point of failure) | Active-passive via VIP failover | Replicated ingesters, pod rescheduling |
+| **Server architecture** | Single VM monolith | Multi-VM monolith with S3-compatible object storage | Microservices on OCP |
+| **Storage** | Local Docker volume | S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob) | S3-compatible object storage |
+| **High availability** | None (single point of failure) | Active-active via VIP load balancing | Replicated ingesters, pod rescheduling |
 | **Load balancer** | None | F5 VIP with health check | OCP Service / Route |
 | **Function deployment** | 3 BOR + 1 SOR, no database | Same as Phase 1 | 3 BOR (v2) + 5 SOR, PostgreSQL |
 | **JVM target** | faas-jvm11 | faas-jvm11 (unchanged) | faas-jvm21 |
@@ -41,10 +41,10 @@ microservices expertise, or database infrastructure.
 ### In scope
 
 - Second Pyroscope VM (same specs as Phase 1 VM)
-- Shared block storage volume (SAN LUN or iSCSI target) mounted on both VMs
-- Clustered filesystem (GFS2) or enterprise SAN with shared LUN for concurrent access
+- S3-compatible object storage bucket (MinIO on-prem, AWS S3, GCS, or Azure Blob)
+- Both VMs configured with same S3 endpoint URL and credentials
 - F5 VIP or HAProxy load balancer with health check (`GET /ready`)
-- Data migration from local Docker volume to shared block storage
+- Data migration from local Docker volume to S3-compatible object storage
 - Agent reconfiguration to push to VIP instead of direct VM
 - Grafana and Prometheus reconfiguration to query/scrape via VIP
 - Failover testing and RTO/RPO validation
@@ -67,8 +67,8 @@ Complete these before starting Epic 1. Phase 1 must be complete and stable.
 |---|-------------|----------|-----------|--------|
 | P1 | Phase 1 complete and stable (all D1-D10 criteria met) | Project owner | — | |
 | P2 | Second VM provisioned (same specs as Phase 1 VM) | Infrastructure / VM team | 1-2 weeks | |
-| P3 | Block storage provisioned (SAN LUN or iSCSI target, 250-500 GB) | Storage team | 1-2 weeks | |
-| P4 | Clustered filesystem support (GFS2 packages or SAN shared LUN capability) | Storage team | Included in P3 | |
+| P3 | S3-compatible object storage provisioned (MinIO, AWS S3, GCS, or Azure Blob) | Storage / cloud team | 1-2 weeks | |
+| P4 | S3 bucket created with appropriate IAM policy and access credentials | Storage / cloud team | Included in P3 | |
 | P5 | F5 VIP configured for Pyroscope (pool: both VMs, health check: `GET /ready`) | Network / F5 team | 1-2 weeks | |
 | P6 | DNS entry updated or new entry for VIP (e.g. `pyroscope.corp.example.com`) | DNS / networking team | 3-5 days | |
 | P7 | Firewall rules updated for second VM (same rules as Phase 1 VM) | Network / firewall team | 1 week | |
@@ -76,44 +76,44 @@ Complete these before starting Epic 1. Phase 1 must be complete and stable.
 | P9 | Maintenance window approved for data migration | Change advisory board | 1-2 weeks | |
 
 > **Tip:** Submit P2, P3, P5, P6, P7 in parallel on day 1. The critical path is
-> typically P3 (block storage provisioning) and P5 (F5 VIP configuration).
+> typically P3 (S3 bucket provisioning) and P5 (F5 VIP configuration).
 
 ---
 
 ## 3. Epics and stories
 
-### Epic 1 — Infrastructure provisioning (second VM + block storage)
+### Epic 1 — Infrastructure provisioning (second VM + S3 object storage)
 
 | Story | Size | Hands-on | Wait | Depends on | Env | Deliverable |
 |-------|:----:|:--------:|:----:|------------|:---:|-------------|
 | 1.1 Submit second VM provisioning request | S | 1h | 1-2 weeks | P1 | — | Second VM available |
-| 1.2 Submit block storage provisioning request | S | 1h | 1-2 weeks | — | — | SAN LUN or iSCSI target available |
+| 1.2 Submit S3 object storage provisioning request | S | 1h | 1-2 weeks | — | — | S3 bucket and credentials available |
 | 1.3 Submit F5 VIP configuration request | S | 1h | 1-2 weeks | — | — | VIP configured with health check |
 | 1.4 Submit firewall rule requests for second VM | S | 30m | 1 week | — | — | TCP 4040 open to second VM |
 | 1.5 Verify second VM access and Docker functionality | S | 1h | — | 1.1 | dev | `docker run hello-world` succeeds |
-| 1.6 Mount block storage on both VMs | M | 2h | — | 1.1, 1.2 | dev | `/data/pyroscope` mounted on both VMs |
-| 1.7 Verify shared storage (write on VM1, read on VM2) | S | 1h | — | 1.6 | dev | File written on VM1 visible on VM2 |
+| 1.6 Configure S3 endpoint and credentials on both VMs | M | 2h | — | 1.1, 1.2 | dev | S3 endpoint URL and credentials configured on both VMs |
+| 1.7 Verify shared storage (write on VM1, read on VM2) | S | 1h | — | 1.6 | dev | Object written by VM1 readable from VM2 |
 | 1.8 Verify VIP routes to both VMs | S | 1h | — | 1.3, 1.5 | dev | `curl http://<vip>/ready` returns 200 |
 
 > **Parallel work:** Stories 1.1-1.4 are independent — submit all requests on day 1.
 
 ---
 
-### Epic 2 — Migrate Pyroscope data to block storage
+### Epic 2 — Migrate Pyroscope data to S3 object storage
 
-Migrate Pyroscope's data directory from local Docker volume to shared block storage.
+Migrate Pyroscope's data directory from local Docker volume to S3-compatible object storage.
 Requires a brief maintenance window per environment.
 
 | Story | Size | Hands-on | Wait | Depends on | Env | Deliverable |
 |-------|:----:|:--------:|:----:|------------|:---:|-------------|
 | 2.1 Stop Pyroscope on dev VM | S | 15m | — | Epic 1 | dev | Container stopped cleanly |
-| 2.2 Copy `/data` contents to block storage mount | M | 1-2h | — | 2.1 | dev | Data on block storage at `/data/pyroscope` |
-| 2.3 Update Docker volume mount to block storage path | S | 30m | — | 2.2 | dev | Container config points to `/data/pyroscope` |
+| 2.2 Upload `/data` contents to S3 bucket | M | 1-2h | — | 2.1 | dev | Data uploaded to S3 bucket |
+| 2.3 Update Pyroscope storage config to S3 endpoint | S | 30m | — | 2.2 | dev | Container config points to S3 endpoint URL |
 | 2.4 Start Pyroscope and validate data integrity | S | 30m | — | 2.3 | dev | Existing profiles queryable in UI |
-| 2.5 Migrate stage Pyroscope to block storage | M | 2h | — | 2.4 | stage | Stage data on shared block storage |
+| 2.5 Migrate stage Pyroscope to S3 object storage | M | 2h | — | 2.4 | stage | Stage data on S3 object storage |
 | 2.6 Validate stage Pyroscope with production-like queries | S | 1h | — | 2.5 | stage | Flame graphs render, no data loss |
 | 2.7 Submit change record for production data migration | S | 1h | 1-2 weeks | 2.6 | — | Change approved |
-| 2.8 Migrate production Pyroscope to block storage (maintenance window) | M | 2h | — | 2.7 | prod | Production data on shared block storage |
+| 2.8 Migrate production Pyroscope to S3 object storage (maintenance window) | M | 2h | — | 2.7 | prod | Production data on S3 object storage |
 | 2.9 Validate production data integrity | S | 1h | — | 2.8 | prod | All profiles queryable, no data loss |
 
 > **Reference:** Data migration is a one-time operation. Schedule the production
@@ -123,7 +123,7 @@ Requires a brief maintenance window per environment.
 
 ### Epic 3 — Deploy second Pyroscope VM
 
-Start Pyroscope on the second VM, pointing to the same block storage.
+Start Pyroscope on the second VM, pointing to the same S3 object storage bucket.
 
 | Story | Size | Hands-on | Wait | Depends on | Env | Deliverable |
 |-------|:----:|:--------:|:----:|------------|:---:|-------------|
@@ -135,9 +135,9 @@ Start Pyroscope on the second VM, pointing to the same block storage.
 | 3.6 Deploy Pyroscope on second production VM | M | 2h | — | 3.5 | prod | Second instance running on prod |
 | 3.7 Validate production data consistency across both VMs | S | 1h | — | 3.6 | prod | Both VMs serve identical query results |
 
-> **Important:** Run Pyroscope in **active-passive** mode initially. Only one VM
-> should write to block storage at a time to avoid block-level conflicts. The VIP
-> routes all traffic to the active VM; the passive VM is a warm standby.
+> **Important:** With S3-compatible object storage, both VMs can safely read and write
+> concurrently — there are no block-level conflicts. The VIP distributes traffic
+> across both VMs in an **active-active** configuration.
 
 ---
 
@@ -187,7 +187,7 @@ Update operational documentation and monitoring for multi-VM topology.
 | 6.1 Update Grafana datasource URL to VIP | S | 30m | — | Epic 4 | prod | Datasource health check green |
 | 6.2 Add per-VM Prometheus scrape targets | S | 1h | — | Epic 4 | prod | Both VMs scraped individually |
 | 6.3 Add VIP health alert to Prometheus | S | 1h | — | 6.2 | prod | Alert fires if VIP health check fails |
-| 6.4 Import multi-VM health dashboard | M | 2h | — | 6.1 | prod | Per-VM metrics, VIP health, block storage panels |
+| 6.4 Import multi-VM health dashboard | M | 2h | — | 6.1 | prod | Per-VM metrics, VIP health, S3 storage panels |
 | 6.5 Update operational runbook for multi-VM procedures | M | 1 day | — | Epic 5 | — | Runbook covers failover, restart, data migration |
 | 6.6 Knowledge transfer with operations team | M | 2h | — | 6.5 | — | Ops team can perform failover drill |
 | 6.7 Stakeholder demo and sign-off | S | 1h | — | 6.6 | — | Phase 2 accepted |
@@ -203,21 +203,21 @@ access to submit requests on day 1.
 
 ```mermaid
 gantt
-    title Phase 2 — Multi-VM Monolith with Block Storage
+    title Phase 2 — Multi-VM Monolith with S3 Object Storage
     dateFormat  YYYY-MM-DD
     axisFormat  Week %W
 
     section Infrastructure
-    Submit VM + storage + VIP requests       :p1, 2025-01-06, 1d
+    Submit VM + S3 storage + VIP requests    :p1, 2025-01-06, 1d
     Wait for approvals                       :crit, wait1, after p1, 14d
-    Verify VM + storage + VIP                :v1, after wait1, 2d
+    Verify VM + S3 storage + VIP             :v1, after wait1, 2d
 
     section Data Migration
-    Migrate dev to block storage             :dm1, after v1, 1d
-    Migrate stage to block storage           :dm2, after dm1, 1d
+    Migrate dev to S3 object storage         :dm1, after v1, 1d
+    Migrate stage to S3 object storage       :dm2, after dm1, 1d
     Submit prod migration change record      :dm3, after dm2, 1d
     Wait for change approval                 :crit, wait2, after dm3, 10d
-    Migrate production (maintenance window)  :dm4, after wait2, 1d
+    Migrate production to S3 (maint window)  :dm4, after wait2, 1d
 
     section Second VM
     Deploy second VM (dev + stage)           :sv1, after dm2, 2d
@@ -240,7 +240,7 @@ gantt
     Stakeholder demo + sign-off              :milestone, ft4, after ft3, 1d
 ```
 
-> **Critical path:** Block storage provisioning (2 weeks) → data migration → second VM → agent reconfiguration.
+> **Critical path:** S3 object storage provisioning (2 weeks) → data migration → second VM → agent reconfiguration.
 > Infrastructure requests and change approvals can overlap.
 
 ---
@@ -266,7 +266,7 @@ gantt
 |----------|:--------:|-------|
 | Engineering labor | 2-3 weeks FTE | Includes migration, testing, validation, documentation |
 | Second VM | 1 VM (same specs as Phase 1) | Existing VM fleet — no new hardware procurement |
-| Block storage | 250-500 GB SAN LUN | Existing SAN infrastructure |
+| S3 object storage | S3 bucket (MinIO on-prem or cloud S3) | Existing infrastructure or cloud account |
 | F5 VIP | 1 VIP configuration | Existing F5 infrastructure |
 | Software licensing | $0 | Same Pyroscope AGPL-3.0 binary |
 
@@ -276,20 +276,20 @@ gantt
 
 | # | Risk | Likelihood | Impact | Mitigation |
 |---|------|:----------:|:------:|------------|
-| R1 | Block storage provisioning delayed | Medium | High — blocks data migration | Submit request on day 1, escalate after 1 week |
+| R1 | S3 object storage provisioning delayed | Medium | High — blocks data migration | Submit request on day 1, escalate after 1 week |
 | R2 | F5 VIP configuration delayed | Medium | Medium — delays agent reconfiguration | Can test without VIP using direct VM access |
-| R3 | Shared filesystem conflicts (concurrent writes) | Low | High — data corruption | Use active-passive mode; only one VM writes at a time |
-| R4 | Data migration causes data loss | Low | High — historical profiles lost | Back up Docker volume before migration; validate checksums |
+| R3 | S3 eventual consistency edge cases | Low | Low — brief read-after-write delay | S3 provides strong read-after-write consistency; MinIO also supports it |
+| R4 | Data migration causes data loss | Low | High — historical profiles lost | Back up Docker volume before migration; validate object counts and checksums |
 | R5 | VIP health check misconfigured | Low | Medium — no automatic failover | Test health check path (`GET /ready`) before going live |
 | R6 | Agent push failures during VIP cutover | Low | Low — agent retries automatically | Agent retains samples in buffer; next push succeeds |
-| R7 | Block storage performance insufficient | Low | Medium — slow queries | Test query latency on block storage before migration; SAN should match local disk performance |
+| R7 | S3 object storage latency higher than local disk | Low | Medium — slow queries | Test query latency against S3 endpoint before migration; MinIO on-prem typically matches network storage performance |
 | R8 | Soak test reveals issues | Low | Medium — delays production | Allow buffer time for soak test iterations |
 
 ### External dependencies
 
 | Dependency | Owner | Required by |
 |------------|-------|-------------|
-| Block storage (SAN LUN or iSCSI target) | Storage team | Epic 1 |
+| S3-compatible object storage (MinIO, AWS S3, GCS, or Azure Blob) | Storage / cloud team | Epic 1 |
 | Second VM (same specs as Phase 1) | Infrastructure / VM team | Epic 1 |
 | F5 VIP configuration | Network / F5 team | Epic 4 |
 | Maintenance window for data migration | Change advisory board | Epic 2 |
@@ -303,8 +303,8 @@ Phase 2 is complete when all of the following are true:
 
 | # | Acceptance criteria | Verification |
 |---|--------------------|--------------|
-| D1 | Both Pyroscope VMs are running and mounting shared block storage | `curl http://<vm1>:4040/ready` and `curl http://<vm2>:4040/ready` return 200 |
-| D2 | Shared block storage contains all profile data | Query same time range on both VMs — identical results |
+| D1 | Both Pyroscope VMs are running and configured with S3 object storage | `curl http://<vm1>:4040/ready` and `curl http://<vm2>:4040/ready` return 200 |
+| D2 | S3 object storage bucket contains all profile data | Query same time range on both VMs — identical results |
 | D3 | F5 VIP is routing traffic and health check is active | `curl https://<vip>/ready` returns 200 |
 | D4 | All Java agents push through VIP | Pyroscope UI shows all application names with profiles |
 | D5 | Grafana datasource points to VIP | Flame graphs render via VIP URL |
@@ -323,7 +323,7 @@ PostgreSQL-backed SORs and v2 BOR functions.
 
 | Change | What it adds | Prerequisite |
 |--------|-------------|--------------|
-| Microservices on OCP | 7 Pyroscope components as separate pods, horizontal scaling | OCP namespace + RWX storage class |
+| Microservices on OCP | 7 Pyroscope components as separate pods, horizontal scaling | OCP namespace + S3-compatible object storage |
 | PostgreSQL database | Persistence for baselines, audit trails, service registry, alert rules | DBA provisions PostgreSQL instance |
 | 4 new SORs | Baseline, History, Registry, AlertRule | PostgreSQL + schema.sql applied |
 | v2 BOR functions | Baseline comparison, threshold annotation, ownership enrichment, audit trail | New SORs deployed |
@@ -342,7 +342,7 @@ PostgreSQL-backed SORs and v2 BOR functions.
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 plan (prerequisite) |
 | [project-plan-phase3.md](project-plan-phase3.md) | Phase 3 plan (next phase) |
 | [architecture.md](architecture.md) | Multi-VM topology diagram |
-| [capacity-planning.md](capacity-planning.md) | Multi-VM sizing and block storage requirements |
+| [capacity-planning.md](capacity-planning.md) | Multi-VM sizing and S3 object storage requirements |
 | [deployment-guide.md](deployment-guide.md) | Server deployment procedures |
 | [troubleshooting.md](troubleshooting.md) | Diagnostic procedures |
 | [runbook.md](runbook.md) | Incident response playbooks |

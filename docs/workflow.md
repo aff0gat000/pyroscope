@@ -46,7 +46,7 @@ decided and why — they replace meetings and Slack threads that get lost.
 |-----------|-------|
 | **Phase 1 — POC** | Pyroscope on VM, profiling workload validated, initial docs |
 | **Phase 1 — Production** | Java agent on OCP, BOR/SOR deployed, Grafana integrated |
-| **Phase 2** | Multi-VM monolith with block storage, HA via load balancer |
+| **Phase 2** | Multi-VM monolith with S3-compatible object storage, HA via load balancer |
 | **Phase 3** | PostgreSQL SORs, v2 BORs, microservices mode on OpenShift |
 
 Assign every issue to a milestone. This gives a natural burndown view.

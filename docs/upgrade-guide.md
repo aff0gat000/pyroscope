@@ -195,13 +195,13 @@ Best practice: Pin versions in production. Use `grafana/pyroscope:1.18.0`, not `
 
 ## Phase 1 to Phase 2 Migration (Single VM â†’ Multi-VM)
 
-The migration adds a second Pyroscope VM behind a load balancer, with shared block
-storage (SAN/iSCSI). Java agents are updated to push to the VIP instead of the
-direct VM address.
+The migration adds a second Pyroscope VM behind a load balancer, with S3-compatible
+object storage (MinIO, AWS S3, GCS, or Azure Blob). Java agents are updated to push
+to the VIP instead of the direct VM address.
 
 Steps:
-1. Provision second VM and shared block storage volume
-2. Migrate Pyroscope data directory to block storage on both VMs
+1. Provision second VM and S3-compatible object storage bucket
+2. Configure Pyroscope on both VMs to use S3-compatible object storage
 3. Configure F5 VIP with health check (`GET /ready`)
 4. Update agent `pyroscope.server.address` to point to VIP
 5. Validate failover by stopping one VM
@@ -216,7 +216,7 @@ The migration from multi-VM monolith to microservices is **server-side only** â€
 agents do not change. The agent pushes to a URL; you change what is behind that URL.
 
 Steps:
-1. Deploy microservices Pyroscope on OCP (new namespace, block storage backed RWX PVC)
+1. Deploy microservices Pyroscope on OCP (new namespace, S3-compatible object storage)
 2. Migrate DNS or update agent `pyroscope.server.address` to point to the OCP distributor
 3. Run parallel for a retention overlap period
 4. Decommission multi-VM monolith after verification
