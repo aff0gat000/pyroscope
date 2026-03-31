@@ -260,7 +260,7 @@ Fill-in templates for change management and governance.
 |----------|-------------|
 | [templates/change-request.md](templates/change-request.md) | CAB change request template — risk assessment, test evidence, approval signatures |
 | [templates/rollback-plan.md](templates/rollback-plan.md) | Rollback plan template — trigger criteria, steps, verification, communication |
-| [labeling-analysis-prompt.md](labeling-analysis-prompt.md) | AI copilot prompt for analyzing Vert.x server codebase for profiling label strategy |
+| [vertx-labeling-analysis-prompt.md](vertx-labeling-analysis-prompt.md) | AI copilot prompt for analyzing Vert.x server codebase for profiling label strategy |
 
 ---
 
