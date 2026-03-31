@@ -3,7 +3,7 @@
 Enterprise documentation organized by the [Diataxis framework](https://diataxis.fr/) — the same
 standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
-**31 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
+**32 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
 Development and demo resources remain in-repo only.
 
 ---

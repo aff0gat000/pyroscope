@@ -18,6 +18,7 @@ security-model.md                       # [E] Data classification, auth, complia
 async-profiling-guide.md                # [E] Async framework profiling, labeling strategy
 faq.md                                  # [E] Frequently asked questions
 profiling-use-cases.md                  # [E] Enterprise use cases, AI/ML, dashboards, always-on
+pyroscope-reference-guide.md            # [E] Expert reference — storage internals, scaling, competitive analysis
 
 # --- Tutorials (learning-oriented) ---
 getting-started.md                      # [T] Day-one orientation, glossary, reading paths
