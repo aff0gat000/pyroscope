@@ -44,11 +44,11 @@ graph LR
     subgraph "Thread-per-request (Spring MVC)"
         T1["Thread-1<br/>→ /payment/transfer"]
         T2["Thread-2<br/>→ /account/balance"]
-        T3["Thread-3<br/>→ /triage/app-1"]
+        T3["Thread-3<br/>→ /order/status"]
     end
 
     subgraph "Event loop (Vert.x)"
-        EL["Event Loop 0<br/>→ /payment/transfer<br/>→ /account/balance<br/>→ /triage/app-1<br/>→ ... thousands more"]
+        EL["Event Loop 0<br/>→ /payment/transfer<br/>→ /account/balance<br/>→ /order/status<br/>→ ... thousands more"]
     end
 ```
 
@@ -324,21 +324,21 @@ identify which of the 1000+ functions is responsible.
 
 ### With labels
 
-Filter by `{function="ReadPyroscopeTriageAssessment.v1"}` and the flame graph shows
+Filter by `{function="ProcessPaymentTransfer.v1"}` and the flame graph shows
 only that function's CPU:
 
 ```mermaid
 graph TB
     subgraph "Flame Graph — Filtered by function label"
-        FN["function=ReadPyroscopeTriageAssessment.v1<br/>320ms CPU"]
+        FN["function=ProcessPaymentTransfer.v1<br/>320ms CPU"]
         FN --> PARSE["parseRequest<br/>45ms"]
-        FN --> RULES["computeTriageRules<br/>180ms ← bottleneck"]
+        FN --> VALIDATE["validateTransaction<br/>180ms ← bottleneck"]
         FN --> BUILD["buildWebClientRequest<br/>25ms"]
         FN --> SERIAL["serializeResponse<br/>70ms"]
     end
 ```
 
-**Now actionable.** The triage function is spending 56% of its CPU in rule computation —
+**Now actionable.** The payment function is spending 56% of its CPU in validation —
 the team can investigate and optimize.
 
 ---
@@ -349,7 +349,7 @@ the team can investigate and optimize.
 
 | Label | Source | Example value | Purpose |
 |-------|--------|---------------|---------|
-| `function` | Resolved at request time from the matched verticle/route | `ReadPyroscopeTriageAssessment.v1` | Identify which function is consuming CPU |
+| `function` | Resolved at request time from the matched verticle/route | `ProcessPaymentTransfer.v1` | Identify which function is consuming CPU |
 
 ### Why one label
 
@@ -637,10 +637,10 @@ functions, cardinality is the primary concern.
 
 | Convention | Example | Why |
 |------------|---------|-----|
-| Use the function's canonical name | `ReadPyroscopeTriageAssessment.v1` | Matches what teams already use to identify functions |
+| Use the function's canonical name | `ProcessPaymentTransfer.v1` | Matches what teams already use to identify functions |
 | Include version if relevant | `.v1`, `.v2` | Enables before/after comparison across versions |
-| Use dot-separated names | `ReadPyroscope.TriageAssessment` | Consistent with Java package naming |
-| Avoid spaces, special characters | `triage-assessment` not `Triage Assessment!` | Label values are used in query syntax |
+| Use dot-separated names | `Payment.ProcessTransfer` | Consistent with Java package naming |
+| Avoid spaces, special characters | `payment-transfer` not `Payment Transfer!` | Label values are used in query syntax |
 
 ### What NOT to label
 

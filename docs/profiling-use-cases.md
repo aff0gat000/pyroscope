@@ -140,7 +140,7 @@ per pod. This enables:
 ### Cost attribution
 
 Map CPU consumption to business functions. Answer: "How much of our compute
-spend is attributable to the payment processing function vs the triage function?"
+spend is attributable to the payment processing function vs the order validation function?"
 
 ### Scaling forecasting
 
