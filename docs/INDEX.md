@@ -3,7 +3,7 @@
 Enterprise documentation organized by the [Diataxis framework](https://diataxis.fr/) — the same
 standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
-**32 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
+**33 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
 Development and demo resources remain in-repo only.
 
 ---
@@ -184,6 +184,7 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 | Document | Description |
 |----------|-------------|
 | [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview — what continuous profiling is, business case, cost, adoption phases |
+| [value-proposition.md](value-proposition.md) | Banking enterprise value proposition — quantified ROI, compliance alignment, cost analysis |
 | [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
 | [vertx-labeling-guide.md](vertx-labeling-guide.md) | Vert.x component reference, profiling label strategy, implementation approaches |
 | [profiling-use-cases.md](profiling-use-cases.md) | Enterprise use cases, AI/ML initiatives, always-on rationale, dashboard strategy |

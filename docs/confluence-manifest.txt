@@ -12,6 +12,7 @@
 
 # --- Explanation (understanding-oriented) ---
 what-is-pyroscope.md                    # [E] Executive overview, business case, TCO
+value-proposition.md                    # [E] Banking enterprise value proposition, ROI, compliance
 architecture.md                         # [E] Component internals, topology, data flow
 function-architecture.md                # [E] BOR/SOR project structure, design patterns
 security-model.md                       # [E] Data classification, auth, compliance
