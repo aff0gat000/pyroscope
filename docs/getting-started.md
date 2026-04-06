@@ -26,7 +26,7 @@ See [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) f
 | **AGPL-3.0** | Affero General Public License — Pyroscope's open-source license; free for internal deployment |
 | **APM** | Application Performance Monitoring — commercial platforms (Datadog, Dynatrace, New Relic) |
 | **BOR** | Business Object Rules — business logic layer in the FaaS function architecture (Triage, Diff Report, Fleet Search) |
-| **Burn rate** | Rate of error budget consumption relative to budget period. 1x = budget consumed at window end. 10x = exhausted in 1/10 of window. See [sla-slo.md](sla-slo.md). |
+| **Burn rate** | Rate of error budget consumption relative to budget period. 1x = budget consumed at window end. 10x = exhausted in 1/10 of window. See [observability.md](observability.md). |
 | **CA** | Certificate Authority — issues TLS certificates for HTTPS |
 | **CAB** | Change Advisory Board — approves production changes in enterprise environments |
 | **CNCF** | Cloud Native Computing Foundation — stewards Kubernetes, Prometheus, and other projects |
@@ -37,7 +37,7 @@ See [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) f
 | **Diataxis** | Documentation framework with four quadrants: Tutorial, How-to, Explanation, Reference |
 | **Distributor** | Pyroscope component that receives profiles from agents and routes them to ingesters |
 | **Envoy** | Reverse proxy used for TLS termination in front of Pyroscope |
-| **Error budget** | Maximum acceptable unreliability over a measurement window. Calculated as `(1 - SLO) x window`. Consumed by outages and maintenance. See [sla-slo.md](sla-slo.md). |
+| **Error budget** | Maximum acceptable unreliability over a measurement window. Calculated as `(1 - SLO) x window`. Consumed by outages and maintenance. See [observability.md](observability.md). |
 | **FaaS** | Function-as-a-Service — lightweight runtime for deploying analysis functions |
 | **FIPS** | Federal Information Processing Standards — cryptographic compliance requirement (140-2/140-3) |
 | **Flame graph** | Visualization where bar width represents time spent in a function; wider = more time = optimize here |
@@ -131,7 +131,7 @@ Start with this document, then follow the path for your role.
 | Operators / SREs | [deployment-guide.md](deployment-guide.md) | [architecture.md](architecture.md), [monitoring-guide.md](monitoring-guide.md), [troubleshooting.md](troubleshooting.md) |
 | Developers | [reading-flame-graphs.md](reading-flame-graphs.md) | profiling-scenarios.md (available in the repo at docs/profiling-scenarios.md), sample-queries.md (available in the repo at docs/sample-queries.md) |
 | FaaS function developers | [function-reference.md](function-reference.md) | [function-architecture.md](function-architecture.md), [production-questionnaire-phase1.md](production-questionnaire-phase1.md) |
-| Governance / change managers | [security-model.md](security-model.md) | [sla-slo.md](sla-slo.md), [templates/change-request.md](templates/change-request.md) |
+| Governance / change managers | [security-model.md](security-model.md) | [observability.md](observability.md), [templates/change-request.md](templates/change-request.md) |
 
 See INDEX.md (available in the repo at docs/INDEX.md) for the complete documentation index with audience-specific reading paths.
 
@@ -149,7 +149,7 @@ See INDEX.md (available in the repo at docs/INDEX.md) for the complete documenta
 | OCP platform team | _TBD_ | _TBD_ | Namespace, NetworkPolicy, storage issues |
 | Change advisory board | _TBD_ | _TBD_ | Production change approval |
 
-See [sla-slo.md](sla-slo.md) for the full escalation matrix.
+See [observability.md](observability.md) for the full escalation matrix.
 
 ---
 

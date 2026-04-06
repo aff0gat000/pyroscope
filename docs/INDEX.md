@@ -201,7 +201,7 @@ Look up specific facts while working.
 | [configuration-reference.md](configuration-reference.md) | All configuration keys — agent properties, pyroscope.yaml, deploy.sh flags, Ansible, Helm |
 | [agent-configuration-reference.md](agent-configuration-reference.md) | Java agent deep dive — profile types, thread context, Vert.x edge cases, OpenTelemetry integration |
 | [capacity-planning.md](capacity-planning.md) | Sizing (Phase 1a single monolith, Phase 1b multi-instance monolith, Phase 2 OCP microservices), networking, firewall rules, enterprise scoping |
-| [sla-slo.md](sla-slo.md) | Observability SLOs, measures, and controls — SLIs, SLOs, error budgets, alerting, health checks, capacity controls, incident response, change management |
+| [observability.md](observability.md) | Observability SLOs, measures, and controls — SLIs, SLOs, error budgets, alerting, health checks, capacity controls, incident response, change management |
 | [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search, Phase 1/3 |
 | [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build |
 | [endpoint-reference.md](endpoint-reference.md) | Complete endpoint list with curl examples for all 9 services |
@@ -342,7 +342,7 @@ Fill-in templates for change management and governance.
 
 1. [what-is-pyroscope.md](what-is-pyroscope.md) — business case and risk assessment
 2. [security-model.md](security-model.md) — security controls and compliance checklist
-3. [sla-slo.md](sla-slo.md) — SLO definitions and error budget
+3. [observability.md](observability.md) — SLO definitions and error budget
 4. [templates/change-request.md](templates/change-request.md) — CAB submission template
 5. [templates/rollback-plan.md](templates/rollback-plan.md) — rollback plan template
 

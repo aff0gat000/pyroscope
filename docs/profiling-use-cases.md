@@ -477,7 +477,7 @@ sovereignty requirements, this is the differentiator.
 |----------|-----------|
 | [vertx-labeling-guide.md](vertx-labeling-guide.md) | Labeling strategy for Vert.x reactive servers |
 | [capacity-planning.md](capacity-planning.md) | Storage impact of profiling series and dashboards |
-| [sla-slo.md](sla-slo.md) | SLO definitions that can be enforced with profiling data |
+| [observability.md](observability.md) | SLO definitions that can be enforced with profiling data |
 | [what-is-pyroscope.md](what-is-pyroscope.md) | Business case and cost justification |
 | [architecture.md](architecture.md) | Deployment topology and data flow |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 dashboard stories |

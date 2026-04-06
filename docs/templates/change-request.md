@@ -47,7 +47,7 @@ _Which services, pods, or VMs are affected? Is there user-facing impact?_
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Profiling data gap during upgrade | High | Low | Non-critical tool; gap is acceptable per [sla-slo.md](../sla-slo.md) |
+| Profiling data gap during upgrade | High | Low | Non-critical tool; gap is acceptable per [observability.md](../observability.md) |
 | New version has performance regression | Low | Medium | Rollback to previous version within 5 minutes |
 | Agent incompatibility with new server | Low | Low | Agent protocol is stable across 1.x versions |
 | Configuration error prevents startup | Medium | Low | Pre-validated config; `/ready` health check within 2 min |

@@ -713,7 +713,7 @@ Each phase is independently valuable:
 | [profiling-use-cases.md](profiling-use-cases.md) | Technical use cases, AI/ML initiatives, dashboard strategy |
 | [vertx-labeling-guide.md](vertx-labeling-guide.md) | Vert.x labeling strategy for shared reactive servers |
 | [security-model.md](security-model.md) | Data classification, authentication, compliance details |
-| [sla-slo.md](sla-slo.md) | SLO definitions, RPO/RTO targets |
+| [observability.md](observability.md) | SLO definitions, RPO/RTO targets |
 | [presentation-guide.md](presentation-guide.md) | How to present to different audiences |
 
 ---
