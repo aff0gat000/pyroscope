@@ -45,7 +45,7 @@ function-reference.md                   # [R] BOR/SOR function API, phases, endp
 configuration-reference.md              # [R] All config keys — agent, server, deploy, Helm
 agent-configuration-reference.md        # [R] Java agent deep dive — profile types, Vert.x
 capacity-planning.md                    # [R] Sizing, networking, firewall, enterprise scoping
-sla-slo.md                              # [R] SLO definitions, RPO/RTO, error budget
+sla-slo.md                              # [R] Observability SLOs, measures, controls, alerting, incident response
 production-questionnaire-phase1.md      # [R] Phase 1 production onboarding questionnaire
 production-questionnaire-phase2.md      # [R] Phase 2 onboarding questionnaire
 labeling-analysis-prompt.md             # [R] AI copilot prompt for Vert.x codebase analysis
