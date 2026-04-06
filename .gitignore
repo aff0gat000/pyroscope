@@ -17,6 +17,9 @@ config-snapshots/
 # Confluence export output
 confluence-export/
 
+# HTML documentation site output
+docs-site/
+
 # Confluence credentials (contains PAT — never commit)
 .env.confluence
 
