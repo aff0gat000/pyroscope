@@ -469,7 +469,7 @@ else
         if [[ -f "$f" ]]; then
             local_base=$(echo "$f" | sed "s|${REPO_ROOT}/||" | tr '/' '-' | sed 's/\.md$//')
             output_file="${OUTPUT_DIR}/${local_base}.confluence.txt"
-            convert_to_confluence "$f" "$output_file"
+            convert_to_confluence "$f" "$output_file" "$local_base"
             echo "  ${local_base}.confluence.txt"
         fi
     done
