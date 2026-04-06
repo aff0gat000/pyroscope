@@ -26,14 +26,18 @@ See [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) f
 | **AGPL-3.0** | Affero General Public License — Pyroscope's open-source license; free for internal deployment |
 | **APM** | Application Performance Monitoring — commercial platforms (Datadog, Dynatrace, New Relic) |
 | **BOR** | Business Object Rules — business logic layer in the FaaS function architecture (Triage, Diff Report, Fleet Search) |
+| **Burn rate** | Rate of error budget consumption relative to budget period. 1x = budget consumed at window end. 10x = exhausted in 1/10 of window. See [sla-slo.md](sla-slo.md). |
 | **CA** | Certificate Authority — issues TLS certificates for HTTPS |
 | **CAB** | Change Advisory Board — approves production changes in enterprise environments |
 | **CNCF** | Cloud Native Computing Foundation — stewards Kubernetes, Prometheus, and other projects |
 | **Compactor** | Pyroscope component that merges and deduplicates storage blocks and enforces retention |
 | **Continuous profiling** | Always-on, low-overhead sampling of application code at the function level in production |
+| **Cardinality** | Number of unique values a label can take. High cardinality (request IDs) causes storage explosion. Low cardinality (function names) is safe. |
+| **Dead man's switch** | Alerting pattern where a continuously-firing alert (Watchdog) is expected by an external system. Absence of the alert indicates monitoring failure. |
 | **Diataxis** | Documentation framework with four quadrants: Tutorial, How-to, Explanation, Reference |
 | **Distributor** | Pyroscope component that receives profiles from agents and routes them to ingesters |
 | **Envoy** | Reverse proxy used for TLS termination in front of Pyroscope |
+| **Error budget** | Maximum acceptable unreliability over a measurement window. Calculated as `(1 - SLO) x window`. Consumed by outages and maintenance. See [sla-slo.md](sla-slo.md). |
 | **FaaS** | Function-as-a-Service — lightweight runtime for deploying analysis functions |
 | **FIPS** | Federal Information Processing Standards — cryptographic compliance requirement (140-2/140-3) |
 | **Flame graph** | Visualization where bar width represents time spent in a function; wider = more time = optimize here |
@@ -43,19 +47,31 @@ See [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) f
 | **Ingester** | Pyroscope component that writes incoming profiles to storage |
 | **JFR** | Java Flight Recorder — built-in JVM profiling engine (JDK 11+); used by the Pyroscope agent |
 | **JVM** | Java Virtual Machine — runtime for Java, Kotlin, Scala, and other JVM languages |
+| **Liveness probe** | Health check determining if a process is alive. Failure triggers container restart. Last resort — not for transient slowness. |
 | **Memberlist** | Hashicorp gossip protocol used by Pyroscope microservices for hash ring coordination |
+| **MTTD** | Mean Time to Detect — average time from failure start to detection by monitoring or humans |
 | **Monolith mode** | Single-process Pyroscope deployment; supports up to ~100 profiled services |
 | **Microservices mode** | 7-component Pyroscope deployment; supports 100+ services with HA and horizontal scaling |
 | **MTTR** | Mean Time To Resolution — average time from incident detection to root cause identification |
 | **Object storage** | S3-compatible storage backend (MinIO, AWS S3, GCS, Azure Blob) used by multi-VM monolith (Phase 2) and microservices (Phase 3) modes |
+| **Observability** | Ability to understand a system's internal state from its external outputs (metrics, logs, traces, profiles). Distinguished from monitoring by ability to answer novel questions. |
 | **OCP** | OpenShift Container Platform — Red Hat's enterprise Kubernetes distribution |
 | **OTel** | OpenTelemetry — open-source observability framework for metrics, traces, logs (profiling signal emerging) |
 | **pbrun** | PowerBroker run — enterprise privilege escalation tool (similar to sudo) |
 | **PVC** | PersistentVolumeClaim — Kubernetes storage request |
 | **Querier** | Pyroscope component that executes profile queries |
+| **Readiness probe** | Health check determining if a service instance can accept traffic. Failure removes it from load balancer but does NOT restart it. |
+| **Retention** | Duration for which profiling data is stored before purging. Shorter = less storage; longer = wider historical comparison. |
+| **RPO** | Recovery Point Objective — maximum acceptable data loss measured in time (e.g., RPO of 2 min = up to 2 min of data may be lost) |
+| **RTO** | Recovery Time Objective — maximum acceptable time to restore service after a failure |
 | **RWX** | ReadWriteMany — Kubernetes storage access mode; microservices mode uses S3-compatible object storage instead of RWX PVCs |
+| **SLA** | Service Level Agreement — formal contract specifying expected service level and consequences of non-compliance. External-facing and binding. |
+| **SLI** | Service Level Indicator — quantitative metric measuring a specific aspect of service (latency, error rate, availability). The raw data SLOs are defined against. |
+| **SLO** | Service Level Objective — internal target for service reliability, expressed as percentage of an SLI over a time window (e.g., "99% of queries < 5s over 30 days"). |
 | **SOR** | System of Record — data access layer in the FaaS function architecture; wraps Pyroscope API |
+| **Synthetic monitoring** | Automated, periodic execution of predefined checks against a service to verify end-to-end functionality from the client perspective. |
 | **TLS** | Transport Layer Security — encryption for data in transit (HTTPS) |
+| **Toil** | Repetitive, manual, automatable work tied to running a production service. Google SRE targets < 50% of SRE time on toil. |
 | **Verticle** | Vert.x unit of deployment — each FaaS function runs as a separate Verticle |
 | **WAL** | Write-Ahead Log — crash recovery mechanism; profiles are written to WAL before storage |
 

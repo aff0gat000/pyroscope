@@ -3,11 +3,16 @@
 Service level objectives, observability measures, operational controls, and
 escalation procedures for the Pyroscope continuous profiling platform.
 
-Covers the four pillars of observability governance: **SLIs** (what we measure),
-**SLOs** (what we commit to), **error budgets** (how much failure is acceptable),
-and **operational controls** (how we detect, respond to, and prevent issues).
+Covers the four pillars of observability governance [^sre-book]: **SLIs** (what we
+measure), **SLOs** (what we commit to), **error budgets** (how much failure is
+acceptable), and **operational controls** (how we detect, respond to, and prevent
+issues).
 
 Target audience: SREs, platform engineers, operations managers, technology risk.
+
+> **Terminology:** This document uses standard SRE and ITIL terminology. See the
+> [Definitions](#definitions) section at the end for formal definitions of all
+> terms. A broader glossary is available in [getting-started.md](getting-started.md#glossary).
 
 ---
 
@@ -28,6 +33,8 @@ Target audience: SREs, platform engineers, operations managers, technology risk.
 - [13. Observability of the observability platform](#13-observability-of-the-observability-platform)
 - [14. Phase 2 and Phase 3 SLO targets](#14-phase-2-and-phase-3-slo-targets)
 - [15. Cross-references](#15-cross-references)
+- [Definitions](#definitions)
+- [References](#references)
 
 ---
 
@@ -53,8 +60,9 @@ decision driver D8 classifies HA as Low priority.
 
 ## 2. Service level indicators (SLIs)
 
-SLIs are the **metrics we measure** to determine whether the service is healthy.
-Each SLI has a Prometheus query, a good/bad threshold, and a measurement window.
+SLIs are the **metrics we measure** to determine whether the service is healthy
+[^sre-book] Ch. 4. Each SLI has a Prometheus query [^prometheus-docs], a good/bad
+threshold, and a measurement window.
 
 ### Ingestion SLIs
 
@@ -96,8 +104,9 @@ Each SLI has a Prometheus query, a good/bad threshold, and a measurement window.
 
 ## 3. Service level objectives (SLOs)
 
-SLOs are the **targets we commit to** for each SLI. They define the boundary
-between "acceptable" and "needs attention."
+SLOs are the **targets we commit to** for each SLI [^sre-book] Ch. 4. They define
+the boundary between "acceptable" and "needs attention." SLOs are internal
+targets — stricter than any external SLA to provide a buffer.
 
 ### Phase 1 SLOs (recommended targets — not yet agreed with stakeholders)
 
@@ -127,8 +136,8 @@ accommodates:
 ## 4. Error budgets
 
 The error budget is the **maximum acceptable amount of unreliability** over a
-measurement window. When the error budget is consumed, further changes that risk
-reliability should be deferred.
+measurement window [^sre-book] Ch. 3. When the error budget is consumed, further
+changes that risk reliability should be deferred.
 
 ### Budget calculation
 
@@ -305,9 +314,10 @@ of stable operation and update quarterly.
 
 ### Burn rate alerting
 
-Burn rate measures how fast the error budget is being consumed. A burn rate of 1x
-means the budget will be exactly exhausted at the end of the window. A burn rate
-of 10x means the budget will be exhausted in 1/10 of the window.
+Burn rate [^sre-workbook] Ch. 5 measures how fast the error budget is being
+consumed. A burn rate of 1x means the budget will be exactly exhausted at the end
+of the window. A burn rate of 10x means the budget will be exhausted in 1/10 of
+the window.
 
 | Burn rate | Budget consumed in | Alert severity | Response |
 |:---------:|:------------------:|:--------------:|----------|
@@ -436,7 +446,8 @@ After any change:
 
 ### The meta-monitoring problem
 
-Pyroscope monitors application performance. But who monitors Pyroscope? If the
+Pyroscope monitors application performance. But who monitors Pyroscope?
+[^observability-eng] Ch. 12 calls this the "meta-monitoring problem" — if the
 monitoring platform is down, you lose visibility into the applications it monitors.
 
 ### Meta-monitoring strategy
@@ -526,3 +537,52 @@ on-call team — the monitoring system itself is down.
 | [templates/change-request.md](templates/change-request.md) | Change request template for CAB |
 | [templates/rollback-plan.md](templates/rollback-plan.md) | Rollback plan template |
 | [adr/ADR-001-continuous-profiling.md](adr/ADR-001-continuous-profiling.md) | Service tier classification decision |
+| [getting-started.md § Glossary](getting-started.md#glossary) | Full project glossary including observability terms |
+
+---
+
+## Definitions
+
+Formal definitions for observability and reliability terms used in this document.
+Sourced from Google SRE [^sre-book], ITIL 4 [^itil4], and NIST [^nist-glossary].
+
+| Term | Definition | Source |
+|------|-----------|--------|
+| **SLA** (Service Level Agreement) | A formal contract between a service provider and consumer specifying the expected level of service, consequences of non-compliance, and measurement methodology. SLAs are externally facing and legally binding. | ITIL 4 [^itil4] |
+| **SLO** (Service Level Objective) | An internal target for the reliability of a service, expressed as a percentage of an SLI over a time window (e.g., "99% of queries complete in < 5 seconds over 30 days"). SLOs are stricter than SLAs to provide a buffer. | Google SRE [^sre-book] |
+| **SLI** (Service Level Indicator) | A quantitative measure of a specific aspect of the service — the raw metric that SLOs are defined against (e.g., request latency, error rate, availability). | Google SRE [^sre-book] |
+| **Error budget** | The maximum amount of unreliability permitted by the SLO over a measurement window. Calculated as `(1 - SLO) x window`. Consumed by outages, degradation, and maintenance. When exhausted, changes that risk reliability are frozen. | Google SRE [^sre-book] |
+| **Burn rate** | The rate at which the error budget is being consumed relative to the budget period. A burn rate of 1x means the budget will be exactly exhausted at the end of the window. A burn rate of 10x means exhaustion in 1/10 of the window. | Google SRE Workbook [^sre-workbook] |
+| **RPO** (Recovery Point Objective) | The maximum acceptable amount of data loss measured in time. An RPO of 2 minutes means up to 2 minutes of data may be lost during a failure. | NIST SP 800-34 [^nist-glossary] |
+| **RTO** (Recovery Time Objective) | The maximum acceptable time to restore service after a failure. An RTO of 5 minutes means the service must be operational within 5 minutes of a failure. | NIST SP 800-34 [^nist-glossary] |
+| **MTTR** (Mean Time to Restore/Resolve) | The average time from incident detection to service restoration. DORA uses "time to restore service" as one of four key software delivery metrics. | DORA [^dora-2024] |
+| **MTTD** (Mean Time to Detect) | The average time from the start of a failure to detection by monitoring systems or humans. | PagerDuty [^pagerduty-2024] |
+| **Readiness probe** | A health check that determines whether a service instance can accept new traffic. A failed readiness probe removes the instance from the load balancer pool but does not restart it. | Kubernetes documentation [^k8s-probes] |
+| **Liveness probe** | A health check that determines whether a service instance is alive. A failed liveness probe triggers a container restart. Should be used as a last resort — not for transient slowness. | Kubernetes documentation [^k8s-probes] |
+| **Synthetic monitoring** | Automated, periodic execution of predefined transactions against a service to verify end-to-end functionality from the client perspective. | Gartner IT Glossary [^gartner-glossary] |
+| **Dead man's switch** | An alerting pattern where a continuously-firing alert (Watchdog) is expected by an external system. If the alert stops firing, the external system notifies operators — indicating the monitoring system itself has failed. | Prometheus documentation [^prometheus-docs] |
+| **Toil** | Repetitive, manual, automatable work tied to running a production service that scales linearly with service size. Google SRE targets < 50% of SRE time on toil. | Google SRE [^sre-book] |
+| **Change failure rate** | The percentage of deployments that result in a degraded service requiring remediation (rollback, hotfix, patch). One of DORA's four key metrics. | DORA [^dora-2024] |
+| **Service tier** | A classification of a service's business criticality that determines SLO targets, support response times, and change management requirements. Tier 1 = business-critical, Tier 3 = non-critical. | ITIL 4 [^itil4] |
+| **Observability** | The ability to understand the internal state of a system by examining its external outputs (metrics, logs, traces, profiles). Distinguished from monitoring (which checks known failure modes) by its ability to answer novel questions. | Charity Majors, "Observability Engineering" [^observability-eng] |
+| **Cardinality** | The number of unique values a label or tag can take. High cardinality (e.g., request ID per label) causes storage explosion. Low, bounded cardinality (e.g., function name) is safe. | Prometheus documentation [^prometheus-docs] |
+| **Compaction** | The process of merging, deduplicating, and downsampling stored profiling blocks to reduce storage consumption and improve query performance. | Pyroscope documentation [^pyroscope-docs] |
+| **Retention** | The duration for which profiling data is stored before being purged. Shorter retention reduces storage cost; longer retention enables wider historical comparison. | Pyroscope documentation [^pyroscope-docs] |
+
+---
+
+## References
+
+| Reference | Full citation | Used in |
+|-----------|--------------|---------|
+| [^sre-book] | Beyer, Jones, Petoff, Murphy, *Site Reliability Engineering: How Google Runs Production Systems*, O'Reilly, 2016. Chapters 4 (SLOs), 3 (Embracing Risk), 31 (Communication). | SLI, SLO, error budget, toil definitions |
+| [^sre-workbook] | Beyer, Murphy, Rensin, Kawahara, Thorne, *The Site Reliability Workbook*, O'Reilly, 2018. Chapter 5 (Alerting on SLOs), burn rate methodology. | Burn rate alerting, error budget policy |
+| [^itil4] | AXELOS, *ITIL 4: Create, Deliver and Support*, TSO, 2019. Service level management practice. | SLA, service tier classification, change management |
+| [^dora-2024] | Google Cloud / DORA, *Accelerate State of DevOps Report 2024*. 39,000+ respondents. | MTTR benchmarks, change failure rate |
+| [^pagerduty-2024] | PagerDuty, *State of Digital Operations Report 2024*. Analysis of 18,000+ organizations. | MTTD benchmarks, alert routing practices |
+| [^nist-glossary] | NIST SP 800-34 Rev. 1, *Contingency Planning Guide for Federal Information Systems*, 2010. Updated 2024. | RPO, RTO definitions |
+| [^k8s-probes] | Kubernetes documentation, *Configure Liveness, Readiness and Startup Probes*, v1.29, 2024. | Readiness/liveness probe semantics |
+| [^prometheus-docs] | Prometheus project documentation, *Alerting Rules* and *Recording Rules*, 2025. | Watchdog pattern, cardinality, PromQL examples |
+| [^gartner-glossary] | Gartner IT Glossary, *Synthetic Monitoring*, 2025. | Synthetic monitoring definition |
+| [^observability-eng] | Majors, Fong-Jones, Miranda, *Observability Engineering*, O'Reilly, 2022. | Observability definition, pillars of observability |
+| [^pyroscope-docs] | Grafana Pyroscope documentation, *Storage and Retention*, 2025. | Compaction, retention, storage architecture |
