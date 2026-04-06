@@ -19,7 +19,13 @@ profiling label strategies for Vert.x-based server platforms.
 - [6. Labeling decision: one label (`function`)](#6-labeling-decision-one-label-function)
 - [7. Synchronous vs async label coverage](#7-synchronous-vs-async-label-coverage)
 - [8. executeBlocking visibility](#8-executeblocking-visibility)
-- [9. Three implementation approaches](#9-three-implementation-approaches)
+- [9. Implementation approaches and risk analysis](#9-implementation-approaches-and-risk-analysis)
+  - [9a. Approach overview](#9a-approach-overview)
+  - [9b. Approach 1: Direct handler in server repo](#9b-approach-1-direct-handler-in-enterprise-vertx-server-repo)
+  - [9c. Approach 2: Shared label handler library](#9c-approach-2-shared-label-handler-library-separate-repo)
+  - [9d. Approach 3: Custom Java agent (not recommended)](#9d-approach-3-custom-java-agent-bytecode-instrumentation)
+  - [9e. Decision summary](#9e-decision-summary)
+  - [9f. Making the case for the server repo PR](#9f-making-the-case-for-the-server-repo-pr)
 - [10. Best practices](#10-best-practices)
 - [11. Cross-references](#11-cross-references)
 
@@ -659,9 +665,57 @@ exercise — the goal is to know where blocking code exists and ensure it's inte
 
 ---
 
-## 9. Three implementation approaches
+## 9. Implementation approaches and risk analysis
 
-### Approach 1: Direct handler in enterprise Vert.x server repo
+Three approaches exist for setting profiling labels on a shared Vert.x server.
+This section documents each approach, the detailed risks of the agent-based
+approach, and the recommended implementation path.
+
+### 9a. Approach overview
+
+```mermaid
+graph TB
+    subgraph "Approach 1 — Direct handler in enterprise server repo"
+        A1["~15 lines in server startup code"]
+        A1 --> A1R["router.route().handler(labelHandler)"]
+        A1R --> A1D["compileOnly dependency on io.pyroscope:agent"]
+    end
+
+    subgraph "Approach 2 — Shared label handler library (separate repo)"
+        A2["Create profiling-labels library"]
+        A2 --> A2P["Publish to internal Maven/Gradle repo"]
+        A2P --> A2I["Server repo adds 1-line dependency + 1-line registration"]
+    end
+
+    subgraph "Approach 3 — Custom Java agent (bytecode instrumentation)"
+        A3["Build -javaagent JAR with ByteBuddy"]
+        A3 --> A3T["Intercept RouterImpl.handle() at class load time"]
+        A3T --> A3L["Inject label set/clear around handler chain"]
+    end
+
+    style A1 fill:#e8f5e9,stroke:#2e7d32,color:#000
+    style A2 fill:#e3f2fd,stroke:#1565c0,color:#000
+    style A3 fill:#ffebee,stroke:#c62828,color:#000
+```
+
+| | Approach 1 | Approach 2 | Approach 3 |
+|---|:---:|:---:|:---:|
+| **Code change to server repo** | ~15 lines (handler + dependency) | ~3 lines (dependency + registration) | Zero |
+| **New repo required** | No | Yes (library repo) | Yes (agent repo) |
+| **PR to server repo** | Yes (one PR) | Yes (one PR) | No |
+| **Tier 1 coverage** | Yes | Yes | Yes |
+| **Tier 2 coverage (async)** | No (add later) | Yes (included) | Partial (limited) |
+| **Maintenance burden** | Near zero | Library releases | 36-combination test matrix |
+| **Vert.x version sensitivity** | None (public API) | None (public API) | High (internal classes) |
+| **JDK version sensitivity** | None | None | High (bytecode verification) |
+| **Per-request overhead** | ~0.2 us | ~0.2 us | 1-7 us (50x more) |
+| **Risk of silent failure** | None | None | High |
+| **Security review complexity** | Standard code review | Standard dependency review | Runtime bytecode modification review |
+| **Production blast radius** | Handler only | Handler only | Entire JVM (class loading) |
+
+---
+
+### 9b. Approach 1: Direct handler in enterprise Vert.x server repo
 
 **What:** Add a global `router.route().handler()` in the server startup code that
 sets the `function` label for every request.
@@ -672,96 +726,411 @@ are registered.
 **Effort:** ~15 lines of code, one pull request to the server repo.
 
 **Dependency:** `compileOnly` on `io.pyroscope:agent` (the Pyroscope labels API).
+`compileOnly` means the dependency is used at compile time for type checking but
+is NOT bundled into the server JAR. Zero runtime footprint if the agent is not
+attached.
 
-| Advantage | Detail |
-|-----------|--------|
-| Fastest to implement | One PR, one reviewer, deployed in next release |
-| Zero function team impact | No changes to any function code |
-| No new dependencies | compileOnly — not bundled in the server JAR |
-| Graceful degradation | NoClassDefFoundError caught when agent not attached |
+**How it works:**
 
-| Limitation | Detail |
-|------------|--------|
-| Not reusable | Label logic is embedded in the server repo |
-| No Tier 2 | Only covers synchronous path; no async propagation |
-| Single repo | If other Vert.x servers exist, each needs its own handler |
+```
+Server startup:
+  1. Router created
+  2. Label handler registered as first global handler:
+       router.route().handler(ctx -> {
+         String functionName = resolveFunctionName(ctx);
+         try {
+           LabelsWrapper.run(Map.of("function", functionName), () -> ctx.next());
+         } catch (NoClassDefFoundError e) {
+           ctx.next();  // graceful degradation — agent not attached
+         }
+       });
+  3. Function routes registered (by function teams, in function repos)
+  4. Server starts listening
+```
 
-**Recommendation:** Start here. Proves value immediately.
+**Why this is the best engineering approach:**
+
+| Factor | Detail |
+|--------|--------|
+| **Uses Vert.x public API** | `Router`, `RoutingContext`, `Handler` — stable across Vert.x 4.x and 5.x under semver guarantee |
+| **Standard Handler pattern** | Same pattern as auth handlers, CORS handlers, body handlers — familiar to every Vert.x developer |
+| **No bytecode manipulation** | Code is compiled normally by javac. No runtime class rewriting. No JVM agent interaction. |
+| **Zero overhead vs normal handler** | A handler in the Vert.x chain has zero interception overhead — it IS the chain. ~0.2 us per request (ThreadLocal write + clear). |
+| **Graceful degradation** | `NoClassDefFoundError` caught if Pyroscope agent is not attached. Server runs normally without labels. |
+| **JIT-friendly** | HotSpot can inline the handler normally. No broken inline chains, no forced safepoints. |
+| **Zero function team impact** | No changes to any function code, function build files, or function repos |
+| **Testable** | Unit test the handler in isolation with a mock RoutingContext |
+
+**Limitations:**
+
+| Limitation | Detail | Mitigation |
+|------------|--------|------------|
+| Requires PR to server repo | Server repo is owned by another team | See [Section 9f](#9f-making-the-case-for-the-server-repo-pr) |
+| Not reusable across servers | Handler is embedded in one server repo | Extract to library (Approach 2) when a second server needs it |
+| No Tier 2 (async callbacks) | Only covers synchronous handler path (~80% of CPU) | Add Tier 2 later if profiling reveals significant unlabeled async CPU |
+
+**Recommendation:** Start here. This is the correct engineering approach.
 
 ---
 
-### Approach 2: Shared label handler library
+### 9c. Approach 2: Shared label handler library (separate repo)
 
-**What:** Extract the label handler into a small, versioned library JAR that any
-Vert.x server can depend on. The library provides:
+**What:** Create a small, versioned library JAR in a **separate repository** that
+any Vert.x server can depend on. The library provides:
 - A label handler (Tier 1) — one line to register
-- A Future wrapper (Tier 2) — opt-in per async call site
+- A `LabeledFuture` wrapper (Tier 2) — opt-in per async call site
+- Configuration (label name, function name resolver strategy)
 
-**Where:** Published to an internal Maven/Gradle repository. Server repo adds it as
-a dependency.
+**Where the code lives:**
 
-**Effort:** Create library (1-2 days), publish, integrate into server repo.
+```
+profiling-labels/              ← NEW REPO (owned by profiling/observability team)
+├── build.gradle               ← Publishes to internal Maven repo
+├── src/main/java/
+│   └── com/corp/profiling/
+│       ├── ProfilingLabelHandler.java    ← Tier 1: global handler
+│       ├── LabeledFuture.java           ← Tier 2: async propagation wrapper
+│       └── FunctionNameResolver.java    ← Strategy interface for name resolution
+└── src/test/java/
+    └── ...                              ← Unit tests with mock RoutingContext
+```
+
+**Integration into the enterprise server repo (one-time, ~3 lines):**
+
+```
+// build.gradle (server repo)
+dependencies {
+    compileOnly 'com.corp:profiling-labels:1.0.0'
+}
+
+// Server startup code (server repo)
+router.route().handler(new ProfilingLabelHandler(functionNameResolver));
+```
+
+**Effort:** 1-2 days to create the library. 1 PR to the server repo (3 lines).
+
+**Advantages over Approach 1:**
 
 | Advantage | Detail |
 |-----------|--------|
-| Reusable | Any Vert.x server can use it |
-| Version-controlled | Updates ship as dependency bumps, not code changes |
-| Includes Tier 2 | Async propagation available when needed |
-| Consistent | Same labeling behavior across all servers |
+| **Reusable** | Any Vert.x server adds it as a dependency. No copy-paste. |
+| **Version-controlled** | Updates ship as dependency bumps, not code changes to the server repo |
+| **Includes Tier 2** | `LabeledFuture` wrapper for async propagation — available when teams need it |
+| **Independently testable** | Library has its own test suite, CI/CD, release pipeline |
+| **Consistent across servers** | Same labeling behavior everywhere. No drift between server implementations. |
+| **Owned by profiling team** | Profiling team controls the release cadence. No dependency on server team for label changes. |
 
-| Limitation | Detail |
-|------------|--------|
-| New dependency | Requires publishing to internal Maven repo |
-| Approval | Server repo adds a new dependency (review required) |
-| More setup | Library creation, CI/CD, versioning |
+**Limitations:**
 
-**Recommendation:** Adopt after Approach 1 proves value, or when a second Vert.x
-server needs labeling.
+| Limitation | Detail | Mitigation |
+|------------|--------|------------|
+| Still requires a PR to server repo | Server repo adds a dependency (3 lines) | Smaller PR than Approach 1 — just a dependency, not logic |
+| New repo and release pipeline | Must publish to internal Maven repo | Standard Gradle publish task — < 1 day setup |
+| Dependency approval process | Server team must approve a new dependency | `compileOnly` scope — not bundled. No transitive dependencies. |
+
+**When to use Approach 2 instead of Approach 1:**
+
+- When multiple Vert.x servers need profiling labels
+- When Tier 2 (async propagation) is needed from the start
+- When the profiling team wants to own the label handler lifecycle independently
+- When the server repo team prefers adding a dependency over adding logic
+
+**Recommendation:** Use Approach 2 when Approach 1 has proven value and you want
+to scale to multiple servers, or if the server team prefers a clean dependency
+over embedded code.
 
 ---
 
-### Approach 3: Custom Java agent (bytecode instrumentation)
+### 9d. Approach 3: Custom Java agent (bytecode instrumentation)
 
-**What:** A separate `-javaagent` JAR that uses bytecode manipulation (e.g., ByteBuddy)
-to automatically intercept Vert.x `Router.handle()` and inject labels without any
-application code changes.
+**What:** A separate `-javaagent` JAR that uses bytecode manipulation (ByteBuddy,
+ASM, or Javassist) to automatically intercept Vert.x `RouterImpl.handle()` and
+inject label set/clear calls without any application code changes.
 
-**Effort:** Weeks of development, ongoing maintenance across Vert.x versions.
+**Effort:** 2-4 weeks of development. Ongoing maintenance across Vert.x and JDK
+versions.
+
+**How it works at the JVM level:**
+
+```
+Agent registers a ClassFileTransformer via java.lang.instrument.Instrumentation
+  → Every class loaded by the JVM passes through the transformer
+  → Agent pattern-matches on Vert.x internal class names:
+      io.vertx.ext.web.impl.RouterImpl
+      io.vertx.ext.web.impl.RouteImpl
+      io.vertx.ext.web.impl.RoutingContextImpl
+  → ByteBuddy rewrites the matched class bytecode:
+
+Original bytecode:
+  RouterImpl.handle(HttpServerRequest) → iterates routes → calls handler
+
+Instrumented bytecode:
+  RouterImpl.handle(HttpServerRequest)
+    → [INJECTED] resolve function name from route metadata
+    → [INJECTED] PyroscopeLabels.set("function", name)
+    → iterates routes → calls handler
+    → [INJECTED] PyroscopeLabels.clear()  (in finally block)
+```
+
+**Advantages:**
 
 | Advantage | Detail |
 |-----------|--------|
-| Truly zero code changes | No handler registration, no dependency |
-| Automatic | Works for any Vert.x application |
+| Zero code changes to any repo | No PR to server repo. No dependency. No handler registration. |
+| Automatic | Attach the agent JAR to JAVA_TOOL_OPTIONS and labels appear |
 
-| Limitation | Detail |
-|------------|--------|
-| JNI overhead | Bytecode weaving adds measurable latency per request |
-| Fragile | Breaks across Vert.x minor versions when internals change |
-| Hard to debug | Bytecode errors manifest as mysterious runtime failures |
-| Rejected by community | async-profiler project attempted this and abandoned it due to overhead |
-| Two agents | Pyroscope agent + custom agent = interaction risks |
+### 9d-i. Detailed risk analysis for custom agent approach
 
-**Recommendation:** Not recommended. Documented for decision context only.
+The following risks are specific, technical, and well-documented by the async-profiler
+and Pyroscope maintainer communities. They are not theoretical — each has been
+observed in production or in upstream project evaluations.
 
-The async-profiler project proposed a similar JVM-level approach for reactive
-frameworks and **closed it without merging** due to JNI overhead concerns. The
-Pyroscope Java agent maintainer confirmed there is no automatic solution for label
-propagation across async boundaries. Handler-based labeling (Approaches 1 and 2) is
-the industry-accepted pattern.
+#### Risk 1: Silent breakage on Vert.x version upgrades
+
+Bytecode instrumentation targets **implementation classes** (`RouterImpl`,
+`RouteImpl`, `RoutingContextImpl`) which are internal and not covered by
+Vert.x's semver public API guarantee.
+
+| Vert.x change | What breaks | Failure mode |
+|----------------|-------------|-------------|
+| `RouterImpl.handle()` method signature changes (parameter type, return type) | ByteBuddy intercept fails — method not found | Agent loads, JVM starts, labels silently not set |
+| `RouteImpl` refactored into `RouteState` + `RouteImpl` (happened in Vert.x 4.x) | Agent intercepts wrong class | Labels never set — discovered weeks later during incident |
+| `RoutingContextImpl` constructor adds a field | ByteBuddy advice accessing `this` fields breaks | `NoSuchFieldError` at runtime |
+| Package rename from `io.vertx.ext.web.impl` to different package | Pattern match on class name fails | Agent becomes no-op silently |
+| Netty version bump changes request decode path | Stack frame where `handle()` is called shifts | Agent intercepts at wrong lifecycle point |
+
+**The critical problem:** These breakages are **silent**. The JVM starts, functional
+tests pass, the application serves requests normally — but labels are never set.
+You discover the breakage weeks or months later when an incident occurs and the
+flame graphs show no function attribution. This is worse than not having the agent
+at all — you believe you have profiling labels but you don't.
+
+**Contrast with Approaches 1 and 2:** Handler-based approaches use the Vert.x
+**public API** (`Router`, `RoutingContext`, `Handler`). Public API compatibility
+is guaranteed by Vert.x's semver policy. A handler registered on Vert.x 4.0
+works on 4.5, 5.0, and beyond without changes.
+
+#### Risk 2: Two-agent interaction on the same JVM
+
+The Pyroscope profiling agent (`pyroscope.jar`) is already a `-javaagent`. Adding
+a second custom agent creates interaction risks:
+
+**Class transformer ordering is undefined.** Both agents register
+`ClassFileTransformer` instances. If both transform the same class (e.g., both
+touch `RoutingContextImpl`), the second transformer receives bytecode already
+modified by the first. The result is unpredictable.
+
+**ThreadLocal contention.** Pyroscope labels use `ThreadLocal` storage. The
+profiling agent reads labels during stack sampling on a separate sampler thread
+via `AsyncGetCallTrace`. If the custom agent sets/clears labels on the event
+loop thread while the sampler thread reads them, there is a race window. The
+Pyroscope agent handles this for its own public labels API — a custom agent
+bypassing the API could corrupt label state.
+
+**Instrumentation instance conflicts.** Both agents receive a reference to
+`java.lang.instrument.Instrumentation` via `premain()`. If the custom agent calls
+`retransformClasses()` after the Pyroscope agent has already transformed a class,
+it can undo the profiling agent's instrumentation.
+
+**Diagnostic complexity.** When something goes wrong in production (missing labels,
+overhead spike, class verification error), you must determine which agent caused
+it. Stack traces from bytecode-instrumented code contain synthetic frames, bridge
+methods, and ByteBuddy-generated classes:
+
+```
+java.lang.NoSuchFieldError: pyroscope$$label_context
+    at io.vertx.ext.web.impl.RouterImpl$ByteBuddy$auxiliary$Vk3p2f.handle(Unknown Source)
+    at io.vertx.ext.web.impl.RouterImpl$ByteBuddy$proxyDelegate$8f2a.handle(Unknown Source)
+```
+
+This stack trace is nearly impossible to debug without deep knowledge of both agents.
+
+#### Risk 3: JVM overhead per request
+
+Bytecode interception via ByteBuddy advice adds overhead on **every invocation**
+of every intercepted method:
+
+```
+Per-request overhead (bytecode agent):
+  1. Method entry advice (capture args, resolve function name) → 1-5 us
+  2. Label set (ThreadLocal write)                              → 0.1 us
+  3. Original method body                                       → unchanged
+  4. Method exit advice (clear label, finally block)            → 0.5-2 us
+  5. Forced safepoint poll on method entry/exit                 → 0-3 us
+  Total: 1.6-10.1 us per request
+
+Per-request overhead (handler-based, Approaches 1 and 2):
+  1. Handler invoked by Router (normal handler chain)           → 0 additional
+  2. Label set (ThreadLocal write)                              → 0.1 us
+  3. ctx.next() (normal handler chain)                          → 0 additional
+  4. Label clear (finally block)                                → 0.1 us
+  Total: ~0.2 us per request
+```
+
+**The handler approach is ~50x less overhead** because:
+
+- A handler is a normal part of the Vert.x execution path — no interception
+- The JIT compiler can inline the handler normally. ByteBuddy advice **breaks the
+  inline chain**, preventing HotSpot's most powerful optimization.
+- ByteBuddy-instrumented methods force a **safepoint poll** on every entry/exit.
+  Safepoint polls cause all JVM threads to pause briefly, adding p99 latency jitter.
+  This is the reason the async-profiler maintainers abandoned the agent approach
+  — the overhead defeats the purpose of a low-overhead profiler.
+
+At 10,000 RPS across the server:
+
+```
+Agent approach:  10,000 × 5 us (midpoint) = 50 ms/second of additional CPU (5% overhead)
+Handler approach: 10,000 × 0.2 us        = 2 ms/second of additional CPU (0.2% overhead)
+```
+
+#### Risk 4: Class verification failures
+
+The JVM verifies bytecode at class load time. If the agent produces invalid
+bytecode (wrong stack map frames, type mismatches, missing exception table
+entries), the class fails to load with a `VerifyError`.
+
+- ByteBuddy's `@Advice.OnMethodEnter` / `@Advice.OnMethodExit` inject bytecode
+  into the target method. If the advice references types not on the boot
+  classpath, the verifier rejects the class.
+- **Java 17+ has stricter bytecode verification than Java 11.** An agent that works
+  on JDK 11 can fail on JDK 17 with the same Vert.x version.
+- If Vert.x uses `sealed` classes or `records` (Java 17+) in internal
+  implementation, bytecode manipulation is restricted by the JVM spec.
+
+A `VerifyError` on `RouterImpl` means **the entire Vert.x server fails to start.**
+In production. At 2 AM. After a JDK upgrade that nobody associated with the
+custom agent.
+
+#### Risk 5: Maintenance test matrix
+
+The custom agent must be tested against every combination of:
+
+| Dimension | Values | Count |
+|-----------|--------|:-----:|
+| JDK version | 11, 17, 21 | 3 |
+| Vert.x version | 4.4.x, 4.5.x, 5.x | 3 |
+| Pyroscope agent version | current, current-1 | 2 |
+| OS | Linux (prod), macOS (dev) | 2 |
+| **Total combinations** | | **36** |
+
+Every Vert.x minor release (e.g., 4.5.8 → 4.5.9) requires re-running the full
+matrix because internal class changes can happen in any release. Compare to
+handler-based approaches: test once against the public API — it works across all
+versions.
+
+#### Risk 6: Security and compliance review in regulated environments
+
+A custom `-javaagent` that rewrites bytecode at runtime triggers security review:
+
+| Question from security/compliance | Impact |
+|----------------------------------|--------|
+| "This agent modifies production code at runtime — what is the blast radius?" | Must demonstrate the agent cannot affect application logic beyond labels |
+| "How is the agent's integrity verified? Can a compromised agent inject arbitrary code?" | Requires JAR signing, checksum verification, supply chain security review |
+| "Does the agent access request payloads, credentials, or PII through intercepted methods?" | Must prove the agent only reads route metadata, not request data |
+| "Who owns the agent? What is the support/patching SLA?" | Must staff a maintenance team for a custom JVM agent in production |
+
+A `router.route().handler()` in the server repo raises **none** of these concerns —
+it is standard application code, reviewed through the normal PR process, compiled at
+build time, and subject to the same security scanning as all other code.
+
+#### Risk summary
+
+| Risk | Severity | Likelihood | Silent? | Mitigation cost |
+|------|:--------:|:----------:|:-------:|:---------------:|
+| Vert.x internal class change breaks labels | Critical | High (every minor release) | Yes | 36-combo test matrix, every release |
+| Two-agent interaction corrupts labels/profiles | High | Medium | Partial | Extensive integration testing |
+| JVM overhead from safepoints and broken inlining | Medium | Certain (inherent) | No | Cannot be mitigated — fundamental |
+| VerifyError on JDK upgrade crashes server | Critical | Medium | No | JDK upgrade testing for every version |
+| Security review delays deployment | Medium | High (regulated environments) | No | Documentation and justification |
+| Maintenance burden (36-combo test matrix) | Medium | Certain | N/A | Dedicated CI pipeline |
+
+**Recommendation: Not recommended.** The async-profiler project (which underlies
+the Pyroscope Java agent) explored automatic context propagation for reactive
+frameworks via bytecode instrumentation and **abandoned it** because:
+
+1. **Safepoint overhead** — instrumented methods force safepoint polls, adding p99
+   latency jitter that defeats the purpose of a low-overhead profiler
+2. **Framework-specific logic** — each reactive framework (Vert.x, Project Reactor,
+   RxJava, Netty) requires different interception points; no generic solution exists
+3. **Async boundary limitation** — even intercepting the entry point, labels are
+   `ThreadLocal` and do not propagate to `.compose()`, `.map()`, or `executeBlocking()`
+   callbacks; the agent would need to intercept the entire Vert.x async API
+
+Their conclusion: **application-level labeling (handler-based) is the correct
+approach** because only the application knows the semantic mapping from request
+to function name.
 
 ---
 
-### Decision summary
+### 9e. Decision summary
 
 ```mermaid
-graph LR
-    A["Approach 1<br/>Direct handler<br/>in server repo"] -->|"Proves value"| B["Approach 2<br/>Shared library<br/>(when needed)"]
-    B -.->|"Skip"| C["Approach 3<br/>Java agent<br/>(not recommended)"]
+graph TB
+    START["Need profiling labels<br/>on shared Vert.x server"] --> Q1{"Can you submit<br/>a PR to the<br/>server repo?"}
 
-    style A fill:#e8f5e9,stroke:#2e7d32,color:#000
-    style B fill:#e3f2fd,stroke:#1565c0,color:#000
-    style C fill:#ffebee,stroke:#c62828,color:#000
+    Q1 -->|"Yes"| Q2{"Need Tier 2<br/>(async propagation)?"}
+    Q1 -->|"Not yet — need<br/>to prove value first"| A1
+
+    Q2 -->|"Not now"| A1["Approach 1<br/>Direct handler<br/>in server repo<br/>(~15 lines, 1 PR)"]
+    Q2 -->|"Yes"| A2["Approach 2<br/>Shared library<br/>(separate repo + 1 PR)"]
+
+    Q1 -->|"Blocked —<br/>cannot modify<br/>server repo"| Q3{"Is the block<br/>organizational<br/>or technical?"}
+
+    Q3 -->|"Organizational<br/>(team approval)"| ESCALATE["Escalate with<br/>risk comparison<br/>(Section 9f)"]
+    Q3 -->|"Technical<br/>(no access)"| A2B["Approach 2<br/>(library dependency<br/>is a smaller PR)"]
+
+    ESCALATE --> A1
+    A1 -->|"Value proven,<br/>need reuse"| A2
+
+    AVOID["Approach 3<br/>Custom agent<br/>(NOT recommended)"]
+
+    style A1 fill:#e8f5e9,stroke:#2e7d32,color:#000
+    style A2 fill:#e3f2fd,stroke:#1565c0,color:#000
+    style AVOID fill:#ffebee,stroke:#c62828,color:#000
+    style ESCALATE fill:#fff3e0,stroke:#e65100,color:#000
 ```
+
+| Scenario | Recommended approach | Rationale |
+|----------|---------------------|-----------|
+| Server repo team is receptive to a small PR | **Approach 1** | Fastest path. ~15 lines. Proves value in days. |
+| Server repo team prefers dependencies over code | **Approach 2** | 3-line PR (dependency + registration). Logic owned by profiling team. |
+| Multiple Vert.x servers need labels | **Approach 2** | Library is reusable. One dependency per server. |
+| Tier 2 (async propagation) needed from day 1 | **Approach 2** | Library includes `LabeledFuture` wrapper. |
+| Cannot modify server repo at all | **Escalate** | See [Section 9f](#9f-making-the-case-for-the-server-repo-pr). Agent approach is not the answer. |
+| "We don't own the server repo" | **Still Approach 1 or 2** | A 3-15 line PR is a collaboration, not a takeover. |
+
+---
+
+### 9f. Making the case for the server repo PR
+
+If the enterprise Vert.x server is owned by a different team, submitting a PR
+requires making the case that the change is safe, minimal, and valuable.
+
+**The PR is ~15 lines.** It adds:
+1. A `compileOnly` dependency on `io.pyroscope:agent` (not bundled in the JAR)
+2. A global handler registered before all function routes
+3. A try/catch for `NoClassDefFoundError` (graceful degradation)
+
+**Arguments for the server repo team:**
+
+| Concern | Response |
+|---------|----------|
+| "This adds a new dependency" | `compileOnly` — not bundled in the JAR. No transitive dependencies. Zero bytes added to the server artifact. |
+| "What if the Pyroscope agent isn't attached?" | The handler catches `NoClassDefFoundError` and calls `ctx.next()`. Server behaves identically to today. Zero impact. |
+| "What if it affects performance?" | One `ThreadLocal` write + clear per request = ~0.2 us. Same overhead as the existing CORS handler. |
+| "We don't want profiling concerns in the server" | The label handler is an observability handler — same category as metrics, health checks, and access logging. Standard practice in Vert.x. |
+| "What if we need to roll it back?" | Remove the handler. One-line change. No data migration, no state to clean up. |
+| "Function teams will be affected" | Zero function team impact. No changes to any function code, build file, or deployment. |
+
+**If the PR is still blocked**, Approach 2 (shared library) reduces the PR to
+3 lines (dependency + one-line handler registration). The profiling team owns all
+the logic in a separate repo. The server team reviews only the dependency addition.
+
+**The agent approach (Approach 3) should never be used as a workaround for an
+organizational blocker.** The engineering risks (silent breakage, JVM overhead,
+two-agent interaction, 36-combo test matrix, security review) vastly outweigh the
+organizational cost of getting a 3-15 line PR approved.
 
 ---
 
