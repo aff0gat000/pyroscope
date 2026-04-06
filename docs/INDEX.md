@@ -3,7 +3,7 @@
 Enterprise documentation organized by the [Diataxis framework](https://diataxis.fr/) — the same
 standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
-**33 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
+**35 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
 Development and demo resources remain in-repo only.
 
 ---
@@ -90,7 +90,7 @@ flows, slide structures, objection handling, and tips. Quick reference:
 ### Exporting to Confluence
 
 ```bash
-# Export enterprise docs only (26 docs from confluence-manifest.txt)
+# Export enterprise docs only (35 docs from confluence-manifest.txt)
 bash scripts/export-to-confluence.sh --enterprise
 
 # Upload to Confluence Server/DC with PAT
