@@ -110,7 +110,8 @@ render_mermaid_docker() {
     mmd_name=$(basename "$mmd_file")
     png_name=$(basename "$png_file")
     docker run --rm -v "${mmd_dir}:/data" minlag/mermaid-cli \
-        -i "/data/${mmd_name}" -o "/data/${png_name}" -b white 2>&1
+        -i "/data/${mmd_name}" -o "/data/${png_name}" \
+        -b white -w 1200 -H 800 --scale 2 2>&1
     # Docker outputs to the same dir as input; move if needed
     if [[ -f "${mmd_dir}/${png_name}" && "${mmd_dir}/${png_name}" != "$png_file" ]]; then
         mv "${mmd_dir}/${png_name}" "$png_file"
@@ -123,10 +124,32 @@ render_mermaid_ink() {
     local png_file="$2"
     local mmd_content
     mmd_content=$(cat "$mmd_file")
-    # mermaid.ink expects base64-encoded diagram
+
+    # Try pako-compressed encoding first (mermaid.ink's preferred format for large diagrams)
+    local pako_encoded
+    pako_encoded=$(python3 -c "
+import json, zlib, base64, sys
+graph = sys.stdin.read()
+js = json.dumps({'code': graph, 'mermaid': {'theme': 'default'}})
+compressed = zlib.compress(js.encode('utf-8'), 9)
+encoded = base64.urlsafe_b64encode(compressed).decode('ascii')
+print('pako:' + encoded)
+" <<< "$mmd_content" 2>/dev/null) || true
+
+    if [[ -n "$pako_encoded" ]]; then
+        if curl -sf --max-time 60 "https://mermaid.ink/img/${pako_encoded}" -o "$png_file" 2>/dev/null; then
+            [[ -s "$png_file" ]] && return 0
+        fi
+    fi
+
+    # Fallback: raw base64 encoding (works for smaller diagrams)
     local encoded
     encoded=$(echo "$mmd_content" | base64 -w0 2>/dev/null || echo "$mmd_content" | base64 2>/dev/null)
-    curl -sf --max-time 30 "https://mermaid.ink/img/${encoded}" -o "$png_file" 2>/dev/null
+    if curl -sf --max-time 60 "https://mermaid.ink/img/${encoded}" -o "$png_file" 2>/dev/null; then
+        [[ -s "$png_file" ]] && return 0
+    fi
+
+    return 1
 }
 
 # --- Render a single .mmd file to .png using available renderer ---
@@ -171,7 +194,11 @@ extract_and_render_mermaid() {
         if render_mermaid_png "$mmd" "$png"; then
             echo "    Rendered: $(basename "$png")"
         else
-            echo "    WARNING: Failed to render mermaid diagram ${num}" >&2
+            echo "    WARNING: Failed to render mermaid diagram ${num} — $(basename "$mmd")" >&2
+            echo "             Diagram source preserved in Confluence as expandable code block." >&2
+            if [[ "$MERMAID_RENDERER" == "mermaid_ink" ]]; then
+                echo "             For better results: install Docker and re-run (Docker renders all diagrams locally)." >&2
+            fi
         fi
     done
 }
