@@ -1,7 +1,7 @@
-# Continuous Profiling Value Proposition — Enterprise Financial Services
+# Continuous Profiling Value Proposition — Enterprise
 
-Executive value proposition for deploying continuous profiling at a Fortune 500
-financial services enterprise operating thousands of JVM-based functions at scale.
+Executive value proposition for deploying continuous profiling at a large enterprise
+operating thousands of JVM-based functions at scale.
 All figures are cited, calculated, or derived with methodology shown.
 
 Target audience: CTO, VP Engineering, Enterprise Architecture, Technology Risk,
@@ -29,9 +29,9 @@ Change Advisory Board.
 
 ## 1. Executive summary
 
-Fortune 500 financial services enterprises operate 500-2,000+ JVM hosts running
-thousands of business functions — payments, fraud detection, account servicing,
-regulatory reporting, and real-time transaction processing. These functions are
+Large enterprises operate 500-2,000+ JVM hosts running
+thousands of business functions — transaction processing, fraud detection, account
+servicing, regulatory reporting, and real-time event processing. These functions are
 deployed on shared reactive server platforms (Vert.x, Spring WebFlux) where
 multiple functions share the same JVM threads, making traditional thread-based
 debugging impossible.
@@ -39,7 +39,7 @@ debugging impossible.
 When performance degrades, the mean time to identify root cause is 60-120 minutes
 [^dora-2024]. Engineers SSH into production pods, attach profilers, try to
 reproduce the issue, and analyze thread dumps manually — a workflow that is slow,
-error-prone, and violates least-privilege access controls required by financial
+error-prone, and violates least-privilege access controls required by
 regulators.
 
 **Continuous profiling eliminates this workflow.** A lightweight agent captures
@@ -96,14 +96,14 @@ Alert fires → identify affected pod → SSH (requires access request in regula
 |--------|:------------------:|--------|:----:|
 | Median time to restore service | 1,082 minutes (all); 60 minutes (elite) | DORA State of DevOps [^dora-2024] | 2024 |
 | Mean time to detect (MTTD) | 22 minutes | PagerDuty State of Digital Ops [^pagerduty-2024] | 2024 |
-| Cost per minute of major incident | $14,056 (Fortune 500 average) | Splunk/Oxford Economics [^splunk-2024] | 2024 |
+| Cost per minute of major incident | $14,056 (Global 2000 average) | Splunk/Oxford Economics [^splunk-2024] | 2024 |
 | Performance incidents per month | 4-15 (varies by deployment frequency) | DORA [^dora-2024], internal telemetry | 2024 |
 | Engineering hours per incident | 2-8 hours (including post-mortem) | Google SRE Handbook [^google-sre] | 2024 ed. |
 | Change failure rate | 15% (elite) to 64% (low performers) | DORA [^dora-2024] | 2024 |
 | Developer time on unplanned work | 28% (median) | McKinsey Developer Productivity [^mckinsey-2024] | 2024 |
 | Developer time on maintenance | 42% | Stripe Developer Coefficient [^stripe-2023] | 2023 |
 
-**Per-incident cost calculation (Fortune 500 financial services):**
+**Per-incident cost calculation (large enterprise):**
 
 ```
 Major incident (customer-facing):
@@ -123,10 +123,10 @@ Annualized (conservative):
 
 ### Why existing tools don't close the gap
 
-| Approach | Limitation at Fortune 500 scale |
+| Approach | Limitation at enterprise scale |
 |----------|--------------------------------|
 | **On-demand profiling** (jstack, jcmd, async-profiler) | Requires SSH — violates least-privilege. PAM access request adds 15-30 min. Data only exists during manual capture. 2 AM incidents are missed entirely. |
-| **APM continuous profiling** (Datadog, Dynatrace) | Per-host licensing: 500 hosts × $25/host/month = $150,000/year. At 2,000 hosts = $600,000/year. Profile data transmitted to third-party SaaS — data residency conflict. |
+| **APM continuous profiling** (Datadog, Dynatrace) | Per-host licensing: 500 hosts × $25/host/month = $150,000/year. At 2,000 hosts = $600,000/year. Profile data transmitted to third-party SaaS — potential data residency conflict. |
 | **JFR (Java Flight Recorder)** | No centralized storage, no fleet-wide search, no historical diff comparison. Requires manual start/stop per JVM. |
 | **Thread dumps** | Point-in-time snapshot. Cannot attribute CPU to specific functions on shared Vert.x event loops. No historical baseline for comparison. |
 
@@ -178,13 +178,13 @@ At $800/core/year [^gartner-compute]:
 
 ## 4. Quantified benefits
 
-All calculations assume a Fortune 500 financial services enterprise with:
-- **500 JVM hosts** (conservative for a large financial services firm)
+All calculations assume a large enterprise with:
+- **500 JVM hosts** (conservative for a large enterprise)
 - **1,000+ deployed functions** on shared Vert.x server pods
 - **100 platform and application engineers**
 - **50 deployments per month** across all functions
 - **Internal compute chargeback: $200/host/month** (industry standard per Gartner [^gartner-compute])
-- **Fully-loaded engineer cost: $125/hour** ($260,000/year total comp, per Levels.fyi 2024 [^levels-2024] for senior SWE at Fortune 500 financial services)
+- **Fully-loaded engineer cost: $125/hour** ($260,000/year total comp, per Levels.fyi 2024 [^levels-2024] for senior SWE at large enterprises)
 
 ### Benefit 1: MTTR reduction
 
@@ -278,7 +278,7 @@ Value of catching in pre-production:
   Cost per avoided incident:              $25,000 (MTTR + rollback + post-mortem)
   Method: 2 hours MTTR × 3 engineers × $125/hr = $750 direct labor
           + $5,000 opportunity cost (deployment freeze)
-          + $19,250 customer/business impact (conservative for financial services)
+          + $19,250 customer/business impact (conservative for enterprise)
   Annual value (pre-production catch):    36 × $25,000 = $900,000/year
 
 Conservative (use 50% of estimated regressions caught):
@@ -356,7 +356,7 @@ Against an annual operating cost of $16,000-22,000 (see [Section 6](#6-cost-anal
 the ROI ranges from **64x to 223x**.
 
 > **Sensitivity note:** The deployment safety benefit dominates because incident
-> costs in financial services are high — regulatory scrutiny, customer impact, and
+> costs in regulated industries are high — regulatory scrutiny, customer impact, and
 > reputational risk amplify even minor production issues. Excluding deployment
 > safety entirely, the ROI is still **41x-132x** from the remaining four benefits.
 
@@ -617,12 +617,12 @@ The Digital Operational Resilience Act requires financial entities to:
 | **Amazon CodeGuru Profiler** | AWS SaaS | Java, Python | AWS | Per sampling group | AWS only |
 | **Polar Signals** (Parca) | OSS, self-hosted | Java, Go, Python, C/C++, Rust | S3-compatible | Free (infra only) | On-premise |
 
-### Why self-hosted profiling for Fortune 500 financial services
+### Why self-hosted profiling for large enterprises
 
 | Factor | Self-hosted advantage | Basis |
 |--------|----------------------|-------|
 | **Cost at scale** | $22,000/year vs $150,000-600,000/year at 500-2,000 hosts | See [Section 6](#scaling-economics) |
-| **Data sovereignty** | Zero data leaves the enterprise perimeter | Required by OCC, PRA, ECB, MAS for function-level telemetry |
+| **Data sovereignty** | Zero data leaves the enterprise perimeter | Required by regulators (OCC, PRA, ECB, MAS, etc.) for function-level telemetry |
 | **No vendor lock-in** | AGPL-3.0 license. Standard Grafana datasource. Replaceable without data migration. | Profiles are time-bounded; no long-term vendor dependency |
 | **Grafana ecosystem** | Same Grafana used for metrics + logs + traces + profiling | No new UI; no new RBAC; no additional training |
 | **Operational simplicity** | Single binary (Phase 1) or Helm chart (Phase 3). < 4 hrs/month maintenance. | Comparable to running Prometheus |
@@ -683,7 +683,7 @@ Each phase is independently valuable:
 | Do you operate 500+ deployed functions on shared servers? | Function labels are essential — standard profiling is blind | Thread-per-request servers have natural per-thread attribution |
 | Do performance incidents take > 30 min to root-cause? | MTTR reduction delivers immediate, measurable value | Existing tooling may be sufficient |
 | Do you deploy > 20 times per month? | Deployment safety benefit is high | Lower regression exposure |
-| Are you subject to data residency requirements (OCC, PRA, DORA)? | Self-hosted profiling eliminates SaaS data processing risk | Commercial SaaS profiling is an option |
+| Are you subject to data residency requirements? | Self-hosted profiling eliminates SaaS data processing risk | Commercial SaaS profiling is an option |
 | Is annual compute spend > $500,000? | 10-30% optimization produces 6-figure annual savings | Optimization value is proportionally lower |
 | Do engineers spend > 5% of time on performance debugging? | Developer productivity gain exceeds profiling cost by 20x+ | Lower productivity impact |
 
@@ -727,7 +727,7 @@ have not yet been published, the most recent edition is cited with the year note
 |-----------|--------------|:----:|
 | [^dora-2024] | Google Cloud / DORA, *Accelerate State of DevOps Report 2024*. 39,000+ respondents. | 2024 |
 | [^pagerduty-2024] | PagerDuty, *State of Digital Operations Report 2024*. Analysis of 18,000+ organizations. | 2024 |
-| [^splunk-2024] | Splunk / Oxford Economics, *The Hidden Costs of Downtime 2024*. Survey of 2,000 executives at Global 2000 companies. Fortune 500 average: $14,056/min. | 2024 |
+| [^splunk-2024] | Splunk / Oxford Economics, *The Hidden Costs of Downtime 2024*. Survey of 2,000 executives at Global 2000 companies. Large enterprise average: $14,056/min. | 2024 |
 | [^flexera-2025] | Flexera, *State of the Cloud Report 2025*. 750 respondents. 27% average cloud waste. | 2025 |
 | [^finops-2025] | FinOps Foundation, *State of FinOps Report 2025*. 1,200+ respondents. 31% have real-time app-level resource visibility. | 2025 |
 | [^mckinsey-2024] | McKinsey & Company, *Yes, You Can Measure Software Developer Productivity*, 2024. 28% time on unplanned work (median). | 2024 |
@@ -735,7 +735,7 @@ have not yet been published, the most recent edition is cited with the year note
 | [^stackoverflow-2024] | Stack Overflow, *Developer Survey 2024*. 65,000+ respondents. 62% spend 30+ min/day searching/investigating. | 2024 |
 | [^google-sre] | Beyer, Jones, Petoff, Murphy, *Site Reliability Engineering*, O'Reilly, 2024 edition. | 2024 |
 | [^accelerate] | Forsgren, Humble, Kim, *Accelerate: The Science of Lean Software and DevOps*, IT Revolution, 2018. Updated metrics in DORA 2024. | 2018/2024 |
-| [^levels-2024] | Levels.fyi, *2024 End-of-Year Pay Report*. Median senior SWE total compensation at Fortune 500 financial services: $260,000. | 2024 |
+| [^levels-2024] | Levels.fyi, *2024 End-of-Year Pay Report*. Median senior SWE total compensation at large enterprises: $260,000. | 2024 |
 | [^gartner-compute] | Gartner, *IT Key Metrics Data 2025*. Enterprise compute cost per core: $600-1,000/year (midpoint $800). VM internal chargeback: $150-250/month. | 2025 |
 | [^async-prof] | async-profiler project, JMH benchmarks. CPU overhead: 3-8% at 10ms sample interval. | 2024 |
 | [^pyroscope-docs] | Grafana Pyroscope documentation, agent configuration and overhead measurements. | 2025 |
@@ -822,7 +822,7 @@ Where Annual_total_cost = infrastructure + agent_overhead + maintenance
 
 The model is most sensitive to:
 
-1. **Cost per major incident** ($843,360 from Splunk 2024) — this is a Fortune 500
+1. **Cost per major incident** ($843,360 from Splunk 2024) — this is a Global 2000
    average. Adjust to your organization's actual incident cost data. Even at 10%
    of this figure ($84,336), MTTR benefit remains significant.
 
