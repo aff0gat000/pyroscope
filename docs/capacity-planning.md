@@ -9,52 +9,12 @@ to infrastructure, network, and storage teams.
 
 ---
 
-## Why Pyroscope: Enterprise Value Proposition
+---
 
-### The problem continuous profiling solves
+## Enterprise Value Proposition
 
-Traditional observability (logs, metrics, traces) tells you **what** is slow or
-failing. Continuous profiling tells you **why** — down to the exact function,
-line of code, and call path consuming CPU, memory, or holding locks.
-
-Without profiling, performance investigations follow this pattern:
-
-1. Alert fires (high latency, OOM kill, thread starvation)
-2. Team reviews dashboards — sees the symptom but not the cause
-3. Engineers attempt to reproduce locally — often cannot replicate production load
-4. Ad-hoc profiling is attached in production — requires restart, access, and timing
-5. Root cause found days or weeks later
-
-With continuous profiling always on, step 5 happens at step 1. The profile data
-is already captured. Open Grafana, select the time window, read the flame graph.
-
-### Quantified value
-
-| Benefit | Without profiling | With Pyroscope | Impact |
-|---------|------------------|----------------|--------|
-| **Mean time to root cause (MTTR)** | Hours to days — reproduce, attach profiler, wait for recurrence | Minutes — flame graph already captured for the incident window | 5-50x faster root cause identification |
-| **Production debugging** | Requires SSH access, JVM restarts, or debug builds in production | Always-on, no restarts, no code changes, no elevated access needed | Eliminates emergency profiling sessions |
-| **Resource optimization** | Over-provisioned "just in case" — CPU/memory requests based on guesswork | Data-driven right-sizing — flame graphs show actual CPU/memory consumers per function | 10-30% infrastructure cost reduction through right-sizing |
-| **Performance regression detection** | Caught in production by end users or alerts, after deployment | Before/after flame graph comparison shows new hotspots immediately | Regressions caught in minutes, not days |
-| **Cross-team debugging** | "It's not my service" — finger-pointing between teams | Shared flame graph data across all services — objective, function-level evidence | Eliminates blame games with data |
-| **Knowledge transfer** | Senior engineers carry performance knowledge in their heads | Flame graphs document how the system actually behaves under load | Institutional knowledge is captured automatically |
-
-### When to implement
-
-Pyroscope is worth implementing when **any** of these apply:
-
-- You have JVM services in production that experience periodic latency spikes, OOM kills, or thread contention
-- Performance investigations regularly take more than a few hours
-- Teams over-provision resources because they lack data on actual usage
-- You need to validate that code changes don't introduce performance regressions
-- Multiple teams share infrastructure and need objective performance data
-- You're running on OpenShift/Kubernetes where attaching ad-hoc profilers is difficult
-
-### When it may not be needed
-
-- Small number of services (< 5) with well-understood performance characteristics
-- Batch-only workloads with no latency requirements
-- Environments where 3-5% CPU overhead is not acceptable (rare — see below)
+For the full business case — quantified ROI, cost analysis, competitive landscape,
+and compliance alignment — see [value-proposition.md](value-proposition.md).
 
 ---
 

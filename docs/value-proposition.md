@@ -19,9 +19,11 @@ Change Advisory Board.
 - [6. Cost analysis](#6-cost-analysis)
 - [7. Risk and compliance alignment](#7-risk-and-compliance-alignment)
 - [8. Competitive landscape](#8-competitive-landscape)
-- [9. Implementation approach](#9-implementation-approach)
-- [10. Decision framework](#10-decision-framework)
-- [11. Cross-references](#11-cross-references)
+- [9. Risk of inaction](#9-risk-of-inaction)
+- [10. Stakeholder-specific value](#10-stakeholder-specific-value)
+- [11. Implementation approach](#11-implementation-approach)
+- [12. Decision framework](#12-decision-framework)
+- [13. Cross-references](#13-cross-references)
 - [Appendix A: Sources](#appendix-a-sources)
 - [Appendix B: Calculation methodology](#appendix-b-calculation-methodology)
 
@@ -675,7 +677,139 @@ Result: For ~$22,000/year (~15% of Dynatrace spend), the enterprise gains
 
 ---
 
-## 9. Implementation approach
+## 9. Risk of inaction
+
+The cost of *not* deploying continuous profiling is not zero — it is the
+ongoing accumulation of every blind spot, delayed diagnosis, and missed
+optimization described in the preceding sections.
+
+### Quantified annual exposure (500 JVM hosts)
+
+| Risk category | Annual exposure | Basis |
+|---------------|:--------------:|-------|
+| **Performance incidents (MTTR gap)** | $1.97M | 2 major incidents × $843K + 96 non-outage incidents × $3K (see [Section 2](#2-the-problem-performance-blind-spots-at-enterprise-scale)) |
+| **Infrastructure over-provisioning** | $120K-360K | 10-30% waste on $1.2M compute spend (Flexera 2025 [^flexera-2025]) |
+| **Undetected deployment regressions** | $900K | 36 regressions/year × $25K per incident (see [Section 4, Benefit 3](#benefit-3-deployment-safety)) |
+| **Developer productivity drag** | $2.08M | 100 engineers × 8% time on performance investigation (see [Section 4, Benefit 4](#benefit-4-developer-productivity)) |
+| **Total annual risk exposure** | **$5.1M-5.3M** | Sum of above categories |
+
+### Compounding effects over time
+
+These costs do not remain static — they compound as complexity grows:
+
+1. **Technical debt accumulation.** Without function-level visibility, engineers
+   cannot identify which functions degrade incrementally. A 2% weekly CPU regression
+   in one function becomes a 170% increase over a year. By the time it triggers
+   an alert, the root cause is months old and buried under dozens of deployments.
+
+2. **Scaling amplification.** As the fleet grows from 500 to 1,000+ hosts and
+   functions multiply, the investigation surface grows combinatorially. Without
+   profiling labels, a CPU spike on a shared event loop could be caused by any of
+   thousands of functions — manual investigation becomes intractable.
+
+3. **Talent retention impact.** Developer experience surveys consistently rank
+   debugging difficulty and on-call burden as top contributors to attrition.
+   Engineers who spend 40%+ of their time on maintenance and debugging (Stripe 2023
+   [^stripe-2023]) are more likely to seek positions at organizations with better
+   tooling.
+
+4. **Institutional knowledge loss.** When the engineer who "just knows" which
+   function causes a particular failure mode leaves, that knowledge leaves with them.
+   Continuous profiling externalizes this knowledge into searchable, historical data
+   accessible to any team member.
+
+### Competitive disadvantage
+
+Organizations operating without continuous profiling face a widening gap against
+peers who have adopted it:
+
+| Capability | With profiling | Without profiling | Competitive gap |
+|------------|:--------------:|:-----------------:|:---------------:|
+| Root-cause performance incidents | 5-15 min | 60-120 min | 4-8x slower |
+| Detect deployment regressions | Automated (diff) | Manual or never | Blind spot |
+| Right-size infrastructure | Function-level data | Service-level guessing | 10-30% waste |
+| Onboard new engineers to perf work | Dashboards + history | Tribal knowledge | Weeks vs. months |
+| Respond to regulatory audit on ICT risk | Historical evidence | Ad-hoc jstack dumps | Audit exposure |
+
+---
+
+## 10. Stakeholder-specific value
+
+Different stakeholders evaluate profiling through different lenses. This section
+maps the value proposition to each audience.
+
+### CTO / VP Engineering
+
+**Primary concern:** Delivery velocity, engineering efficiency, platform reliability.
+
+| Value driver | Message | Evidence |
+|-------------|---------|---------|
+| **Engineering leverage** | "Profiling eliminates the slowest phase of performance debugging — investigation — so engineers spend time building, not guessing." | 50% reduction in performance investigation time (Section 4, Benefit 4) |
+| **Deployment confidence** | "Diff profiling catches performance regressions that functional tests miss, before they reach production." | 70% pre-production catch rate (Section 4, Benefit 3) |
+| **Platform modernization** | "Profiling labels restore per-function visibility lost in the move to shared reactive servers (Vert.x, Spring WebFlux)." | Required for 1,000+ functions on shared event loops |
+| **Measurable ROI** | "64x-116x ROI at 500 hosts. $22K annual cost against $1.4M-2.5M annual benefit." | Section 4 and Section 6 calculations |
+
+### Enterprise Architecture
+
+**Primary concern:** Standards, integration, long-term viability, vendor risk.
+
+| Value driver | Message | Evidence |
+|-------------|---------|---------|
+| **Standards alignment** | "Pyroscope uses open standards (pprof format, OpenTelemetry compatible) and integrates into the existing Grafana stack." | No new UI, no new RBAC system, no additional vendor |
+| **Data sovereignty** | "Self-hosted. All profiling data stays on enterprise infrastructure. No SaaS dependency." | Section 7, Data residency comparison |
+| **Vendor independence** | "AGPL-3.0 open source. No per-host licensing. No contract lock-in. Replaceable without data migration." | Section 8, Competitive landscape |
+| **Phased adoption** | "Each phase is independently valuable with clear go/no-go criteria. No big-bang deployment." | Section 11, Implementation approach |
+| **Bounded blast radius** | "Agent failure has zero impact on the application. Push model with local buffer and exponential backoff." | Agent architecture (20-40 MB buffer, ~2 min RPO) |
+
+### Technology Risk / CISO
+
+**Primary concern:** Data classification, compliance, attack surface.
+
+| Value driver | Message | Evidence |
+|-------------|---------|---------|
+| **No sensitive data** | "Profiling captures function names and sample counts — structurally identical to stack traces in application logs. No PII, no payloads, no credentials." | Section 7, Data classification |
+| **Reduced SSH access** | "Engineers investigate performance issues via Grafana dashboards with RBAC, not SSH into production pods." | Eliminates need for PAM access requests during incidents |
+| **Regulatory alignment** | "Addresses OCC 2013-29, PCI DSS 7.1, NIST 800-53 AC-6, EU DORA Articles 6-11, BCBS 239." | Section 7, Regulatory alignment table |
+| **No third-party data processing** | "Unlike SaaS profiling (Datadog, New Relic), Pyroscope sends zero data outside the enterprise perimeter." | Section 7, Data residency comparison |
+| **Minimal attack surface** | "Single inbound port (4040). Agent pushes outbound only — no listening socket on application pods." | Push-based architecture |
+
+### Infrastructure / Platform Engineering
+
+**Primary concern:** Operational overhead, resource consumption, reliability.
+
+| Value driver | Message | Evidence |
+|-------------|---------|---------|
+| **Low overhead** | "3-8% CPU, 20-40 MB memory per JVM. Constant — does not grow with traffic." | Section 3, async-profiler benchmarks |
+| **Simple operations** | "Phase 1: single Docker container, < 4 hours/month maintenance. Phase 2: 2-4 VMs behind a VIP." | Section 11, Infrastructure requirements |
+| **Failure isolation** | "Agent crash or Pyroscope server downtime has zero effect on the application. The agent is not in the request path." | Push model, no coupling to application logic |
+| **Grafana native** | "Pyroscope is a first-party Grafana datasource. No new dashboarding tool to deploy or maintain." | Grafana Labs product integration |
+| **Infrastructure right-sizing data** | "Profiling provides function-level CPU and memory data that Prometheus metrics cannot — actual compute per function, not per pod." | Enables data-driven capacity decisions |
+
+### SRE / On-Call Engineers
+
+**Primary concern:** Incident response time, toil reduction, actionable data.
+
+| Value driver | Message | Evidence |
+|-------------|---------|---------|
+| **Faster incident response** | "Open Grafana → filter by time + service → see exactly which function is consuming CPU, memory, or locks. No SSH, no jstack, no guessing." | MTTR 60-120 min → 5-15 min (Section 4, Benefit 1) |
+| **Historical context** | "Compare this week vs last week, pre-deploy vs post-deploy, peak vs off-peak. Data is always there — no need to reproduce the issue." | Section 3, Historical comparison |
+| **Toil elimination** | "Eliminates manual profiling workflow: SSH → access request → jstack → download → analyze offline." | Section 2, Investigation workflow |
+| **2 AM incidents** | "Profiling data is collected 24/7. When the page fires at 2 AM, the data for the preceding hours is already captured." | Always-on, zero-touch operation |
+
+### Finance / FinOps
+
+**Primary concern:** Cost optimization, ROI, budget predictability.
+
+| Value driver | Message | Evidence |
+|-------------|---------|---------|
+| **Infrastructure savings** | "Function-level resource visibility enables 10-30% compute cost reduction. At $1.2M annual compute spend, that is $120K-360K/year." | Section 4, Benefit 2; Flexera 2025 and FinOps Foundation 2025 |
+| **Zero licensing cost** | "Pyroscope is open source (AGPL-3.0). No per-host fees. Annual cost is infrastructure + maintenance: ~$22K for 500 hosts." | Section 6, Cost analysis |
+| **Predictable scaling** | "Cost grows with Pyroscope server capacity, not with profiled host count. Adding 500 more hosts costs ~$20K in agent overhead, not $150K in vendor licensing." | Section 6, Scaling economics |
+| **88x-264x ROI** | "Conservative annual benefit of $1.4M against $22K annual cost." | Section 4 and Section 6 |
+
+---
+
+## 11. Implementation approach
 
 ### Phased adoption
 
@@ -718,7 +852,7 @@ Each phase is independently valuable:
 
 ---
 
-## 10. Decision framework
+## 12. Decision framework
 
 ### Should you deploy continuous profiling?
 
@@ -745,7 +879,7 @@ Each phase is independently valuable:
 
 ---
 
-## 11. Cross-references
+## 13. Cross-references
 
 | Document | Relevance |
 |----------|-----------|
