@@ -126,7 +126,7 @@ Annualized (conservative):
 | Approach | Limitation at enterprise scale |
 |----------|--------------------------------|
 | **On-demand profiling** (jstack, jcmd, async-profiler) | Requires SSH — violates least-privilege. PAM access request adds 15-30 min. Data only exists during manual capture. 2 AM incidents are missed entirely. |
-| **APM continuous profiling** (Datadog, Dynatrace) | Per-host licensing: 500 hosts × $25/host/month = $150,000/year. At 2,000 hosts = $600,000/year. Profile data transmitted to third-party SaaS — potential data residency conflict. |
+| **APM profiling** (Datadog, Dynatrace) | Per-host licensing: 500 hosts × $25/host/month = $150,000/year. At 2,000 hosts = $600,000/year. Profile data transmitted to third-party SaaS — potential data residency conflict. Dynatrace profiling is CPU-only hotspots tied to traced transactions — no continuous allocation, lock, or wall-clock profiling. No flame graph diff capability. |
 | **JFR (Java Flight Recorder)** | No centralized storage, no fleet-wide search, no historical diff comparison. Requires manual start/stop per JVM. |
 | **Thread dumps** | Point-in-time snapshot. Cannot attribute CPU to specific functions on shared Vert.x event loops. No historical baseline for comparison. |
 
@@ -612,10 +612,55 @@ The Digital Operational Resilience Act requires financial entities to:
 | **Pyroscope** (Grafana Labs) | OSS, self-hosted | Java, Go, Python, .NET, Ruby, Rust, Node.js | S3-compatible | Free (infra only) | On-premise |
 | **Datadog Continuous Profiler** | SaaS | Java, Go, Python, .NET, Ruby, Node.js | Datadog cloud | $15-35/host/month | Cloud |
 | **Dynatrace** | SaaS / Managed | Java, .NET, Go, Node.js | Dynatrace cloud | $25-50/host/month | Cloud / On-prem |
+| ↳ *Dynatrace profiling depth* | *CPU hotspots on traced requests* | *No continuous alloc/mutex/wall* | *Tied to PurePath traces* | *Included in full-stack* | *See [complementary analysis](#for-enterprises-already-running-dynatrace)* |
 | **New Relic** | SaaS | Java, .NET, Go | New Relic cloud | $12-30/host/month | Cloud |
 | **Elastic Universal Profiling** | OSS + SaaS | Java, Go, Python, C/C++, Rust | Elasticsearch | Free (self) / per-host (cloud) | Both |
 | **Amazon CodeGuru Profiler** | AWS SaaS | Java, Python | AWS | Per sampling group | AWS only |
 | **Polar Signals** (Parca) | OSS, self-hosted | Java, Go, Python, C/C++, Rust | S3-compatible | Free (infra only) | On-premise |
+
+### For enterprises already running Dynatrace
+
+Most large enterprises already have Dynatrace deployed as their primary APM platform.
+Pyroscope is not a Dynatrace replacement — it is a **complementary tool** that fills a
+profiling depth gap at a fraction of the cost of any commercial alternative.
+
+**What Dynatrace does well (and Pyroscope does not replicate):**
+- Full-stack APM: distributed traces, service topology, error analytics
+- Davis AI: automatic root cause analysis across metrics, traces, and logs
+- OneAgent auto-discovery: zero-config service and dependency mapping
+- Real User Monitoring (RUM), synthetic monitoring, session replay
+- Infrastructure monitoring, cloud automation, security analytics
+
+**What Pyroscope adds that Dynatrace cannot provide:**
+
+| Profiling capability | Dynatrace | Pyroscope |
+|---------------------|-----------|-----------|
+| Continuous CPU flame graphs (independent of traced requests) | CPU hotspots tied to PurePath traces | Always-on, every function, every second |
+| Memory allocation profiling | Memory dumps (point-in-time) | Continuous per-function allocation tracking |
+| Lock contention profiling | Thread analysis (point-in-time) | Continuous mutex/block flame graphs |
+| Wall-clock profiling (I/O waits) | Not available as flame graph | Continuous wall-clock flame graphs |
+| Flame graph diff (before/after deploy) | Not available | Built-in diff view across any two time windows |
+| Per-function attribution on shared reactive servers | Limited (trace-based) | Label-based filtering across 1,000+ functions |
+
+**Cost to close the gap:**
+
+```
+Dynatrace is already paid for:          $150,000-600,000/year (500-2,000 hosts)
+Pyroscope (incremental cost):           $22,000-50,000/year (infrastructure only)
+Dynatrace profiling depth upgrade:      Not available as separate SKU
+
+Result: For ~$22,000/year (~15% of Dynatrace spend), the enterprise gains
+        continuous profiling capabilities that do not exist in Dynatrace
+        at any pricing tier.
+```
+
+**Recommended positioning for enterprises with Dynatrace:**
+> "We are not replacing Dynatrace. Dynatrace tells us *what* is slow and *where* in the
+> call chain. Pyroscope tells us *why* — at the function and line-of-code level — for CPU,
+> memory, locks, and I/O. It is a $22K/year complement to a $300K/year platform, and it
+> answers the questions Dynatrace was never designed to answer."
+
+---
 
 ### Why self-hosted profiling for large enterprises
 

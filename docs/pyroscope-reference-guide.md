@@ -10,7 +10,7 @@ and be the go-to person for all things profiling.
 
 - **1. Pyroscope Internals** -- [Storage Engine](#storage-engine) | [Ingestion Pipeline](#ingestion-pipeline) | [Query Engine](#query-engine) | [Hash Ring](#hash-ring-microservices-mode)
 - **2. Operational Expertise** -- [Capacity Planning](#capacity-planning) | [Scaling Triggers](#scaling-triggers) | [Failure Modes](#failure-modes-and-recovery) | [Retention](#retention-and-cleanup) | [Backup and Restore](#backup-and-restore)
-- **3. Competitive Analysis** -- [vs Datadog](#pyroscope-vs-datadog-continuous-profiler) | [vs Elastic](#pyroscope-vs-elastic-universal-profiling) | [vs async-profiler standalone](#pyroscope-vs-async-profiler-standalone)
+- **3. Competitive Analysis** -- [vs Dynatrace](#pyroscope-vs-dynatrace) | [vs Datadog](#pyroscope-vs-datadog-continuous-profiler) | [vs Elastic](#pyroscope-vs-elastic-universal-profiling) | [vs async-profiler standalone](#pyroscope-vs-async-profiler-standalone)
 - **4. Talking Points** -- [Leadership](#for-leadership--funding-meetings) | [Security Review](#for-security-review) | [Architects](#for-architects) | [On-Call Engineers](#for-on-call-engineers)
 - **5. Knowledge Areas Checklist** -- [Fundamentals](#fundamentals) | [Operations](#operations) | [Advanced](#advanced) | [Enterprise](#enterprise)
 - **6. Recommended Study Path** -- [Study Path](#6-recommended-study-path)
@@ -348,6 +348,66 @@ EOF
 
 # 3. Competitive Analysis
 
+## Pyroscope vs Dynatrace
+
+Dynatrace is often already deployed in enterprises as a full-stack APM platform. Pyroscope is not a replacement for Dynatrace — it fills a profiling depth gap that Dynatrace does not cover.
+
+### Feature comparison
+
+| Aspect | Pyroscope | Dynatrace |
+|--------|-----------|-----------|
+| **Primary purpose** | Dedicated continuous profiling | Full-stack APM (traces, metrics, logs, RUM, profiling) |
+| **License** | AGPL-3.0 (free, self-hosted) | Commercial ($25-50/host/month full-stack; $69/host/month list) |
+| **Profiling depth** | Function + line number, four profile types (CPU, alloc, mutex, wall) | Method-level hotspots within traced transactions; CPU-centric |
+| **Profile types** | CPU, alloc, mutex, wall, block, goroutine | CPU hotspots, method hotspots (tied to PurePath traces) |
+| **Memory profiling** | Allocation tracking: where `new` objects are created, allocation rate per function | Memory dumps and leak detection — different granularity, not continuous per-function allocation tracking |
+| **Lock contention profiling** | Dedicated mutex/block profiles: which functions hold locks and for how long | Thread analysis shows blocked threads but does not produce continuous lock contention flame graphs |
+| **Always-on flame graphs** | Yes — 24/7 flame graphs for any service, any time window, independent of traced requests | Hotspot views are tied to PurePath traces; profiling depth depends on trace sampling rate |
+| **Historical diff analysis** | Yes — compare any two time windows (pre/post deploy, peak/off-peak) as flame graph diffs | Limited — method-level comparison requires backtrace comparison within traced transactions |
+| **Deployment** | Self-hosted (VM, K8s, OCP) or Grafana Cloud | SaaS or Managed (Dynatrace-hosted on-prem) |
+| **Data ownership** | Your infrastructure, your data | SaaS: Dynatrace cloud. Managed: Dynatrace-administered on-prem. |
+| **Languages** | Java, Go, Python, Ruby, .NET, Node.js, Rust, eBPF | Java, .NET, Go, Node.js, PHP |
+| **Agent overhead** | 3-8% CPU (all profile types enabled) | 2-5% CPU (OneAgent, full-stack including traces + metrics) |
+| **Grafana integration** | Native data source — same pane as metrics, logs, traces | Requires export/federation to Grafana; native UI is Dynatrace-specific |
+| **Retention** | Configurable, unlimited by default | Depends on plan (35 days default for traces; varies for profiling data) |
+| **Air-gapped support** | Yes (fully self-hosted, no external dependencies) | Managed mode only; SaaS requires connectivity |
+| **AI/ML capabilities** | None (focused tool — profiling only) | Davis AI: automatic root cause analysis, anomaly detection, topology mapping |
+| **Auto-discovery** | Manual agent attachment per service | OneAgent auto-discovers services, dependencies, and topology |
+
+### The complementary case: Pyroscope alongside Dynatrace
+
+For enterprises already running Dynatrace, Pyroscope is not a competing purchase — it fills a specific gap at zero licensing cost:
+
+| Capability | Dynatrace provides | Pyroscope adds |
+|------------|-------------------|----------------|
+| **"What is slow?"** | Yes — service-level latency, error rates, throughput | — |
+| **"Where in the call chain?"** | Yes — distributed traces (PurePath) | — |
+| **"Why is it slow at the function level?"** | Partially — CPU hotspots on traced requests | **Full continuous profiling**: CPU, memory allocation, lock contention, wall-clock for every function, every second, whether traced or not |
+| **"What changed since last deploy?"** | Service-level metrics comparison | **Flame graph diff**: function-level before/after comparison |
+| **"Which function allocates the most memory?"** | Not continuously | **Allocation flame graphs**: per-function `new` tracking 24/7 |
+| **"Which function holds locks?"** | Thread analysis (point-in-time) | **Mutex flame graphs**: continuous lock contention profiling |
+| **Fleet-wide function search** | Service-level filtering | **Label-based function filtering** across 1,000+ functions on shared reactive servers |
+
+**Key insight:** Dynatrace answers "what" and "where." Pyroscope answers "why" — at the function and line-of-code level, continuously, across all four resource dimensions (CPU, memory, locks, I/O).
+
+### Cost comparison for the profiling gap
+
+An enterprise already paying for Dynatrace does not need to expand Dynatrace licensing to get deeper profiling. Pyroscope fills the gap at infrastructure cost only:
+
+| Approach | Annual cost (500 hosts) | Profiling depth |
+|----------|:-----------------------:|-----------------|
+| **Dynatrace alone** | Already paid ($150,000-300,000/year) | CPU hotspots tied to traces |
+| **Dynatrace + Pyroscope** | Already paid + ~$22,000/year | Full continuous profiling (CPU, alloc, mutex, wall) |
+| **Dynatrace upgrade for deeper profiling** | Not available as a separate SKU — profiling is part of full-stack | Limited to what OneAgent captures |
+
+**The $22,000/year for Pyroscope buys capabilities that do not exist in Dynatrace at any price tier** — specifically: continuous allocation profiling, continuous lock contention profiling, and flame graph diff analysis across arbitrary time windows.
+
+**When Pyroscope wins alongside Dynatrace**: Need function-level "why" analysis beyond CPU hotspots, need continuous memory/lock profiling, need flame graph diffs for deployment validation, need profiling on shared reactive servers (Vert.x/WebFlux) with per-function attribution.
+
+**When Dynatrace alone is sufficient**: Performance issues are consistently traceable via PurePath, CPU hotspots provide enough depth, team does not need allocation or lock contention profiling, organization prefers single-vendor observability.
+
+---
+
 ## Pyroscope vs Datadog Continuous Profiler
 
 | Aspect | Pyroscope | Datadog |
@@ -412,8 +472,8 @@ EOF
 1. **"We can reduce MTTR from 30-90 minutes to 5-15 minutes for performance incidents."**
    Without profiling, the performance investigation loop is: check metrics, guess the cause, add logging, redeploy, wait for recurrence. With continuous profiling, the data from the incident window is already captured — open the flame graph and the bottleneck is visible in seconds.
 
-2. **"Zero licensing cost — Pyroscope is open source (AGPL-3.0). Compare to $X/month for Datadog profiling."**
-   For 50 hosts at $25/host/month, that is $15,000/year saved. The infrastructure cost for self-hosted Pyroscope is a single VM (2 GB RAM, 2 cores) for up to 100 services.
+2. **"Zero licensing cost — Pyroscope is open source (AGPL-3.0). It complements Dynatrace rather than replacing it."**
+   We already pay for Dynatrace. Pyroscope adds continuous memory, lock, and I/O profiling that Dynatrace does not offer — at ~$22,000/year infrastructure cost vs. $150,000-600,000/year for commercial alternatives. It is a 15% increment to our Dynatrace spend for capabilities that do not exist at any Dynatrace pricing tier.
 
 3. **"No code changes required — the agent attaches via an environment variable."**
    Add `JAVA_TOOL_OPTIONS="-javaagent:pyroscope.jar"` to the deployment manifest. No recompilation, no dependency changes, no code review needed.
@@ -508,6 +568,7 @@ Self-assessment: can you answer these questions confidently? Use this checklist 
 - [ ] How would you build a FIPS-compliant Pyroscope image?
 - [ ] How would you integrate Pyroscope into a CI/CD pipeline for regression detection?
 - [ ] How does Pyroscope compare to Datadog profiling, and what are the tradeoffs?
+- [ ] How does Pyroscope complement Dynatrace, and what profiling gaps does it fill?
 
 ## Enterprise
 
