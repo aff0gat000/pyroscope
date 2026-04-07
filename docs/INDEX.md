@@ -3,7 +3,7 @@
 Enterprise documentation organized by the [Diataxis framework](https://diataxis.fr/) — the same
 standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
-**35 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
+**36 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
 Development and demo resources remain in-repo only.
 
 ---
@@ -191,6 +191,7 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 | [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
 | [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — two-tier labeling (automatic + LabeledFuture), async limitations |
 | [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
+| [testing-strategy.md](testing-strategy.md) | Enterprise testing strategy — three-stage validation (baseline, agent without labels, agent with labels), overhead budgets, go/no-go criteria |
 
 ### Reference (information-oriented)
 

@@ -39,6 +39,7 @@ project-plan-phase2.md                  # [H] Phase 2 project plan — multi-VM 
 project-plan-phase3.md                  # [H] Phase 3 project plan — microservices on OCP
 vertx-labeling-guide.md                 # [H] Vert.x labeling strategy, implementation approaches
 presentation-guide.md                   # [H] Present to leadership, architects, devs, SREs
+testing-strategy.md                     # [H] Enterprise testing strategy — baseline, agent, labels
 
 # --- Reference (information-oriented) ---
 function-reference.md                   # [R] BOR/SOR function API, phases, endpoints
