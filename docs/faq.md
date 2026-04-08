@@ -241,7 +241,7 @@ JAVA_TOOL_OPTIONS=-javaagent:/opt/pyroscope/pyroscope.jar
 No code changes, no recompilation, no dependency additions.
 
 > **Agent setup:** [deployment-guide.md § Tree 7](deployment-guide.md)
-> **Properties reference:** [continuous-profiling-runbook.md](continuous-profiling-runbook.md)
+> **Properties reference:** [implementation-guide.md](implementation-guide.md)
 
 ### Does Pyroscope integrate with Grafana?
 

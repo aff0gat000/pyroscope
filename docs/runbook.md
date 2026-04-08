@@ -329,7 +329,7 @@ bash scripts/run.sh diagnose
 bash scripts/run.sh bottleneck
 ```
 
-This correlates JVM health, HTTP latency, and profiling hotspots to output a per-service verdict (CPU-bound, GC-bound, lock-bound, I/O-bound, or healthy) with the exact function and recommended action. See [continuous-profiling-runbook.md](continuous-profiling-runbook.md) for the full MTTR workflow.
+This correlates JVM health, HTTP latency, and profiling hotspots to output a per-service verdict (CPU-bound, GC-bound, lock-bound, I/O-bound, or healthy) with the exact function and recommended action. See [implementation-guide.md](implementation-guide.md) for the full MTTR workflow.
 
 ### First 60 Seconds — Full Diagnostic
 
@@ -582,7 +582,7 @@ bash scripts/bottleneck.sh --json                           # JSON for alerting
 bash scripts/bottleneck.sh --threshold cpu=0.5              # custom thresholds
 ```
 
-Verdicts: `CPU-BOUND`, `GC-BOUND`, `MEMORY-PRESSURE`, `LOCK-BOUND`, `IO-BOUND`, `HEALTHY`. See [continuous-profiling-runbook.md](continuous-profiling-runbook.md) for the full decision matrix.
+Verdicts: `CPU-BOUND`, `GC-BOUND`, `MEMORY-PRESSURE`, `LOCK-BOUND`, `IO-BOUND`, `HEALTHY`. See [implementation-guide.md](implementation-guide.md) for the full decision matrix.
 
 ### diagnose
 

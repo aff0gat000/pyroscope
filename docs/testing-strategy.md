@@ -452,4 +452,4 @@ can be independently reverted (Stage 3). See [templates/rollback-plan.md](templa
 | [value-proposition.md](value-proposition.md) | Quantified benefits referenced in value estimates |
 | [templates/rollback-plan.md](templates/rollback-plan.md) | Rollback plan template |
 | [troubleshooting.md](troubleshooting.md) | Diagnosing no-data and connectivity issues |
-| [continuous-profiling-runbook.md](continuous-profiling-runbook.md) | End-to-end implementation reference |
+| [implementation-guide.md](implementation-guide.md) | End-to-end implementation reference |

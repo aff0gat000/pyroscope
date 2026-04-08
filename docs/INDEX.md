@@ -3,7 +3,7 @@
 Enterprise documentation organized by the [Diataxis framework](https://diataxis.fr/) — the same
 standard used by Kubernetes, Django, Grafana, and other CNCF projects.
 
-**36 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
+**35 enterprise docs** are published to Confluence (see [confluence-manifest.txt](confluence-manifest.txt)).
 Development and demo resources remain in-repo only.
 
 ---
@@ -68,8 +68,11 @@ has **one canonical source**. All other documents should cross-reference it.
 
 | Topic | Canonical source | Don't duplicate in |
 |-------|-----------------|-------------------|
+| What is continuous profiling | [what-is-pyroscope.md § 1](what-is-pyroscope.md) | Other docs should link, not re-explain the concept. FAQ may include a brief answer with a deep-dive link. |
 | Agent overhead (3-5% CPU, ~30 MB) | [capacity-planning.md § Performance Impact](capacity-planning.md#performance-impact-assessment) | Other docs should say "3-5% CPU overhead ([details](capacity-planning.md#performance-impact-assessment))" |
 | Profile types (CPU, alloc, lock, wall) | [agent-configuration-reference.md § Profile Types](agent-configuration-reference.md#1-profile-types) | Other docs should link, not repeat the full table |
+| Profiling vs metrics/traces/logs | [what-is-pyroscope.md § 3](what-is-pyroscope.md) | FAQ may include a brief comparison with a deep-dive link |
+| MTTR reduction figures | [value-proposition.md § 4](value-proposition.md) | Other docs should cite the figure and link to value-proposition.md |
 | Port matrix | [architecture.md § 7 Port Matrix](architecture.md#7-port-matrix-summary) | capacity-planning.md has deployment-specific ports; architecture.md has the master list |
 | Agent configuration properties | [agent-configuration-reference.md](agent-configuration-reference.md) | capacity-planning.md has quick examples; agent-config-ref has the full reference |
 | Deployment topologies | [architecture.md § 3 Topology Diagrams](architecture.md#3-topology-diagrams) | Other docs should link to the diagram, not redraw it |
@@ -145,7 +148,7 @@ Every document falls into one of four categories:
 
 ## Enterprise Documentation (published to Confluence)
 
-These 26 docs are the enterprise documentation set. They are exported and uploaded
+These 35 docs are the enterprise documentation set. They are exported and uploaded
 to Confluence via `scripts/upload-to-confluence.sh --enterprise`.
 
 ### Tutorials (learning-oriented)
@@ -164,13 +167,15 @@ Follow these when you have a specific goal.
 | Document | Description |
 |----------|-------------|
 | [deployment-guide.md](deployment-guide.md) | Deploy Pyroscope — decision trees, quick reference, step-by-step, firewall rules |
-| [continuous-profiling-runbook.md](continuous-profiling-runbook.md) | End-to-end implementation — intro to profiling, agent setup, Grafana integration, analysis workflow |
+| [implementation-guide.md](implementation-guide.md) | End-to-end implementation — agent setup, Grafana integration, analysis workflow |
 | [grafana-setup.md](grafana-setup.md) | Connect Grafana to Pyroscope via provisioning files |
 | [monitoring-guide.md](monitoring-guide.md) | Monitor Pyroscope server health — endpoints, metrics reference, alert rules |
 | [upgrade-guide.md](upgrade-guide.md) | Upgrade and rollback — pre-upgrade checklist, procedures for all deployment methods |
 | [troubleshooting.md](troubleshooting.md) | Diagnose common issues — no data, empty flame graphs, connectivity, overhead |
 | [tls-setup.md](tls-setup.md) | TLS setup — F5 VIP, native TLS, Nginx/Envoy proxy, certificate strategies, agent trust |
 | [runbook.md](runbook.md) | Operations and incident response — demo and production procedures, playbooks |
+| [testing-strategy.md](testing-strategy.md) | Enterprise testing strategy — three-stage validation (baseline, agent, labels), overhead budgets, go/no-go criteria |
+| [vertx-labeling-guide.md](vertx-labeling-guide.md) | Vert.x profiling label strategy — implementation approaches, async labeling |
 | [project-plan-phase1.md](project-plan-phase1.md) | Phase 1 project plan — single VM monolith, epics, stories, timeline |
 | [project-plan-phase2.md](project-plan-phase2.md) | Phase 2 project plan — multi-VM monolith with S3-compatible object storage, HA |
 | [project-plan-phase3.md](project-plan-phase3.md) | Phase 3 project plan — microservices on OpenShift, PostgreSQL, v2 functions |
@@ -186,12 +191,11 @@ Read these to deepen your understanding of Pyroscope internals and architecture.
 | [what-is-pyroscope.md](what-is-pyroscope.md) | Executive overview — what continuous profiling is, business case, cost, adoption phases |
 | [value-proposition.md](value-proposition.md) | Enterprise value proposition — quantified ROI, compliance alignment, cost analysis |
 | [architecture.md](architecture.md) | Component internals, topology diagrams per deployment mode, data flow, storage |
-| [vertx-labeling-guide.md](vertx-labeling-guide.md) | Vert.x component reference, profiling label strategy, implementation approaches |
 | [profiling-use-cases.md](profiling-use-cases.md) | Enterprise use cases, AI/ML initiatives, always-on rationale, dashboard strategy |
 | [security-model.md](security-model.md) | Security model — data classification, authentication gaps, TLS, secrets, compliance checklist |
 | [async-profiling-guide.md](async-profiling-guide.md) | Profiling async frameworks — two-tier labeling (automatic + LabeledFuture), async limitations |
 | [faq.md](faq.md) | Frequently asked questions — profiling concepts, security, operations, cost |
-| [testing-strategy.md](testing-strategy.md) | Enterprise testing strategy — three-stage validation (baseline, agent without labels, agent with labels), overhead budgets, go/no-go criteria |
+| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Expert reference — storage internals, scaling, competitive analysis, talking points |
 
 ### Reference (information-oriented)
 
@@ -216,23 +220,14 @@ Look up specific facts while working.
 
 ## Development & Demo Resources (repo only — not published to Confluence)
 
-These docs support the demo banking app, internal development workflow, and
-competitive analysis. They are useful for the team but not appropriate for
-the enterprise Confluence space.
+These docs support the demo banking app and local development. They reference
+demo-specific services, bottlenecks, and container names.
 
 | Document | Description | Why repo-only |
 |----------|-------------|---------------|
 | [demo-runbook.md](demo-runbook.md) | Step-by-step demo agenda with commands and talking points (20-25 min) | References demo docker-compose app |
 | [profiling-scenarios.md](profiling-scenarios.md) | 6 hands-on scenarios with quick reference of all bottlenecks by service | Demo app bottlenecks (Fibonacci, SHA-256) |
 | [code-to-profiling-guide.md](code-to-profiling-guide.md) | Source code to flame graph mapping for every service and endpoint | Maps demo app source to flame graphs |
-| [sample-queries.md](sample-queries.md) | Copy-paste queries for Pyroscope, Prometheus, and Grafana | Queries reference demo service names |
-| [dashboard-guide.md](dashboard-guide.md) | Panel-by-panel reference for all 6 Grafana dashboards | Demo dashboard panels |
-| [endpoint-reference.md](endpoint-reference.md) | Complete endpoint list with curl examples for all 9 services | Demo app endpoints |
-| [pyroscope-reference-guide.md](pyroscope-reference-guide.md) | Expert reference — internals, competitive analysis, talking points | Internal talking points, competitive intel |
-| [function-reference.md](function-reference.md) | BOR/SOR function API reference — triage, diff report, fleet search | Developer-only, BOR/SOR internals |
-| [function-architecture.md](function-architecture.md) | Project structure, design patterns, Gradle multi-project build | Developer-only, build system |
-| [faas-server.md](faas-server.md) | FaaS runtime — function deploy/undeploy lifecycle profiling | Developer-only, FaaS internals |
-| [workflow.md](workflow.md) | Development workflow — issues, PRs, async communication | Team process notes |
 
 ---
 
@@ -288,7 +283,7 @@ Fill-in templates for change management and governance.
 5. [project-plan-phase3.md](project-plan-phase3.md) — Phase 3 plan (microservices on OCP)
 6. [presentation-guide.md § Leadership](presentation-guide.md#presentation-1-leadership--funding-15-minutes) — how to present to executives
 7. [pyroscope-reference-guide.md § Talking Points](pyroscope-reference-guide.md) — funding justification and competitive analysis
-8. [continuous-profiling-runbook.md](continuous-profiling-runbook.md) — MTTR reduction data
+8. [implementation-guide.md](implementation-guide.md) — MTTR reduction data
 
 ### Architects / tech leads
 

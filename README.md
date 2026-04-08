@@ -326,7 +326,7 @@ See [docs/INDEX.md](docs/INDEX.md) for a full documentation map with learning pa
 
 | Document | Audience | Description |
 |----------|----------|-------------|
-| [docs/continuous-profiling-runbook.md](docs/continuous-profiling-runbook.md) | Everyone | What continuous profiling is, deployment, agent setup, MTTR reduction |
+| [docs/implementation-guide.md](docs/implementation-guide.md) | Everyone | Deployment, agent setup, Grafana integration, MTTR reduction |
 | [docs/demo-runbook.md](docs/demo-runbook.md) | Presenters | Step-by-step demo agenda with commands and talking points (20-25 min) |
 | [docs/reading-flame-graphs.md](docs/reading-flame-graphs.md) | Everyone | How to read flame graphs, terminology, and common patterns |
 
@@ -354,7 +354,7 @@ See [docs/INDEX.md](docs/INDEX.md) for a full documentation map with learning pa
 
 | Document | Audience | Description |
 |----------|----------|-------------|
-| [docs/continuous-profiling-runbook.md](docs/continuous-profiling-runbook.md) | SREs | Deploying Pyroscope, agent configuration, Grafana setup |
+| [docs/implementation-guide.md](docs/implementation-guide.md) | SREs | Deploying Pyroscope, agent configuration, Grafana setup |
 | [docs/grafana-setup.md](docs/grafana-setup.md) | SREs | Connecting Grafana to Pyroscope via provisioning files |
 | [docs/deployment-guide.md](docs/deployment-guide.md) | SREs | Deployment decision trees, step-by-step guides, firewall rules |
 | [docs/runbook.md](docs/runbook.md) | On-call | Incident response playbooks, operational procedures |

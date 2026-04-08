@@ -587,7 +587,7 @@ Progress through these in order. Each builds on the previous.
 |------|----------|----------------|
 | 1 | [reading-flame-graphs.md](reading-flame-graphs.md) | How to read the core visualization |
 | 2 | `bash scripts/run.sh` | See profiling in action on the demo app |
-| 3 | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) | Deployment, agent configuration, Grafana integration |
+| 3 | [implementation-guide.md](implementation-guide.md) | Deployment, agent configuration, Grafana integration |
 | 4 | [deployment-guide.md](deployment-guide.md) | All deployment options (monolith, microservices, VM, K8s, OCP) |
 | 5 | [profiling-scenarios.md](profiling-scenarios.md) | Hands-on exercises identifying real bottlenecks |
 | 6 | [Grafana Pyroscope docs](https://grafana.com/docs/pyroscope/latest/) | Official upstream documentation |

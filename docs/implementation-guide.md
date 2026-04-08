@@ -1,59 +1,13 @@
-# Continuous Profiling with Pyroscope — Implementation Runbook
+# Pyroscope Implementation Guide
 
-Step-by-step guide for deploying Pyroscope continuous profiling on Java services using the Java agent (no code changes). Covers deployment, configuration, UI usage, production use cases, MTTR reduction, and overhead.
+Step-by-step guide for deploying Pyroscope continuous profiling on Java services
+using the Java agent (no code changes). Covers server deployment, agent configuration,
+Grafana integration, analysis workflow, and production use cases.
 
----
-
-## What is Continuous Profiling
-
-Continuous profiling samples what every thread in a running application is doing — which methods consume CPU, where memory is allocated, and where threads wait on locks — and records this data over time. Unlike traditional profiling (attach a debugger, reproduce the issue, detach), continuous profiling runs permanently in production with low overhead, capturing data before an incident occurs.
-
-The output is a **flame graph**: a visualization where each horizontal bar represents a function, and its width represents the proportion of the sampled resource (CPU time, allocation bytes, lock wait time) consumed by that function. Wider bars indicate higher resource consumption.
-
-### What continuous profiling answers
-
-| Question | Profile Type | Without Profiling |
-|----------|-------------|-------------------|
-| Which method is burning CPU? | CPU | Guess from metrics, add logging, redeploy |
-| What is allocating memory and driving GC pauses? | Allocation | Heap dump analysis (disruptive, point-in-time) |
-| Where are threads blocked on locks? | Mutex | Thread dump analysis (point-in-time, manual) |
-| What is the real elapsed time including I/O waits? | Wall clock | Distributed tracing (shows service boundaries, not internal code paths) |
-
-### How it differs from other observability signals
-
-| Signal | Shows | Does Not Show |
-|--------|-------|---------------|
-| **Metrics** (Prometheus) | Resource consumption rates (CPU %, heap bytes, request latency) | Which function or code path caused the consumption |
-| **Logs** | Application-level events and errors | Runtime behavior of code that does not log |
-| **Traces** (Jaeger, Tempo) | Request flow across services, per-span latency | Internal CPU/memory/lock behavior within a service |
-| **Continuous Profiling** (Pyroscope) | Exact function-level resource consumption over time | Request-level correlation (use traces for that) |
-
-Metrics show which resource is elevated. Profiling shows which code path is responsible.
-
----
-
-## How Pyroscope Works
-
-Pyroscope uses [async-profiler](https://github.com/async-profiler/async-profiler) under the hood, which attaches to the JVM via JVMTI. It uses `AsyncGetCallTrace` for stack sampling (avoids safepoint bias) and `perf_events` or `itimer` signals for CPU sampling.
-
-The Java agent:
-1. Attaches at JVM startup via `-javaagent:pyroscope.jar`
-2. Periodically samples thread stacks (default ~100 Hz for CPU)
-3. Aggregates samples into flame graph data
-4. Compresses and pushes profile data to the Pyroscope server over HTTP
-
-No application code changes, bytecode modification, or recompilation is required.
-
-### Profile types captured
-
-| Profile Type | JFR Event | What It Captures | Sampling Mechanism |
-|-------------|-----------|------------------|-------------------|
-| **CPU** (`process_cpu`) | `itimer` / `cpu` | Methods actively executing on CPU | Timer signal interrupts at ~100 Hz |
-| **Wall clock** (`wall`) | `wall` | All threads regardless of state (running, sleeping, blocked) | Timer signal at ~100 Hz across all threads |
-| **Allocation** (`memory:alloc`) | `alloc` | Where `new` objects are allocated | TLAB (Thread-Local Allocation Buffer) callback at configurable threshold |
-| **Mutex** (`mutex`) | `lock` | Threads blocked on `synchronized` or `Lock` | Lock contention callback above configurable threshold |
-
-All four types run simultaneously with a combined overhead of 3-8% CPU.
+> **Diataxis category:** How-to guide — task-oriented, assumes you understand
+> what continuous profiling is. For background, see
+> [what-is-pyroscope.md](what-is-pyroscope.md). For profile types and agent
+> internals, see [agent-configuration-reference.md](agent-configuration-reference.md).
 
 ---
 

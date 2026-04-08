@@ -14,7 +14,6 @@
 what-is-pyroscope.md                    # [E] Executive overview, business case, TCO
 value-proposition.md                    # [E] Enterprise value proposition, ROI, compliance
 architecture.md                         # [E] Component internals, topology, data flow
-function-architecture.md                # [E] BOR/SOR project structure, design patterns
 security-model.md                       # [E] Data classification, auth, compliance
 async-profiling-guide.md                # [E] Async framework profiling, labeling strategy
 faq.md                                  # [E] Frequently asked questions
@@ -27,7 +26,7 @@ reading-flame-graphs.md                 # [T] How to read flame graphs
 
 # --- How-to guides (task-oriented) ---
 deployment-guide.md                     # [H] Deploy Pyroscope — decision trees, step-by-step
-continuous-profiling-runbook.md         # [H] End-to-end implementation guide
+implementation-guide.md                 # [H] End-to-end implementation guide
 grafana-setup.md                        # [H] Connect Grafana to Pyroscope
 monitoring-guide.md                     # [H] Monitor Pyroscope server health
 upgrade-guide.md                        # [H] Upgrade and rollback procedures
@@ -43,6 +42,7 @@ testing-strategy.md                     # [H] Enterprise testing strategy — ba
 
 # --- Reference (information-oriented) ---
 function-reference.md                   # [R] BOR/SOR function API, phases, endpoints
+function-architecture.md                # [R] BOR/SOR project structure, design patterns, Gradle
 configuration-reference.md              # [R] All config keys — agent, server, deploy, Helm
 agent-configuration-reference.md        # [R] Java agent deep dive — profile types, Vert.x
 capacity-planning.md                    # [R] Sizing, networking, firewall, enterprise scoping

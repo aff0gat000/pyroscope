@@ -414,7 +414,7 @@ scaling. Agent configuration is identical across all phases — migration is ser
 | Step | Action | Document |
 |------|--------|----------|
 | 1 | **Choose a deployment option** — VM, Kubernetes, OpenShift, Docker Compose | [deployment-guide.md](deployment-guide.md) |
-| 2 | **Follow implementation steps** — server setup, agent configuration, Grafana integration | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) |
+| 2 | **Follow implementation steps** — server setup, agent configuration, Grafana integration | [implementation-guide.md](implementation-guide.md) |
 | 3 | **Start with Phase 1** — monolith on a VM, agents on 5-10 JVMs to prove value | [deployment-guide.md, Section 7](deployment-guide.md#7-monolith-manual-vm-deployment) |
 | 4 | **Review flame graph fundamentals** before first incident use | [reading-flame-graphs.md](reading-flame-graphs.md) |
 | 5 | **Evaluate Phase 2** when ingestion exceeds monolith capacity or HA is required | [deployment-guide.md, Section 12](deployment-guide.md#12-microservices-mode) |

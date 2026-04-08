@@ -26,20 +26,20 @@ Step-by-step instructions for running the continuous profiling demo. ~20-25 minu
 
 ## Part 1 — The problem (3 min)
 
-Reference: [continuous-profiling-runbook.md](continuous-profiling-runbook.md), "The Problem" and "What existing tools miss."
+Reference: [what-is-pyroscope.md](what-is-pyroscope.md) § 3, "The problem it solves" and "What existing tools miss."
 
 Cover:
 - Production incidents follow a predictable cycle: alert → metrics → logs → traces → guess → redeploy → repeat. Takes 30-90 min.
 - Metrics show *what* is wrong (CPU at 85%). Logs show events. Traces show which service. None show *which function*.
 - That gap between symptom and root cause is where all the time goes.
 
-Use the comparison table from continuous-profiling-runbook.md to show what each tool misses.
+Use the comparison table from what-is-pyroscope.md to show what each tool misses.
 
 ---
 
 ## Part 2 — The solution (2 min)
 
-Reference: [continuous-profiling-runbook.md](continuous-profiling-runbook.md), "The Solution: Continuous Profiling."
+Reference: [what-is-pyroscope.md](what-is-pyroscope.md) § 1-2, "What is continuous profiling" and "What is Pyroscope."
 
 Cover:
 - Continuous profiling samples what every thread is doing and records it continuously.
@@ -173,7 +173,7 @@ bash scripts/run.sh teardown
 
 ## Part 4 — Cost and next steps (2 min)
 
-Reference: [continuous-profiling-runbook.md](continuous-profiling-runbook.md), "Cost of Implementation" and "Outcomes and Use Cases."
+Reference: [what-is-pyroscope.md](what-is-pyroscope.md) § 5, "Cost of implementation" and [value-proposition.md](value-proposition.md) for ROI.
 
 | Profile Type | CPU Overhead |
 |-------------|-------------|
@@ -258,11 +258,11 @@ bash scripts/run.sh health
 
 | Audience | Document |
 |----------|----------|
-| Everyone (start here) | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) |
+| Everyone (start here) | [what-is-pyroscope.md](what-is-pyroscope.md) |
 | Hands-on exercises | [profiling-scenarios.md](profiling-scenarios.md) |
-| Implementation guide | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) |
+| Implementation guide | [implementation-guide.md](implementation-guide.md) |
 | Copy-paste queries | [sample-queries.md](sample-queries.md) |
 | Dashboard reference | [dashboard-guide.md](dashboard-guide.md) |
 | Code ↔ flame graph mapping | [code-to-profiling-guide.md](code-to-profiling-guide.md) |
-| MTTR reduction | [continuous-profiling-runbook.md](continuous-profiling-runbook.md) |
+| MTTR reduction & ROI | [value-proposition.md](value-proposition.md) |
 | Architecture | [README.md](../README.md) |
