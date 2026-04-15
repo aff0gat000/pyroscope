@@ -1,0 +1,20 @@
+global:
+  scrape_interval: 10s
+  evaluation_interval: 10s
+
+scrape_configs:
+  - job_name: demo-jvm11
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["demo-jvm11:8080"]
+        labels: { service: demo-jvm11, jvm: "11" }
+
+  - job_name: demo-jvm21
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["demo-jvm21:8080"]
+        labels: { service: demo-jvm21, jvm: "21" }
+
+  - job_name: pyroscope
+    static_configs:
+      - targets: ["pyroscope:4040"]

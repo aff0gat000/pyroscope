@@ -1,0 +1,72 @@
+{
+  "title": "Integration Hotspots",
+  "uid": "integration-hotspots",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "custom",
+        "query": "demo-jvm11,demo-jvm21",
+        "current": { "text": "demo-jvm11", "value": "demo-jvm11" },
+        "options": [
+          { "text": "demo-jvm11", "value": "demo-jvm11", "selected": true },
+          { "text": "demo-jvm21", "value": "demo-jvm21", "selected": false }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1, "type": "flamegraph", "title": "Redis",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [ { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", integration=\"redis\"}", "groupBy": [] } ]
+    },
+    {
+      "id": 2, "type": "flamegraph", "title": "Postgres",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [ { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", integration=\"postgres\"}", "groupBy": [] } ]
+    },
+    {
+      "id": 3, "type": "flamegraph", "title": "Mongo",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [ { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", integration=\"mongo\"}", "groupBy": [] } ]
+    },
+    {
+      "id": 4, "type": "flamegraph", "title": "Couchbase",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [ { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", integration=\"couchbase\"}", "groupBy": [] } ]
+    },
+    {
+      "id": 5, "type": "flamegraph", "title": "Kafka",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "targets": [ { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", integration=\"kafka\"}", "groupBy": [] } ]
+    },
+    {
+      "id": 6, "type": "flamegraph", "title": "HTTP Client",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "targets": [ { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", integration=\"http\"}", "groupBy": [] } ]
+    },
+    {
+      "id": 7, "type": "flamegraph", "title": "Vault",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "targets": [ { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", integration=\"vault\"}", "groupBy": [] } ]
+    },
+    {
+      "id": 8, "type": "flamegraph", "title": "EventBus (function-to-function)",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "targets": [ { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", integration=\"eventbus\"}", "groupBy": [] } ]
+    }
+  ]
+}

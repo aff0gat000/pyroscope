@@ -1,0 +1,55 @@
+{
+  "title": "Per-Verticle Profile",
+  "uid": "per-verticle",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "custom",
+        "query": "demo-jvm11,demo-jvm21",
+        "current": { "text": "demo-jvm11", "value": "demo-jvm11" },
+        "options": [
+          { "text": "demo-jvm11", "value": "demo-jvm11", "selected": true },
+          { "text": "demo-jvm21", "value": "demo-jvm21", "selected": false }
+        ]
+      },
+      {
+        "name": "thread",
+        "type": "custom",
+        "query": "vert.x-eventloop-.*,vert.x-worker-.*,vert.x-internal-blocking-.*",
+        "current": { "text": "vert.x-eventloop-.*", "value": "vert.x-eventloop-.*" },
+        "options": [
+          { "text": "vert.x-eventloop-.*", "value": "vert.x-eventloop-.*", "selected": true },
+          { "text": "vert.x-worker-.*", "value": "vert.x-worker-.*", "selected": false },
+          { "text": "vert.x-internal-blocking-.*", "value": "vert.x-internal-blocking-.*", "selected": false }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "flamegraph",
+      "title": "CPU — $service thread=$thread",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\", thread_name=~\"$thread\"}", "groupBy": [] }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "flamegraph",
+      "title": "Blocking / I/O Wait — $service thread=$thread",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 12 },
+      "targets": [
+        { "refId": "A", "profileTypeId": "block:delay:nanoseconds:block:count", "labelSelector": "{service_name=\"$service\", thread_name=~\"$thread\"}", "groupBy": [] }
+      ]
+    }
+  ]
+}

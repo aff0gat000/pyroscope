@@ -1,0 +1,66 @@
+{
+  "title": "Fleet Hotspots (AI phase 2)",
+  "uid": "ai-fleet-hotspots",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-24h", "to": "now" },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Top-30 CPU consumers (last range)",
+      "datasource": { "type": "postgres", "uid": "ai-postgres-ds" },
+      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT service, function, SUM(total_value) AS total FROM function_features WHERE profile_type = 'process_cpu:cpu:nanoseconds:cpu:nanoseconds' AND ts BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1,2 ORDER BY total DESC LIMIT 30"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Top-20 Alloc consumers",
+      "datasource": { "type": "postgres", "uid": "ai-postgres-ds" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 12 },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT service, function, SUM(total_value) AS total FROM function_features WHERE profile_type = 'memory:alloc_in_new_tlab_bytes:bytes:space:bytes' AND ts BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1,2 ORDER BY total DESC LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Top-20 Lock consumers",
+      "datasource": { "type": "postgres", "uid": "ai-postgres-ds" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 12 },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT service, function, SUM(total_value) AS total FROM function_features WHERE profile_type = 'mutex:delay:nanoseconds:mutex:count' AND ts BETWEEN $__timeFrom() AND $__timeTo() GROUP BY 1,2 ORDER BY total DESC LIMIT 20"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "timeseries",
+      "title": "Per-integration CPU over time",
+      "datasource": { "type": "postgres", "uid": "ai-postgres-ds" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "time_series",
+          "rawSql": "SELECT ts AS time, integration, value FROM integration_series WHERE ts BETWEEN $__timeFrom() AND $__timeTo() ORDER BY ts"
+        }
+      ]
+    }
+  ]
+}

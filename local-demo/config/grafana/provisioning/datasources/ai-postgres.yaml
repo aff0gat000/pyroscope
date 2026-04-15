@@ -1,0 +1,28 @@
+apiVersion: 1
+
+# Phase-2 Postgres — cross-stack via host gateway. Only reachable if the
+# ai/ stack is running; panels gracefully show "No data" otherwise.
+datasources:
+  - name: AI-Postgres
+    type: postgres
+    uid: ai-postgres-ds
+    access: proxy
+    url: host.docker.internal:15433
+    user: postgres
+    database: ai
+    jsonData:
+      sslmode: disable
+      postgresVersion: 1600
+      timescaledb: false
+    secureJsonData:
+      password: postgres
+    editable: true
+
+  - name: AI-API
+    type: yesoreyeram-infinity-datasource
+    uid: ai-api-ds
+    access: proxy
+    url: http://host.docker.internal:18000
+    editable: true
+    jsonData:
+      global_queries: []

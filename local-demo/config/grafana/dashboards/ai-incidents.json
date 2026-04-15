@@ -1,0 +1,52 @@
+{
+  "title": "AI Incidents & Regressions (phase 2)",
+  "uid": "ai-incidents",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": { "from": "now-7d", "to": "now" },
+  "refresh": "1m",
+  "panels": [
+    {
+      "id": 1,
+      "type": "table",
+      "title": "Recent incidents",
+      "datasource": { "type": "postgres", "uid": "ai-postgres-ds" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT id, kind, service, start_ts, end_ts, notes FROM incidents ORDER BY start_ts DESC LIMIT 50"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "table",
+      "title": "Recent anomalies",
+      "datasource": { "type": "postgres", "uid": "ai-postgres-ds" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT ts, service, metric, score FROM anomalies ORDER BY ts DESC LIMIT 50"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "table",
+      "title": "Recent LLM-summarized regressions",
+      "datasource": { "type": "postgres", "uid": "ai-postgres-ds" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 10 },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawSql": "SELECT detected_at, service, function, shift, llm_summary FROM regressions ORDER BY detected_at DESC LIMIT 20"
+        }
+      ]
+    }
+  ]
+}

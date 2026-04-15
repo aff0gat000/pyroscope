@@ -1,0 +1,65 @@
+{
+  "title": "Demo Overview — CPU / Block / Alloc / Lock",
+  "uid": "demo-overview",
+  "schemaVersion": 39,
+  "version": 3,
+  "timezone": "",
+  "time": { "from": "now-15m", "to": "now" },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "service",
+        "type": "custom",
+        "query": "demo-jvm11,demo-jvm21",
+        "current": { "text": "demo-jvm11", "value": "demo-jvm11" },
+        "options": [
+          { "text": "demo-jvm11", "value": "demo-jvm11", "selected": true },
+          { "text": "demo-jvm21", "value": "demo-jvm21", "selected": false }
+        ]
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "type": "flamegraph",
+      "title": "Blocking / I/O Wait ($service) — where threads are blocked (wall-equivalent for Vert.x)",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        { "refId": "A", "profileTypeId": "block:delay:nanoseconds:block:count", "labelSelector": "{service_name=\"$service\"}", "groupBy": [] }
+      ]
+    },
+    {
+      "id": 2,
+      "type": "flamegraph",
+      "title": "CPU ($service)",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 10 },
+      "targets": [
+        { "refId": "A", "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds", "labelSelector": "{service_name=\"$service\"}", "groupBy": [] }
+      ]
+    },
+    {
+      "id": 3,
+      "type": "flamegraph",
+      "title": "Allocations ($service)",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 20 },
+      "targets": [
+        { "refId": "A", "profileTypeId": "memory:alloc_in_new_tlab_bytes:bytes:space:bytes", "labelSelector": "{service_name=\"$service\"}", "groupBy": [] }
+      ]
+    },
+    {
+      "id": 4,
+      "type": "flamegraph",
+      "title": "Lock Contention ($service)",
+      "datasource": { "type": "grafana-pyroscope-datasource", "uid": "pyroscope-ds" },
+      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 20 },
+      "targets": [
+        { "refId": "A", "profileTypeId": "mutex:delay:nanoseconds:mutex:count", "labelSelector": "{service_name=\"$service\"}", "groupBy": [] }
+      ]
+    }
+  ]
+}
