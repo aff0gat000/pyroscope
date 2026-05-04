@@ -34,7 +34,9 @@ Diataxis-structured. Headline documents:
 - [docs/tutorials/01-getting-started.md](docs/tutorials/01-getting-started.md)
 - [docs/how-to/runbook.md](docs/how-to/runbook.md)
 - [docs/reference/architecture.md](docs/reference/architecture.md) — infrastructure + mermaid
-- [docs/explanation/value-proposition.md](docs/explanation/value-proposition.md)
+- [docs/explanation/value-proposition.md](docs/explanation/value-proposition.md) — what shifts when this layer is in place
+- [docs/explanation/differentiation.md](docs/explanation/differentiation.md) — vs Datadog / Grafana Cloud / New Relic / DIY
+- [docs/explanation/ml-use-cases.md](docs/explanation/ml-use-cases.md) — per use case: what it replaces, what's unique
 - [docs/explanation/auth-strategy.md](docs/explanation/auth-strategy.md) — future auth plan
 
 ## Teardown

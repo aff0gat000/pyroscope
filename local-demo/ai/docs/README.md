@@ -35,9 +35,10 @@ quadrantChart
 - [Grafana integration (phase 2 data in phase-1 Grafana)](reference/grafana-integration.md)
 
 ## Explanation
-- [Value proposition](explanation/value-proposition.md)
+- [Value proposition](explanation/value-proposition.md) — what shifts when you add this layer; quantified outcomes
+- [**Differentiation** vs Datadog / Grafana Cloud / New Relic / DIY](explanation/differentiation.md)
+- [ML use cases mapped to features](explanation/ml-use-cases.md) — per use case: what it replaces + what's unique
 - [Why BFF + SPA (vs Streamlit, Grafana plugin)](explanation/why-bff-plus-spa.md)
-- [ML use cases mapped to features](explanation/ml-use-cases.md)
 - [LLM provider neutrality](explanation/llm-provider-neutrality.md)
 - [Orchestrator choice (Airflow vs Prefect vs Dagster)](explanation/orchestrator-choice.md)
-- [**Auth strategy** (deferred; design here)](explanation/auth-strategy.md)
+- [Auth strategy (deferred; design here)](explanation/auth-strategy.md)
