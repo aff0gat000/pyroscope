@@ -14,7 +14,10 @@ public class MongoVerticle extends AbstractVerticle {
     public MongoVerticle(Router router) { this.router = router; }
 
     @Override public void start(Promise<Void> p) {
-        String uri = System.getenv().getOrDefault("MONGO_URL", "mongodb://mongo:27017");
+        // Short server-selection / connect timeouts so requests fail fast (and
+        // tests don't hang) when Mongo is unreachable.
+        String uri = System.getenv().getOrDefault("MONGO_URL",
+            "mongodb://mongo:27017/?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000");
         mongo = MongoClient.createShared(vertx, new JsonObject().put("connection_string", uri).put("db_name", "demo"));
         router.get("/mongo/insert").handler(this::insert);
         router.get("/mongo/find").handler(this::find);

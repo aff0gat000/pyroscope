@@ -39,7 +39,7 @@ public class ThreadLeakVerticle extends AbstractVerticle {
 
     private void leakBody() {
         try { while (!Thread.currentThread().isInterrupted()) Thread.sleep(5000); }
-        catch (InterruptedException ignored) {}
+        catch (InterruptedException e) { /* exiting thread; flag intentionally not restored */ }
     }
 
     private void stop(RoutingContext ctx) {

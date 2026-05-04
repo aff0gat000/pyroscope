@@ -6,6 +6,9 @@ import io.pyroscope.labels.Pyroscope;
 /**
  * Small wrapper around Pyroscope dynamic labels so the integration-hotspots
  * dashboard can filter flame graphs by integration=redis|postgres|kafka|...
+ *
+ * Falls back to running the lambda directly when the Pyroscope agent isn't
+ * attached (e.g. unit tests, or any JVM started without -javaagent).
  */
 public final class Label {
     private Label() {}
@@ -14,9 +17,14 @@ public final class Label {
         try {
             final Object[] out = new Object[1];
             final Exception[] err = new Exception[1];
-            Pyroscope.LabelsWrapper.run(new LabelsSet("integration", integration), () -> {
+            Runnable body = () -> {
                 try { out[0] = fn.call(); } catch (Exception e) { err[0] = e; }
-            });
+            };
+            try {
+                Pyroscope.LabelsWrapper.run(new LabelsSet("integration", integration), body);
+            } catch (Throwable t) {
+                body.run();
+            }
             if (err[0] != null) throw err[0];
             @SuppressWarnings("unchecked") T t = (T) out[0];
             return t;
@@ -26,6 +34,10 @@ public final class Label {
     }
 
     public static void tag(String integration, Runnable fn) {
-        Pyroscope.LabelsWrapper.run(new LabelsSet("integration", integration), fn);
+        try {
+            Pyroscope.LabelsWrapper.run(new LabelsSet("integration", integration), fn);
+        } catch (Throwable t) {
+            fn.run();
+        }
     }
 }

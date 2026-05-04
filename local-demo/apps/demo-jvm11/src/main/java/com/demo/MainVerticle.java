@@ -9,6 +9,8 @@ import io.vertx.core.Promise;
 import io.vertx.core.http.HttpServer;
 import io.vertx.ext.web.Router;
 import io.vertx.micrometer.PrometheusScrapingHandler;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -19,6 +21,8 @@ import java.util.List;
  * Each feature verticle registers its routes via a shared Router.
  */
 public class MainVerticle extends AbstractVerticle {
+    private static final Logger log = LoggerFactory.getLogger(MainVerticle.class);
+    private static final int HTTP_PORT = 8080;
 
     @Override
     public void start(Promise<Void> startPromise) {
@@ -60,8 +64,8 @@ public class MainVerticle extends AbstractVerticle {
 
         HttpServer server = vertx.createHttpServer().requestHandler(router);
         CompositeFuture.all(new ArrayList<>(deployments))
-            .compose(cf -> server.listen(8080))
-            .onSuccess(s -> { System.out.println("[demo] http :8080 ready"); startPromise.complete(); })
+            .compose(cf -> server.listen(HTTP_PORT))
+            .onSuccess(s -> { log.info("http :{} ready", HTTP_PORT); startPromise.complete(); })
             .onFailure(startPromise::fail);
     }
 }

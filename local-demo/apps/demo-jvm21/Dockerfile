@@ -7,7 +7,7 @@ ENV PATH="/opt/gradle-8.7/bin:${PATH}"
 COPY build.gradle settings.gradle ./
 RUN gradle --no-daemon dependencies || true
 COPY src/ src/
-RUN gradle --no-daemon shadowJar
+RUN gradle --no-daemon test jacocoTestReport shadowJar
 
 FROM eclipse-temurin:21-jre
 RUN mkdir -p /opt/pyroscope && \

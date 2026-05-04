@@ -7,7 +7,8 @@ ENV PATH="/opt/gradle-7.6.4/bin:${PATH}"
 COPY build.gradle settings.gradle ./
 RUN gradle --no-daemon dependencies || true
 COPY src/ src/
-RUN gradle --no-daemon shadowJar
+# Run tests + JaCoCo coverage report, then build the fat jar.
+RUN gradle --no-daemon test jacocoTestReport shadowJar
 
 FROM eclipse-temurin:11-jre
 RUN mkdir -p /opt/pyroscope && \

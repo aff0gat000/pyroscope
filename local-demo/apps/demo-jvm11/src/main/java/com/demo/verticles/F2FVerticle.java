@@ -19,9 +19,10 @@ public class F2FVerticle extends AbstractVerticle {
     public F2FVerticle(Router router) { this.router = router; }
 
     @Override public void start(Promise<Void> p) {
-        vertx.deployVerticle(ChildHandlerVerticle.class.getName(), new DeploymentOptions().setInstances(2));
         router.get("/f2f/call").handler(this::call);
-        p.complete();
+        vertx.deployVerticle(ChildHandlerVerticle.class.getName(),
+                             new DeploymentOptions().setInstances(2))
+             .<Void>mapEmpty().onComplete(p);
     }
 
     private void call(RoutingContext ctx) {

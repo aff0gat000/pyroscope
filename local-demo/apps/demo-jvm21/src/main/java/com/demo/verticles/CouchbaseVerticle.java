@@ -9,12 +9,15 @@ import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
 import io.vertx.ext.web.Router;
 import io.vertx.ext.web.RoutingContext;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * Couchbase SDK is blocking — calls are dispatched via executeBlocking so the
  * event loop stays free. Flame graphs on worker threads will show couchbase frames.
  */
 public class CouchbaseVerticle extends AbstractVerticle {
+    private static final Logger log = LoggerFactory.getLogger(CouchbaseVerticle.class);
     private final Router router;
     private Cluster cluster;
     private Collection collection;
@@ -34,7 +37,7 @@ public class CouchbaseVerticle extends AbstractVerticle {
                 promise.complete();
             } catch (Exception e) { promise.fail(e); }
         }, false, ar -> {
-            if (ar.failed()) System.err.println("[couchbase] init failed: " + ar.cause().getMessage());
+            if (ar.failed()) log.warn("couchbase init failed: {}", ar.cause().getMessage());
         });
 
         router.get("/couchbase/upsert").handler(this::upsert);

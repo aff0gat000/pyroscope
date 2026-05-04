@@ -36,7 +36,7 @@ public class VirtualThreadVerticle extends AbstractVerticle {
     private void sleep(RoutingContext ctx) {
         int ms = Integer.parseInt(ctx.request().getParam("ms", "200"));
         Thread.ofVirtual().name("demo-vt-sleep").start(() -> {
-            try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             String info = Thread.currentThread().toString();
             boolean virtual = Thread.currentThread().isVirtual();
             vertx.runOnContext(v -> ctx.json(new io.vertx.core.json.JsonObject()

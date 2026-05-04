@@ -23,14 +23,14 @@ public class BlockingCallVerticle extends AbstractVerticle {
 
     private void onEventLoop(RoutingContext ctx) {
         int ms = Integer.parseInt(ctx.request().getParam("ms", "200"));
-        try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
         ctx.json(new io.vertx.core.json.JsonObject().put("slept_ms", ms).put("thread", Thread.currentThread().getName()));
     }
 
     private void onWorker(RoutingContext ctx) {
         int ms = Integer.parseInt(ctx.request().getParam("ms", "200"));
         vertx.executeBlocking(promise -> {
-            try { Thread.sleep(ms); } catch (InterruptedException ignored) {}
+            try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
             promise.complete(Thread.currentThread().getName());
         }, res -> ctx.json(new io.vertx.core.json.JsonObject().put("slept_ms", ms).put("thread", res.result())));
     }
