@@ -13,6 +13,20 @@ repositories { mavenCentral() }
 
 def vertxVersion = '4.5.8'
 
+sourceSets {
+    integrationTest {
+        java { srcDir 'src/integrationTest/java' }
+        resources { srcDir 'src/integrationTest/resources' }
+        compileClasspath += sourceSets.main.output + configurations.testRuntimeClasspath
+        runtimeClasspath += output + compileClasspath
+    }
+}
+
+configurations {
+    integrationTestImplementation.extendsFrom testImplementation
+    integrationTestRuntimeOnly.extendsFrom testRuntimeOnly
+}
+
 dependencies {
     implementation "io.vertx:vertx-core:${vertxVersion}"
     implementation "io.vertx:vertx-web:${vertxVersion}"
@@ -31,6 +45,14 @@ dependencies {
     testImplementation "io.vertx:vertx-junit5:${vertxVersion}"
     testImplementation 'org.junit.jupiter:junit-jupiter:5.10.2'
     testImplementation 'org.assertj:assertj-core:3.26.3'
+
+    // Testcontainers — integration tests against real backends. Requires Docker.
+    integrationTestImplementation 'org.testcontainers:junit-jupiter:1.20.3'
+    integrationTestImplementation 'org.testcontainers:postgresql:1.20.3'
+    integrationTestImplementation 'org.testcontainers:mongodb:1.20.3'
+    integrationTestImplementation 'org.testcontainers:kafka:1.20.3'
+    integrationTestImplementation 'org.testcontainers:couchbase:1.20.3'
+    integrationTestImplementation 'org.testcontainers:vault:1.20.3'
 }
 
 jar { manifest { attributes 'Main-Class': 'com.demo.Launcher' } }
@@ -45,9 +67,6 @@ shadowJar {
 test {
     useJUnitPlatform()
     testLogging { events 'passed', 'skipped', 'failed' }
-    // Tests run without backend services available; verify deployment +
-    // route registration. Integration tests with real backends are out-of-band
-    // (driven via the load.sh script against a running stack).
     systemProperty 'demo.test.mode', 'unit'
     finalizedBy jacocoTestReport
 }
@@ -61,4 +80,15 @@ jacocoTestReport {
         html.required = true
         csv.required = false
     }
+}
+
+tasks.register('integrationTest', Test) {
+    description = 'Runs Testcontainers-backed integration tests. Requires a running Docker daemon.'
+    group = 'verification'
+    testClassesDirs = sourceSets.integrationTest.output.classesDirs
+    classpath = sourceSets.integrationTest.runtimeClasspath
+    useJUnitPlatform()
+    shouldRunAfter test
+    systemProperty 'demo.test.mode', 'integration'
+    testLogging { events 'passed', 'skipped', 'failed' }
 }

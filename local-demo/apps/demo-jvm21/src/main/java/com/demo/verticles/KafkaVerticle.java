@@ -1,5 +1,6 @@
 package com.demo.verticles;
 
+import com.demo.Env;
 import com.demo.Label;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -28,7 +29,7 @@ public class KafkaVerticle extends AbstractVerticle {
         // Kafka producer/consumer construction does eager DNS resolution and
         // throws ConfigException if no bootstrap server is resolvable. Wrap
         // so the verticle still deploys when no broker is reachable.
-        String brokers = System.getenv().getOrDefault("KAFKA_BROKERS", "kafka:9092");
+        String brokers = Env.get("KAFKA_BROKERS", "kafka:9092");
         Map<String, String> prod = new HashMap<>();
         prod.put("bootstrap.servers", brokers);
         prod.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");

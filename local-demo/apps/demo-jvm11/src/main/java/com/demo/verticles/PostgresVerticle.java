@@ -1,5 +1,6 @@
 package com.demo.verticles;
 
+import com.demo.Env;
 import com.demo.Label;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -16,11 +17,11 @@ public class PostgresVerticle extends AbstractVerticle {
 
     @Override public void start(Promise<Void> p) {
         PgConnectOptions co = new PgConnectOptions()
-            .setHost(System.getenv().getOrDefault("PG_HOST", "postgres"))
-            .setPort(Integer.parseInt(System.getenv().getOrDefault("PG_PORT", "5432")))
-            .setDatabase(System.getenv().getOrDefault("PG_DB", "demo"))
-            .setUser(System.getenv().getOrDefault("PG_USER", "demo"))
-            .setPassword(System.getenv().getOrDefault("PG_PASS", "demo"));
+            .setHost(Env.get("PG_HOST", "postgres"))
+            .setPort(Integer.parseInt(Env.get("PG_PORT", "5432")))
+            .setDatabase(Env.get("PG_DB", "demo"))
+            .setUser(Env.get("PG_USER", "demo"))
+            .setPassword(Env.get("PG_PASS", "demo"));
         pool = PgPool.pool(vertx, co, new PoolOptions().setMaxSize(4));
         router.get("/postgres/query").handler(this::query);
         p.complete();

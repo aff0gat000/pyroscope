@@ -1,5 +1,6 @@
 package com.demo.verticles;
 
+import com.demo.Env;
 import com.demo.Label;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -17,7 +18,7 @@ public class RedisVerticle extends AbstractVerticle {
     public RedisVerticle(Router router) { this.router = router; }
 
     @Override public void start(Promise<Void> p) {
-        String url = System.getenv().getOrDefault("REDIS_URL", "redis://redis:6379");
+        String url = Env.get("REDIS_URL", "redis://redis:6379");
         redis = RedisAPI.api(Redis.createClient(vertx, new RedisOptions().setConnectionString(url)));
         router.get("/redis/set").handler(this::set);
         router.get("/redis/get").handler(this::get);

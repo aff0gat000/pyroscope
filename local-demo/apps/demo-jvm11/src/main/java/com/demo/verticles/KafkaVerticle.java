@@ -1,5 +1,6 @@
 package com.demo.verticles;
 
+import com.demo.Env;
 import com.demo.Label;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -30,7 +31,7 @@ public class KafkaVerticle extends AbstractVerticle {
         // so the verticle still deploys (and routes still register) when no
         // broker is reachable — matches the "graceful degradation" pattern
         // used by Couchbase + Mongo here.
-        String brokers = System.getenv().getOrDefault("KAFKA_BROKERS", "kafka:9092");
+        String brokers = Env.get("KAFKA_BROKERS", "kafka:9092");
         Map<String, String> prod = new HashMap<>();
         prod.put("bootstrap.servers", brokers);
         prod.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");

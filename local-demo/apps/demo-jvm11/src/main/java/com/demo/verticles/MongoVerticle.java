@@ -1,5 +1,6 @@
 package com.demo.verticles;
 
+import com.demo.Env;
 import com.demo.Label;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -16,7 +17,7 @@ public class MongoVerticle extends AbstractVerticle {
     @Override public void start(Promise<Void> p) {
         // Short server-selection / connect timeouts so requests fail fast (and
         // tests don't hang) when Mongo is unreachable.
-        String uri = System.getenv().getOrDefault("MONGO_URL",
+        String uri = Env.get("MONGO_URL",
             "mongodb://mongo:27017/?serverSelectionTimeoutMS=2000&connectTimeoutMS=2000");
         mongo = MongoClient.createShared(vertx, new JsonObject().put("connection_string", uri).put("db_name", "demo"));
         router.get("/mongo/insert").handler(this::insert);

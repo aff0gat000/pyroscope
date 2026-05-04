@@ -4,6 +4,7 @@ import com.couchbase.client.java.Bucket;
 import com.couchbase.client.java.Cluster;
 import com.couchbase.client.java.Collection;
 import com.couchbase.client.java.json.JsonObject;
+import com.demo.Env;
 import com.demo.Label;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -26,10 +27,10 @@ public class CouchbaseVerticle extends AbstractVerticle {
     @Override public void start(Promise<Void> p) {
         vertx.executeBlocking(promise -> {
             try {
-                String host = System.getenv().getOrDefault("CB_HOST", "couchbase");
-                String user = System.getenv().getOrDefault("CB_USER", "Administrator");
-                String pass = System.getenv().getOrDefault("CB_PASS", "password");
-                String bucket = System.getenv().getOrDefault("CB_BUCKET", "demo");
+                String host = Env.get("CB_HOST", "couchbase");
+                String user = Env.get("CB_USER", "Administrator");
+                String pass = Env.get("CB_PASS", "password");
+                String bucket = Env.get("CB_BUCKET", "demo");
                 cluster = Cluster.connect(host, user, pass);
                 Bucket b = cluster.bucket(bucket);
                 b.waitUntilReady(java.time.Duration.ofSeconds(20));

@@ -1,5 +1,6 @@
 package com.demo.verticles;
 
+import com.demo.Env;
 import com.demo.Label;
 import io.vertx.core.AbstractVerticle;
 import io.vertx.core.Promise;
@@ -16,8 +17,8 @@ public class VaultVerticle extends AbstractVerticle {
 
     @Override public void start(Promise<Void> p) {
         client = WebClient.create(vertx);
-        addr = System.getenv().getOrDefault("VAULT_ADDR", "http://vault:8200");
-        token = System.getenv().getOrDefault("VAULT_TOKEN", "root");
+        addr = Env.get("VAULT_ADDR", "http://vault:8200");
+        token = Env.get("VAULT_TOKEN", "root");
         router.get("/vault/read").handler(this::read);
         p.complete();
     }
